@@ -1,0 +1,24 @@
+[workspace]
+channels = ["conda-forge", "rapidsai"]
+name = "rapids"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+marimo = "marimo edit --host 0.0.0.0 --port 2718 --no-token"
+
+[system-requirements]
+cuda = "12.8"
+
+[dependencies]
+python = ">=3.11,<3.13"
+marimo = ">=0.21.1,<0.22"
+aiohttp = ">=3.13.5,<4"
+
+[pypi-options]
+extra-index-urls = ["https://pypi.nvidia.com"]
+
+[pypi-dependencies]
+cudf-cu12 = ">=26,<27"
+jax = { version = ">=0.4", extras = ["cuda12"] }
+polars = { version = ">=1.0", extras = ["gpu"] }
