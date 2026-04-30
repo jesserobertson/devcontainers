@@ -3,11 +3,6 @@ name: Build and push devcontainer images
 on:
   push:
     branches: [main]
-    paths:
-      - base/Dockerfile
-      - flavour/Dockerfile
-      - flavours/**/pixi.toml
-      - .github/workflows/build.yml
   workflow_dispatch:
 
 env:
