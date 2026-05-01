@@ -1,3 +1,10 @@
+#!/bin/bash
+set -e
+
+MANIFEST="/workspace/pixi.toml"
+
+if [ ! -f "$MANIFEST" ]; then
+    cat > "$MANIFEST" << 'TOML'
 [workspace]
 channels = ["conda-forge", "rapidsai"]
 name = "rapids"
@@ -22,3 +29,7 @@ extra-index-urls = ["https://pypi.nvidia.com"]
 cudf-cu12 = ">=26,<27"
 jax = { version = ">=0.4", extras = ["cuda12"] }
 polars = { version = ">=1.0", extras = ["gpu"] }
+TOML
+fi
+
+pixi install --manifest-path "$MANIFEST"

@@ -1,0 +1,7 @@
+{
+  "id": "jax",
+  "version": "1.0.0",
+  "name": "JAX (CUDA)",
+  "description": "Installs JAX with CUDA 12 support and Marimo via pixi. Requires base-cuda image. Provides a default pixi.toml if the workspace doesn't already have one.",
+  "options": {}
+}

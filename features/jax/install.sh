@@ -1,3 +1,10 @@
+#!/bin/bash
+set -e
+
+MANIFEST="/workspace/pixi.toml"
+
+if [ ! -f "$MANIFEST" ]; then
+    cat > "$MANIFEST" << 'TOML'
 [workspace]
 channels = ["conda-forge"]
 name = "jax"
@@ -16,3 +23,7 @@ marimo = ">=0.21.1,<0.22"
 
 [pypi-dependencies]
 jax = { version = ">=0.4", extras = ["cuda12"] }
+TOML
+fi
+
+pixi install --manifest-path "$MANIFEST"

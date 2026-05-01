@@ -1,0 +1,7 @@
+{
+  "id": "rapids",
+  "version": "1.0.0",
+  "name": "RAPIDS ML stack",
+  "description": "Installs RAPIDS (cuDF, JAX CUDA 12, Polars GPU, Marimo) via pixi. Requires base-cuda image. Provides a default pixi.toml if the workspace doesn't already have one.",
+  "options": {}
+}

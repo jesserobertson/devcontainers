@@ -1,0 +1,7 @@
+{
+  "id": "pytorch",
+  "version": "1.0.0",
+  "name": "PyTorch (CUDA)",
+  "description": "Installs PyTorch with CUDA 12.4 support and Marimo via pixi. Requires base-cuda image. Provides a default pixi.toml if the workspace doesn't already have one.",
+  "options": {}
+}

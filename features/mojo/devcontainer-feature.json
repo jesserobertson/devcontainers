@@ -1,0 +1,7 @@
+{
+  "id": "mojo",
+  "version": "1.0.0",
+  "name": "Mojo / Modular MAX",
+  "description": "Installs Modular MAX (Mojo) nightly via pixi. Requires base-cuda image. Provides a default pixi.toml if the workspace doesn't already have one.",
+  "options": {}
+}

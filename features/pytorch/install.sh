@@ -1,3 +1,10 @@
+#!/bin/bash
+set -e
+
+MANIFEST="/workspace/pixi.toml"
+
+if [ ! -f "$MANIFEST" ]; then
+    cat > "$MANIFEST" << 'TOML'
 [workspace]
 channels = ["pytorch", "nvidia", "conda-forge"]
 name = "pytorch"
@@ -16,3 +23,7 @@ pytorch = ">=2.0"
 torchvision = "*"
 pytorch-cuda = "12.4.*"
 marimo = ">=0.21.1,<0.22"
+TOML
+fi
+
+pixi install --manifest-path "$MANIFEST"
