@@ -13,28 +13,18 @@ Base images and composable devcontainer features for Python development, publish
 
 Composable features that install on top of a base image at container creation time. Combine freely.
 
-### ML / GPU
+| Feature | Use | Stack | Description |
+|---------|-----|-------|-------------|
+| `…/rapids:latest` | ML | base-cuda | GPU DataFrames and array computing — cuDF, Polars GPU |
+| `…/jax:latest` | ML | base-cuda | Accelerated numerical computing — JAX (CUDA 12), Marimo |
+| `…/pytorch:latest` | ML | base-cuda | Deep learning — PyTorch (CUDA 12.4), Torchvision, Marimo |
+| `…/mojo:latest` | ML | base-cuda | Systems AI programming — Modular MAX / Mojo (nightly) |
+| `…/marimo:latest` | Data | base-ubuntu / base-cuda | Reactive notebooks and visualisation — Marimo, Altair, vega_datasets |
+| `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
+| `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
+| `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings |
 
-| Feature | Stack |
-|---------|-------|
-| `ghcr.io/jesserobertson/devcontainer-features/rapids:latest` | cuDF, JAX (CUDA 12), Polars GPU, Marimo |
-| `ghcr.io/jesserobertson/devcontainer-features/mojo:latest` | Modular MAX / Mojo (nightly) |
-| `ghcr.io/jesserobertson/devcontainer-features/jax:latest` | JAX (CUDA 12), Marimo |
-| `ghcr.io/jesserobertson/devcontainer-features/pytorch:latest` | PyTorch (CUDA 12.4), Torchvision, Marimo |
-
-### Web / data
-
-| Feature | Stack |
-|---------|-------|
-| `ghcr.io/jesserobertson/devcontainer-features/marimo:latest` | Marimo notebook server, Altair, vega_datasets |
-| `ghcr.io/jesserobertson/devcontainer-features/fastapi:latest` | FastAPI, Pydantic, Uvicorn, httpx |
-| `ghcr.io/jesserobertson/devcontainer-features/cli:latest` | Typer, Rich, Pydantic, pydantic-settings |
-
-### Dev tooling
-
-| Feature | Stack |
-|---------|-------|
-| `ghcr.io/jesserobertson/devcontainer-features/py-devtools:latest` | ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings |
+All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainer-features`.
 
 ## Using features in a project
 
