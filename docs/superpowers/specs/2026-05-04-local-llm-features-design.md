@@ -47,7 +47,7 @@ Client-side only. Works on either base image. Assumes a ramalama service is alre
 **Installs (via pixi, conda-forge):**
 - `openai` — OpenAI-compatible REST client for talking to the ramalama service
 
-**Options and env vars** (written from `install.sh` to both `/etc/profile.d/ramalama.sh` for bash and `/root/.config/fish/conf.d/ramalama.fish` for fish — the base image defaults to fish shell):
+**Options and env vars** (written to `/etc/profile.d/ramalama.sh` from `install.sh` — bash is sufficient for ramalama client use):
 
 | Option | Default | Env var(s) written | Notes |
 |--------|---------|-------------------|-------|
