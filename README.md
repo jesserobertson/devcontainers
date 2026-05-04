@@ -23,8 +23,11 @@ Composable features that install on top of a base image at container creation ti
 | `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
 | `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
 | `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings |
+| `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
+| `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
+| `…/ramalama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for a ramalama service |
 
-All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainer-features`.
+All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainers`.
 
 ## Using features in a project
 
@@ -45,14 +48,15 @@ my-project/
   "image": "ghcr.io/jesserobertson/base-cuda:latest",
   "workspaceFolder": "/workspace",
   "features": {
-    "ghcr.io/jesserobertson/devcontainer-features/rapids:latest": {},
-    "ghcr.io/jesserobertson/devcontainer-features/py-devtools:latest": {}
+    "ghcr.io/jesserobertson/devcontainers/rapids:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
   },
   "runArgs": ["--gpus", "all"],
   "mounts": [
     "source=my-project-pixi-cache,target=/root/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
+  "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
   "remoteUser": "root"
 }
 ```
@@ -65,13 +69,14 @@ my-project/
   "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
   "workspaceFolder": "/workspace",
   "features": {
-    "ghcr.io/jesserobertson/devcontainer-features/fastapi:latest": {},
-    "ghcr.io/jesserobertson/devcontainer-features/py-devtools:latest": {}
+    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
   },
   "mounts": [
     "source=my-project-pixi-cache,target=/root/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
+  "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
   "remoteUser": "root"
 }
 ```
@@ -102,10 +107,55 @@ fastapi = ">=0.110"
 sqlalchemy = ">=2.0"
 ```
 
+## Local LLM (ramalama)
+
+Run CUDA-accelerated local models on your Windows host via Docker Desktop and connect from any devcontainer.
+
+### 1. Start the host service
+
+```bash
+cd host-services/ramalama
+cp .env.example .env        # edit RAMALAMA_MODEL if desired
+docker compose up -d
+```
+
+See `host-services/ramalama/README.md` for prerequisites (NVIDIA Container Toolkit) and model management commands.
+
+### 2. Add the feature to your devcontainer
+
+```json
+{
+  "image": "ghcr.io/jesserobertson/base-cuda:latest",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/huggingface:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/transformers:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/ramalama:latest": {
+      "model": "ollama://llama3.2",
+      "contextSize": "8192"
+    }
+  },
+  "runArgs": ["--gpus", "all"]
+}
+```
+
+Inside the container, `OPENAI_BASE_URL` and `RAMALAMA_MODEL` are set automatically. Use the `openai` client to talk to ramalama:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI()  # picks up OPENAI_BASE_URL and OPENAI_API_KEY from env
+response = client.chat.completions.create(
+    model=os.environ["RAMALAMA_MODEL"],
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+```
+
 ## Adding a new feature
 
 1. Create `features/<name>/devcontainer-feature.json` and `features/<name>/install.sh`
-2. Push to `main` — the publish workflow publishes `ghcr.io/jesserobertson/devcontainer-features/<name>:latest` automatically
+2. Push to `main` — the publish workflow publishes `ghcr.io/jesserobertson/devcontainers/<name>:latest` automatically
 
 ## Repo structure
 
