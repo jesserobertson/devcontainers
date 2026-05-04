@@ -1,0 +1,18 @@
+services:
+  ramalama:
+    image: quay.io/ramalama/cuda:${RAMALAMA_VERSION:-latest}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "${RAMALAMA_PORT:-8080}:8080"
+    volumes:
+      - ramalama-models:/root/.local/share/ramalama
+    command: serve ${RAMALAMA_MODEL:-ollama://llama3.2} --port 8080
+
+volumes:
+  ramalama-models:
