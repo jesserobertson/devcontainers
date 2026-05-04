@@ -1,0 +1,7 @@
+{
+  "id": "transformers",
+  "version": "1.0.0",
+  "name": "HuggingFace Transformers",
+  "description": "Installs transformers, datasets, accelerate, and tokenizers via pixi. CUDA-recommended (base-cuda); works CPU-only on base-ubuntu. Add the huggingface feature alongside for hub CLI and HF_HOME config.",
+  "options": {}
+}
