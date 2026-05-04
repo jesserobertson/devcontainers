@@ -1,0 +1,10 @@
+{
+  "id": "huggingface",
+  "version": "1.0.0",
+  "name": "HuggingFace Hub",
+  "description": "Installs huggingface_hub and tokenizers via pixi. Sets HF_HOME to /workspace/.cache/huggingface. Works on base-ubuntu or base-cuda.",
+  "options": {},
+  "containerEnv": {
+    "HF_HOME": "/workspace/.cache/huggingface"
+  }
+}
