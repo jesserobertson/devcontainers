@@ -123,6 +123,8 @@ See `host-services/ramalama/README.md` for prerequisites (NVIDIA Container Toolk
 
 ### 2. Add the feature to your devcontainer
 
+Use `base-cuda` if you also want the `transformers` feature for Python-side inference. `base-ubuntu` is sufficient for the `ramalama` client alone.
+
 ```json
 {
   "image": "ghcr.io/jesserobertson/base-cuda:latest",

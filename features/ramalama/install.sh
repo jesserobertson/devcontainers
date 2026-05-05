@@ -18,4 +18,4 @@ export OPENAI_API_KEY="${APIKEY}"
 export RAMALAMA_CONTEXT_SIZE="${CONTEXTSIZE}"
 EOF
 
-chmod +x /etc/profile.d/ramalama.sh
+chmod 644 /etc/profile.d/ramalama.sh
