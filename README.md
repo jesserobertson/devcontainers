@@ -170,6 +170,9 @@ features/
   fastapi/                   ← Web: FastAPI + Pydantic + Uvicorn
   cli/                       ← CLI: Typer + Rich + Pydantic
   py-devtools/               ← Dev: ruff, mypy, pytest, mkdocs
+  huggingface/               ← ML: huggingface_hub, tokenizers
+  transformers/              ← ML: transformers, datasets, accelerate
+  ramalama/                  ← ML: OpenAI-compatible ramalama client
 .github/workflows/
   build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes
   publish-features.yml       ← publishes features via devcontainers/action on features/** changes
