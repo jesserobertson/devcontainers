@@ -8,6 +8,7 @@ Base images and composable devcontainer features for Python development, publish
 |-------|------|---------|
 | `ghcr.io/jesserobertson/base-ubuntu:latest` | `ubuntu:24.04` | CPU-only projects |
 | `ghcr.io/jesserobertson/base-cuda:latest` | `nvidia/cuda:12.8.0-devel-ubuntu24.04` | GPU projects (rapids, jax, mojo, pytorch) |
+| `ghcr.io/jesserobertson/ramalama:latest` | `base-cuda` | Local LLM sidecar — ramalama + llama.cpp with CUDA |
 
 ## Features
 
@@ -163,6 +164,7 @@ print(response.choices[0].message.content)
 
 ```
 base/Dockerfile              ← ARG BASE_IMAGE; installs brew, pixi, dotfiles
+ramalama/Dockerfile          ← local LLM sidecar image (FROM base-cuda + ramalama + llama.cpp)
 features/
   rapids/                    ← ML: cuDF, JAX, Polars GPU, Marimo
   mojo/                      ← ML: Modular MAX / Mojo
@@ -177,5 +179,6 @@ features/
   ramalama/                  ← ML: OpenAI-compatible ramalama client
 .github/workflows/
   build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes
+  build-ramalama.yml         ← builds ramalama image on ramalama/Dockerfile changes
   publish-features.yml       ← publishes features via devcontainers/action on features/** changes
 ```
