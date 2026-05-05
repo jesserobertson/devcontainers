@@ -1,0 +1,54 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - features/**
+      - examples/**
+      - host-services/**
+      - tests/**
+      - pyproject.toml
+      - .github/workflows/test.yml
+  pull_request:
+    paths:
+      - features/**
+      - examples/**
+      - tests/**
+
+jobs:
+  static:
+    name: Static validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml
+      - run: pytest tests/test_static.py -v
+
+  feature-tests:
+    name: Feature unit tests
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: pytest tests/features/ -v
+
+  integration-cpu:
+    name: Integration (CPU)
+    runs-on: ubuntu-latest
+    needs: feature-tests
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      # GPU tests are automatically skipped — no --gpu flag
+      - run: pytest tests/integration/ -v
