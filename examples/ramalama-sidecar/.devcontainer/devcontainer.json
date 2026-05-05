@@ -1,0 +1,19 @@
+{
+  "name": "my-project",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/huggingface:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/transformers:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/ramalama:latest": {
+      "host": "ramalama",
+      "port": "8080",
+      "model": "ollama://llama3.2"
+    },
+    "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
+  },
+  "postCreateCommand": "pixi install",
+  "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
+  "remoteUser": "root"
+}
