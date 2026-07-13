@@ -36,7 +36,4 @@ RUN chsh -s /home/linuxbrew/.linuxbrew/bin/fish root && \
     > /root/.config/fish/conf.d/project-pixi.fish && \
     echo 'eval "$(pixi shell-hook --manifest-path /workspace/pixi.toml --shell bash)"' >> /root/.bashrc
 
-HEALTHCHECK --interval=5s --timeout=5s --start-period=10s --retries=3 \
-  CMD bash -c 'exit 0'
-
 WORKDIR /workspace

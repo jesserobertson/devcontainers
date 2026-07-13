@@ -28,7 +28,13 @@ def test_feature_json_id_matches_dir(feature):
 @pytest.mark.parametrize("feature", FEATURES)
 def test_install_sh_syntax(feature):
     script = REPO_ROOT / "features" / feature / "install.sh"
-    result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    # Pipe via stdin to avoid Windows path issues with Git Bash
+    result = subprocess.run(
+        ["bash", "-n", "-"],
+        input=script.read_text(encoding="utf-8"),
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0, result.stderr
 
 
