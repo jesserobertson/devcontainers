@@ -1,5 +1,5 @@
 #!/bin/bash
 set -e
 
-pixi global install --environment dev --channel conda-forge \
-    huggingface_hub tokenizers
+su dev -c 'pixi global install --environment dev --channel conda-forge \
+    huggingface_hub tokenizers'

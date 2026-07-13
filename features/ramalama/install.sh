@@ -7,7 +7,7 @@ MODEL="${MODEL:-ollama://llama3.2}"
 APIKEY="${APIKEY:-ramalama}"
 CONTEXTSIZE="${CONTEXTSIZE:-4096}"
 
-pixi global install --environment dev --channel conda-forge openai
+su dev -c 'pixi global install --environment dev --channel conda-forge openai'
 
 cat > /etc/profile.d/ramalama.sh <<EOF
 export RAMALAMA_HOST="${HOST}"

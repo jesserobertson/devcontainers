@@ -8,7 +8,15 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
-FEATURES = ["huggingface", "transformers", "ramalama"]
+FEATURES = [
+    "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
+    "cli", "py-devtools", "huggingface", "transformers", "ramalama",
+]
+
+SU_DEV_FEATURES = [
+    "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
+    "cli", "py-devtools", "huggingface", "transformers", "ramalama",
+]
 
 
 # --- per-feature parametrised checks ---
@@ -36,6 +44,14 @@ def test_install_sh_syntax(feature):
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("feature", SU_DEV_FEATURES)
+def test_pixi_calls_run_as_dev(feature):
+    script = REPO_ROOT / "features" / feature / "install.sh"
+    for line in script.read_text().splitlines():
+        if "pixi global install" in line or ".pixi/envs/dev/bin/pip" in line:
+            assert "su dev -c" in line, f"{feature}: not run via su dev -c: {line!r}"
 
 
 # --- huggingface ---
