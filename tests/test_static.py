@@ -152,6 +152,13 @@ def test_dockerfile_pixi_envs_owned_by_dev():
     assert "chown dev:dev /opt/pixi-envs" in _dockerfile_text()
 
 
+# --- ramalama Dockerfile ---
+
+def test_ramalama_dockerfile_explicit_root():
+    content = (REPO_ROOT / "ramalama" / "Dockerfile").read_text()
+    assert "USER root" in content
+
+
 # --- helpers ---
 
 def _feature_json(feature: str) -> dict:
