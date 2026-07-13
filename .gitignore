@@ -23,3 +23,6 @@ pixi.lock
 
 # Claude Code local settings (per-developer, not shared)
 .claude/settings.local.json
+
+# Local git worktrees (scratch, not shared)
+.worktrees/
