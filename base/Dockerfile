@@ -13,6 +13,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # features/claude-agent for the one narrowly-scoped exception it adds for
 # itself, nothing else.
 RUN useradd -m -s /bin/bash dev
+
+# Homebrew's Linux installer always installs to the hardcoded prefix
+# /home/linuxbrew/.linuxbrew regardless of which user runs it. That
+# directory no longer matches dev's home (/home/dev), and /home itself is
+# root-owned, so pre-create it and hand ownership to dev before running the
+# installer as dev - without this, the installer would need sudo to create
+# it, which dev intentionally does not have.
+RUN mkdir -p /home/linuxbrew && chown dev:dev /home/linuxbrew
 RUN su dev -c 'NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
 
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH"
