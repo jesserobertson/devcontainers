@@ -93,12 +93,33 @@ unreachable and `https://api.github.com/zen` is reachable; exits non-zero on eit
 failure so a broken firewall fails loudly rather than silently allowing everything or
 blocking everything).
 
-**`vibe`** wrapper script (run interactively as `dev`, no sudo available or needed):
+`init-firewall.sh` finishes (after its self-test passes) by touching a world-readable
+marker file, `install -m 644 /dev/null /run/firewall-armed` equivalent
+(`touch /run/firewall-armed && chmod 644 /run/firewall-armed`), so its armed/not-armed
+state can be checked without needing `NET_ADMIN`/root privileges to query iptables directly.
+
+**Sudo exception:** whether `postStartCommand` actually runs as `containerUser` (root) or
+`remoteUser` is ambiguous in the devcontainer spec text, and Anthropic's own reference
+`devcontainer.json` hedges against that ambiguity by explicitly running
+`"postStartCommand": "sudo /usr/local/bin/init-firewall.sh"` — implying it cannot be
+assumed to run as root. So `install.sh` adds one narrowly-scoped sudoers.d rule:
+
+```
+dev ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh
+```
+
+This is the *only* sudo access `dev` ever gets, added by the `claude-agent` feature
+specifically (not a blanket grant) — it does not weaken the Phase 1 rule that the base
+image itself ships with zero passwordless sudo. `install.sh` also sets `init-firewall.sh`
+to root-owned, mode `0700`, so it cannot be edited or replaced by `dev` before being
+sudo-run.
+
+**`vibe`** wrapper script (run interactively as `dev`):
 
 ```bash
 #!/bin/bash
 set -e
-if ! iptables -L OUTPUT -n 2>/dev/null | grep -q "REJECT"; then
+if [ ! -f /run/firewall-armed ]; then
     echo "error: egress firewall is not armed — refusing to run in auto mode" >&2
     exit 1
 fi
@@ -113,7 +134,7 @@ one-word opt-in to unattended mode, and it refuses to start if the firewall didn
 ```json
 {
   "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
-  "postStartCommand": "/usr/local/bin/init-firewall.sh",
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
   "waitFor": "postStartCommand",
   "remoteUser": "dev",
   "mounts": [
@@ -123,11 +144,8 @@ one-word opt-in to unattended mode, and it refuses to start if the firewall didn
 }
 ```
 
-`postStartCommand` runs as `containerUser` (root, the image default before any
-`remoteUser` override applies to lifecycle commands), so no sudo is needed to arm the
-firewall — this is the mechanism replacing the sudo access that Phase 1 removed. The two
-named volumes persist Claude's config and shell history across container rebuilds,
-matching the upstream reference pattern.
+The two named volumes persist Claude's config and shell history across container
+rebuilds, matching the upstream reference pattern.
 
 ## kidinnu wiring
 
