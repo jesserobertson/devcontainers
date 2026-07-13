@@ -113,6 +113,29 @@ def test_host_services_model_volume():
     assert any("/root/.local/share/ramalama" in str(v) for v in volumes)
 
 
+# --- base Dockerfile ---
+
+def _dockerfile_text() -> str:
+    return (REPO_ROOT / "base" / "Dockerfile").read_text()
+
+
+def test_dockerfile_creates_dev_user():
+    assert "useradd -m -s /bin/bash dev" in _dockerfile_text()
+
+
+def test_dockerfile_no_passwordless_sudo():
+    assert "NOPASSWD" not in _dockerfile_text()
+
+
+def test_dockerfile_ends_as_dev_user():
+    lines = [l for l in _dockerfile_text().splitlines() if l.strip()]
+    assert lines[-1].strip() == "USER dev"
+
+
+def test_dockerfile_pixi_envs_owned_by_dev():
+    assert "chown dev:dev /opt/pixi-envs" in _dockerfile_text()
+
+
 # --- helpers ---
 
 def _feature_json(feature: str) -> dict:
