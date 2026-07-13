@@ -95,6 +95,19 @@ def test_ramalama_no_container_env():
     assert "containerEnv" not in _feature_json("ramalama")
 
 
+# --- example devcontainer configs ---
+
+def test_ramalama_sidecar_example_remote_user_dev():
+    data = _devcontainer_json("examples/ramalama-sidecar/.devcontainer/devcontainer.json")
+    assert data["remoteUser"] == "dev"
+
+
+def test_readme_no_root_remote_user():
+    content = (REPO_ROOT / "README.md").read_text()
+    assert '"remoteUser": "root"' not in content
+    assert "/root/.cache/pixi" not in content
+
+
 # --- compose YAML ---
 
 @pytest.mark.parametrize("rel_path", [
@@ -164,6 +177,10 @@ def test_ramalama_dockerfile_explicit_root():
 def _feature_json(feature: str) -> dict:
     path = REPO_ROOT / "features" / feature / "devcontainer-feature.json"
     return json.loads(path.read_text())
+
+
+def _devcontainer_json(rel_path: str) -> dict:
+    return json.loads((REPO_ROOT / rel_path).read_text())
 
 
 def _yaml(rel_path: str) -> dict:

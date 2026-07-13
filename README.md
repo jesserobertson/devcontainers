@@ -54,11 +54,11 @@ my-project/
   },
   "runArgs": ["--gpus", "all"],
   "mounts": [
-    "source=my-project-pixi-cache,target=/root/.cache/pixi,type=volume"
+    "source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
   "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
-  "remoteUser": "root"
+  "remoteUser": "dev"
 }
 ```
 
@@ -74,11 +74,11 @@ my-project/
     "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
   },
   "mounts": [
-    "source=my-project-pixi-cache,target=/root/.cache/pixi,type=volume"
+    "source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
   "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
-  "remoteUser": "root"
+  "remoteUser": "dev"
 }
 ```
 
