@@ -50,7 +50,7 @@ def test_install_sh_syntax(feature):
 def test_pixi_calls_run_as_dev(feature):
     script = REPO_ROOT / "features" / feature / "install.sh"
     for line in script.read_text().splitlines():
-        if "pixi global install" in line or ".pixi/envs/dev/bin/pip" in line:
+        if "pixi global install" in line or "envs/dev/bin/pip" in line:
             assert "su dev -c" in line, f"{feature}: not run via su dev -c: {line!r}"
 
 
