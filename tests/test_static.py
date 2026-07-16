@@ -132,6 +132,10 @@ def test_readme_no_root_remote_user():
     assert "/root/.cache/pixi" not in content
 
 
+def test_readme_documents_claude_agent():
+    assert "claude-agent" in (REPO_ROOT / "README.md").read_text()
+
+
 # --- compose YAML ---
 
 @pytest.mark.parametrize("rel_path", [

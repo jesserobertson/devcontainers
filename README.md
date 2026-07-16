@@ -27,6 +27,7 @@ Composable features that install on top of a base image at container creation ti
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
 | `…/ramalama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for a ramalama service |
+| `…/claude-agent:latest` | Agent | base-ubuntu / base-cuda | Contained Claude Code — native `claude` CLI, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
 
 All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainers`.
 
@@ -155,6 +156,34 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
+## Contained auto mode (claude-agent)
+
+The `claude-agent` feature installs Claude Code plus an egress-allowlist firewall, so
+unattended sessions (`--dangerously-skip-permissions`) have the container itself — not
+model judgment — as the safety boundary. See
+[Anthropic's containment writeup](https://www.anthropic.com/engineering/how-we-contain-claude)
+for the reasoning.
+
+```json
+{
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/claude-agent:latest": {}
+  },
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "waitFor": "postStartCommand",
+  "remoteUser": "dev"
+}
+```
+
+- `claude` — normal Claude Code, with approval prompts, same as anywhere else.
+- `vibe` — the opt-in unattended entrypoint (`claude --dangerously-skip-permissions`).
+  Refuses to start unless the egress firewall actually armed on container start.
+- Network egress is default-DROP, allowlisting only GitHub, `api.anthropic.com`,
+  `claude.ai`, and the PyPI/conda-forge package hosts.
+- `dev` has no sudo access anywhere in this image except one scoped rule this feature
+  adds for itself: `/usr/local/bin/init-firewall.sh`, nothing else.
+
 ## Adding a new feature
 
 1. Create `features/<name>/devcontainer-feature.json` and `features/<name>/install.sh`
@@ -177,6 +206,7 @@ features/
   huggingface/               ← ML: huggingface_hub, tokenizers
   transformers/              ← ML: transformers, datasets, accelerate
   ramalama/                  ← ML: OpenAI-compatible ramalama client
+  claude-agent/              ← Agent: contained Claude Code (firewall + vibe auto-mode wrapper)
 .github/workflows/
   build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes
   build-ramalama.yml         ← builds ramalama image on ramalama/Dockerfile changes
