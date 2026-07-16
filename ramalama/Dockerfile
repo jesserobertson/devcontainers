@@ -1,5 +1,10 @@
 FROM ghcr.io/jesserobertson/base-cuda:latest
 
+# This sidecar is an inference server, not an agent-execution context, so
+# it intentionally stays root rather than picking up base-cuda's non-root
+# default user.
+USER root
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y python3-pip
