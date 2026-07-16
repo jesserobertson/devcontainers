@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).parent.parent
 FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ramalama",
+    "claude-agent",
 ]
 
 SU_DEV_FEATURES = [
@@ -36,12 +37,16 @@ def test_feature_json_id_matches_dir(feature):
 @pytest.mark.parametrize("feature", FEATURES)
 def test_install_sh_syntax(feature):
     script = REPO_ROOT / "features" / feature / "install.sh"
-    # Pipe via stdin to avoid Windows path issues with Git Bash
+    # Pipe via stdin (as raw bytes, not text=True) to avoid Windows path issues
+    # with Git Bash. Using text=True here would make Python's subprocess pipe
+    # translate '\n' to '\r\n' on write, turning line-ending reserved words
+    # like 'do'/'then' into the literal token 'do\r', which bash's parser
+    # doesn't recognize — desyncing block nesting and surfacing as a bogus
+    # "unexpected token" error further down the script.
     result = subprocess.run(
         ["bash", "-n", "-"],
-        input=script.read_text(encoding="utf-8"),
+        input=script.read_bytes(),
         capture_output=True,
-        text=True,
     )
     assert result.returncode == 0, result.stderr
 
@@ -93,6 +98,25 @@ def test_ramalama_option_default(option, expected):
 
 def test_ramalama_no_container_env():
     assert "containerEnv" not in _feature_json("ramalama")
+
+
+# --- claude-agent ---
+
+@pytest.mark.parametrize("script", ["init-firewall.sh", "vibe"])
+def test_claude_agent_script_syntax(script):
+    path = REPO_ROOT / "features" / "claude-agent" / script
+    # See test_install_sh_syntax above: bytes, not text=True, to dodge
+    # Windows' \n -> \r\n pipe translation corrupting reserved-word tokens.
+    result = subprocess.run(
+        ["bash", "-n", "-"],
+        input=path.read_bytes(),
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_claude_agent_no_options():
+    assert _feature_json("claude-agent").get("options", {}) == {}
 
 
 # --- example devcontainer configs ---

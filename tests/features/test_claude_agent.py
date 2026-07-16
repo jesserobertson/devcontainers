@@ -1,0 +1,152 @@
+"""Docker tests for the claude-agent feature: install.sh side effects and a live firewall exercise."""
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).parent.parent.parent
+FEATURE_DIR = REPO_ROOT / "features" / "claude-agent"
+
+CURL_STUB = """#!/bin/bash
+if [[ "$*" == *claude.ai/install.sh* ]]; then
+    echo 'mkdir -p ~/.local/bin && touch ~/.local/bin/claude && chmod +x ~/.local/bin/claude'
+fi
+"""
+
+
+# ---------------------------------------------------------------------------
+# install.sh side effects (stubbed curl, no real network)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def installed_container(tmp_path_factory):
+    cid = subprocess.check_output(
+        ["docker", "run", "-d", "ubuntu:24.04", "sleep", "infinity"], text=True
+    ).strip()
+    try:
+        _prepare(cid, tmp_path_factory.mktemp("claude-agent-stub"))
+        subprocess.run(
+            ["docker", "exec", cid, "bash", "/tmp/claude-agent/install.sh"],
+            check=True,
+        )
+        yield cid
+    finally:
+        subprocess.run(["docker", "rm", "-f", cid], capture_output=True)
+
+
+def test_init_firewall_installed_root_only(installed_container):
+    assert _stat(installed_container, "/usr/local/bin/init-firewall.sh") == "700 root root"
+
+
+def test_vibe_installed_executable_by_dev(installed_container):
+    assert _stat(installed_container, "/home/dev/.local/bin/vibe") == "755 dev dev"
+
+
+def test_vibe_execs_claude_with_skip_permissions(installed_container):
+    content = _exec(installed_container, "cat /home/dev/.local/bin/vibe")
+    assert "--dangerously-skip-permissions" in content
+
+
+def test_sudoers_rule_scoped_to_firewall_script(installed_container):
+    content = _exec(installed_container, "cat /etc/sudoers.d/claude-agent")
+    assert content.strip() == "dev ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh"
+
+
+def test_sudoers_file_permissions(installed_container):
+    assert _stat(installed_container, "/etc/sudoers.d/claude-agent") == "440 root root"
+
+
+def test_claude_installed_for_dev_user(installed_container):
+    result = subprocess.run(
+        ["docker", "exec", installed_container, "test", "-f", "/home/dev/.local/bin/claude"],
+        capture_output=True,
+    )
+    assert result.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# Live firewall exercise: does it actually block/allow the right hosts?
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def firewalled_container():
+    cid = subprocess.check_output(
+        ["docker", "run", "-d", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW",
+         "ubuntu:24.04", "sleep", "infinity"],
+        text=True,
+    ).strip()
+    try:
+        subprocess.run(
+            ["docker", "exec", cid, "bash", "-c",
+             "apt-get update && apt-get install -y iptables ipset dnsutils jq aggregate iproute2 curl"],
+            check=True,
+        )
+        subprocess.run(
+            ["docker", "cp", str(FEATURE_DIR / "init-firewall.sh"),
+             f"{cid}:/usr/local/bin/init-firewall.sh"],
+            check=True,
+        )
+        subprocess.run(["docker", "exec", cid, "chmod", "+x", "/usr/local/bin/init-firewall.sh"], check=True)
+        subprocess.run(["docker", "exec", cid, "/usr/local/bin/init-firewall.sh"], check=True)
+        yield cid
+    finally:
+        subprocess.run(["docker", "rm", "-f", cid], capture_output=True)
+
+
+def test_firewall_blocks_non_allowlisted_host(firewalled_container):
+    result = subprocess.run(
+        ["docker", "exec", firewalled_container, "curl", "--connect-timeout", "5", "https://example.com"],
+        capture_output=True,
+    )
+    assert result.returncode != 0
+
+
+def test_firewall_allows_github(firewalled_container):
+    result = subprocess.run(
+        ["docker", "exec", firewalled_container, "curl", "--connect-timeout", "5", "https://api.github.com/zen"],
+        capture_output=True,
+    )
+    assert result.returncode == 0
+
+
+def test_firewall_armed_marker_written(firewalled_container):
+    result = subprocess.run(
+        ["docker", "exec", firewalled_container, "test", "-f", "/run/firewall-armed"],
+        capture_output=True,
+    )
+    assert result.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _prepare(cid: str, tmp_path: Path) -> None:
+    """Create the dev user, stub curl for the claude.ai installer, copy the feature in."""
+    subprocess.run(["docker", "exec", cid, "useradd", "-m", "-s", "/bin/bash", "dev"], check=True)
+
+    stub = tmp_path / "curl"
+    # newline="\n" forces LF-only output: on Windows, write_text()'s default
+    # universal-newline translation would turn the shebang line into
+    # "#!/bin/bash\r\n", and Linux refuses to exec a script whose shebang
+    # ends in \r ("cannot execute: required file not found").
+    stub.write_text(CURL_STUB, newline="\n")
+    stub.chmod(0o755)
+    subprocess.run(["docker", "cp", str(stub), f"{cid}:/usr/local/bin/curl"], check=True)
+
+    subprocess.run(["docker", "exec", cid, "mkdir", "-p", "/tmp/claude-agent"], check=True)
+    for name in ("install.sh", "init-firewall.sh", "vibe", "devcontainer-feature.json"):
+        subprocess.run(
+            ["docker", "cp", str(FEATURE_DIR / name), f"{cid}:/tmp/claude-agent/{name}"],
+            check=True,
+        )
+    subprocess.run(["docker", "exec", cid, "chmod", "+x", "/tmp/claude-agent/install.sh"], check=True)
+
+
+def _exec(cid: str, cmd: str) -> str:
+    return subprocess.check_output(["docker", "exec", cid, "bash", "-c", cmd], text=True).strip()
+
+
+def _stat(cid: str, path: str) -> str:
+    return _exec(cid, f"stat -c '%a %U %G' {path}")
