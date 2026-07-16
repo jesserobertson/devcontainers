@@ -5,7 +5,16 @@ IFS=$'\n\t'
 # 1. Extract Docker DNS info BEFORE any flushing
 DOCKER_DNS_RULES=$(iptables-save -t nat | grep "127\.0\.0\.11" || true)
 
-# Flush existing rules and delete existing ipsets
+# Flush existing rules and delete existing ipsets. `-F` only clears rules,
+# not the chain's default policy — on a second run (e.g. a container restart
+# re-running postStartCommand), the previous run's `-P OUTPUT DROP` would
+# otherwise stay in effect through the rest of this script, silently
+# blocking the DNS/curl calls below that this script itself needs to
+# rebuild the allowlist, hanging until they time out. Reset to ACCEPT first
+# so this script's own setup traffic is never at the mercy of a prior run.
+iptables -P INPUT ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD ACCEPT
 iptables -F
 iptables -X
 iptables -t nat -F

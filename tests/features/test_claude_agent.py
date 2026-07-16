@@ -118,6 +118,32 @@ def test_firewall_armed_marker_written(firewalled_container):
     assert result.returncode == 0
 
 
+def test_firewall_survives_a_second_run(firewalled_container):
+    """A container restart re-runs postStartCommand, so init-firewall.sh must be
+    safely re-runnable. `iptables -F` clears rules but not a chain's default
+    policy — without resetting policies to ACCEPT first, a second run inherits
+    the first run's OUTPUT DROP policy and hangs on its own DNS/curl setup
+    calls before the new ALLOW rules are back in place."""
+    result = subprocess.run(
+        ["docker", "exec", firewalled_container, "/usr/local/bin/init-firewall.sh"],
+        capture_output=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+
+    blocked = subprocess.run(
+        ["docker", "exec", firewalled_container, "curl", "--connect-timeout", "5", "https://example.com"],
+        capture_output=True,
+    )
+    assert blocked.returncode != 0
+
+    allowed = subprocess.run(
+        ["docker", "exec", firewalled_container, "curl", "--connect-timeout", "5", "https://api.github.com/zen"],
+        capture_output=True,
+    )
+    assert allowed.returncode == 0
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
