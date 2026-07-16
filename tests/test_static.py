@@ -126,6 +126,26 @@ def test_ramalama_sidecar_example_remote_user_dev():
     assert data["remoteUser"] == "dev"
 
 
+def test_claude_agent_consumer_declares_net_caps():
+    # Any devcontainer.json under examples/ that references the claude-agent feature
+    # must declare both NET_ADMIN and NET_RAW in runArgs, or init-firewall.sh fails at
+    # container start (iptables/ipset need those caps). No example currently uses
+    # claude-agent, so `referencing` is expected to be empty here — the loop below
+    # then does nothing and the test passes, which is a legitimate pass (nothing to
+    # violate the invariant), not a false negative from a skipped/uncollected test.
+    referencing = [
+        p for p in sorted((REPO_ROOT / "examples").glob("**/devcontainer.json"))
+        if "ghcr.io/jesserobertson/devcontainers/claude-agent" in json.dumps(
+            json.loads(p.read_text()).get("features", {})
+        )
+    ]
+    for path in referencing:
+        run_args = json.loads(path.read_text()).get("runArgs", [])
+        rel = path.relative_to(REPO_ROOT)
+        assert "--cap-add=NET_ADMIN" in run_args, f"{rel}: missing NET_ADMIN in runArgs"
+        assert "--cap-add=NET_RAW" in run_args, f"{rel}: missing NET_RAW in runArgs"
+
+
 def test_readme_no_root_remote_user():
     content = (REPO_ROOT / "README.md").read_text()
     assert '"remoteUser": "root"' not in content

@@ -56,6 +56,11 @@ if ! echo "$gh_ranges" | jq -e '.web and .api and .git' >/dev/null; then
 fi
 echo "Processing GitHub IPs..."
 while read -r cidr; do
+    # IPv4-only by design: `ipset create allowed-domains hash:net` above is an IPv4
+    # set, and this regex deliberately rejects anything else. If GitHub's /meta
+    # response ever surfaces an IPv6 range that survives `aggregate -q`, this exits 1
+    # and the firewall never arms — fail-closed and safe, just an availability risk
+    # to be aware of, not a bug to "fix" by relaxing the pattern.
     if [[ ! "$cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
         echo "ERROR: Invalid CIDR range from GitHub meta: $cidr"
         exit 1

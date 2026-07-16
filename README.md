@@ -184,6 +184,13 @@ for the reasoning.
 - `dev` has no sudo access anywhere in this image except one scoped rule this feature
   adds for itself: `/usr/local/bin/init-firewall.sh`, nothing else.
 
+**Residual gap:** the firewall allows UDP/53 to any destination (not just the Docker
+embedded resolver) and the Docker host's local `/24` subnet, so it narrows egress rather
+than fully sealing it — a compromised agent could in principle exfiltrate data via DNS
+queries to an attacker-controlled nameserver, or reach other containers on the same
+bridge network. This is inherited from Anthropic's reference firewall script, not a
+regression introduced here.
+
 ## Adding a new feature
 
 1. Create `features/<name>/devcontainer-feature.json` and `features/<name>/install.sh`
