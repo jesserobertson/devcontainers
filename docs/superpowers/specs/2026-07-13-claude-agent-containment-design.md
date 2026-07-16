@@ -31,9 +31,9 @@ agent execution environment, so it's out of scope for containment — it keeps r
   full stop. This is a deliberate, repo-wide behavior change (no more ad hoc
   `sudo apt install` from an interactive shell in *any* project using this base image, not
   just agent ones) — the tradeoff accepted in favor of a real containment boundary. Any
-  future privileged one-off setup (e.g. the firewall init in Phase 2) uses the devcontainer
-  spec's `containerUser` (root, for lifecycle commands) vs `remoteUser` (`dev`, for the
-  interactive terminal) split instead of sudo.
+  future privileged one-off setup (e.g. the firewall init in Phase 2) needs its own
+  narrowly-scoped sudoers.d exception for that specific command, added by whichever
+  feature needs it — never a blanket grant.
 - Move pixi config (`detached-environments = "/opt/pixi-envs"`), chezmoi dotfiles apply,
   fish shell hook install, `chsh`, and `git config --global --add safe.directory /workspace`
   from `/root/...` to `/home/dev/...`, each invoked via `su dev -c '...'` (mirrors the
