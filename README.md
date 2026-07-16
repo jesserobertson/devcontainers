@@ -49,6 +49,7 @@ my-project/
   "name": "my-project",
   "image": "ghcr.io/jesserobertson/base-cuda:latest",
   "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "features": {
     "ghcr.io/jesserobertson/devcontainers/rapids:latest": {},
     "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
@@ -70,6 +71,7 @@ my-project/
   "name": "my-project",
   "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
   "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "features": {
     "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {},
     "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
