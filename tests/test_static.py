@@ -209,8 +209,8 @@ def test_dockerfile_ends_as_dev_user():
     assert lines[-1].strip() == "USER dev"
 
 
-def test_dockerfile_pixi_envs_owned_by_dev():
-    assert "chown dev:dev /opt/pixi-envs" in _dockerfile_text()
+def test_dockerfile_sets_pixi_home():
+    assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in _dockerfile_text()
 
 
 # --- ramalama Dockerfile ---

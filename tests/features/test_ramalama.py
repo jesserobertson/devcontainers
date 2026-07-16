@@ -137,12 +137,16 @@ def _start_container() -> str:
 
 
 def _prepare(cid: str) -> None:
-    """Install mock pixi and copy install.sh into the container."""
+    """Create the dev user, install a mock pixi at the path install.sh actually
+    invokes (/home/dev/.local/share/pixi/bin/pixi, fully-qualified since `su dev -c`
+    doesn't inherit PATH — and PIXI_HOME, set explicitly in base/Dockerfile, is
+    where pixi actually installs to), and copy install.sh into the container."""
     subprocess.run(
         ["docker", "exec", cid, "bash", "-c",
-         "mkdir -p /etc/profile.d /usr/local/bin && "
-         "printf '#!/bin/bash\\necho pixi: $@\\n' > /usr/local/bin/pixi && "
-         "chmod +x /usr/local/bin/pixi"],
+         "useradd -m -s /bin/bash dev && "
+         "mkdir -p /etc/profile.d /home/dev/.local/share/pixi/bin && "
+         "printf '#!/bin/bash\\necho pixi: $@\\n' > /home/dev/.local/share/pixi/bin/pixi && "
+         "chmod +x /home/dev/.local/share/pixi/bin/pixi"],
         check=True,
     )
     subprocess.run(

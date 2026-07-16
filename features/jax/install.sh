@@ -1,12 +1,11 @@
 #!/bin/bash
 set -e
 
-# Two different pixi roots below, deliberately: `/home/dev/.pixi/bin/pixi` is the
-# binary's fixed install location, set before this repo's dotfiles apply PIXI_HOME.
-# `/home/dev/.local/share/pixi/envs/dev` is where PIXI_HOME (set by those dotfiles)
-# actually redirects pixi's *environments* at runtime. Making these paths consistent
-# would break installs — verified the hard way in real-container debugging.
-su dev -c '/home/dev/.pixi/bin/pixi global install --environment dev --channel conda-forge \
+# `su dev -c` resets PATH (doesn't inherit the interactive/dotfiles PATH), so pixi
+# and its envs must be invoked by fully-qualified path — both rooted at PIXI_HOME
+# (base/Dockerfile sets it explicitly to /home/dev/.local/share/pixi before installing
+# pixi, matching this repo's dotfiles so no bare ~/.pixi dir is ever created).
+su dev -c '/home/dev/.local/share/pixi/bin/pixi global install --environment dev --channel conda-forge \
     marimo pip'
 
 # jax CUDA 12 variant is only available via PyPI

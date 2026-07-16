@@ -31,22 +31,27 @@ RUN su dev -c 'HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 \
     /home/linuxbrew/.linuxbrew/bin/brew install \
     bat bat-extras eza fd fish fzf jq just neovim ripgrep starship zoxide'
 
+# The devcontainers/dotfiles repo redirects PIXI_HOME to
+# ~/.local/share/pixi (avoiding a bare ~/.pixi dir, same as CARGO_HOME/
+# RUSTUP_HOME) via a regular dotfiles config file - but Docker RUN steps
+# don't source shell profiles, and this repo's own chezmoi apply below
+# runs AFTER the pixi install below anyway. Set it explicitly so pixi's
+# installer places the binary at the same path every other pixi
+# invocation in this image (including every feature's install.sh) will
+# actually look for it, regardless of dotfiles timing.
+ENV PIXI_HOME="/home/dev/.local/share/pixi"
+
 RUN curl -fsSL https://pixi.sh/install.sh | su dev -s /bin/bash
 RUN curl -fsLS get.chezmoi.io | sh -s -- -b /usr/local/bin
 RUN su dev -c 'GIT_TERMINAL_PROMPT=0 chezmoi init --apply --no-tty --exclude=scripts \
     https://github.com/jesserobertson/dotfiles.git'
 
-ENV PATH="/home/dev/.pixi/bin:/home/dev/.local/bin:$PATH"
+ENV PATH="$PIXI_HOME/bin:/home/dev/.local/bin:$PATH"
 ENV UV_HTTP_TIMEOUT=300
 ENV SHELL=/home/linuxbrew/.linuxbrew/bin/fish
 
-# Shared pixi env store: features install as root (devcontainer-feature
-# spec guarantee) but must leave envs usable by dev at runtime.
-RUN mkdir -p /opt/pixi-envs && chown dev:dev /opt/pixi-envs
-
 RUN chsh -s /home/linuxbrew/.linuxbrew/bin/fish dev && \
     HOME=/home/dev git config --global --add safe.directory /workspace && \
-    printf 'detached-environments = "/opt/pixi-envs"\n' > /home/dev/.pixi/config.toml && \
     mkdir -p /home/dev/.config/fish/conf.d && \
     printf 'if status is-interactive\n    eval (pixi shell-hook --manifest-path /workspace/pixi.toml --shell fish)\nend\n' \
     > /home/dev/.config/fish/conf.d/project-pixi.fish && \
