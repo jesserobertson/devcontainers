@@ -4,4 +4,8 @@ if [ ! -f /run/firewall-armed ]; then
     echo "error: egress firewall is not armed — refusing to run in auto mode" >&2
     exit 1
 fi
-exec claude --dangerously-skip-permissions "$@"
+if [ "${1:-}" = "claude" ]; then
+    shift
+    exec claude --dangerously-skip-permissions "$@"
+fi
+exec omp --yolo "$@"

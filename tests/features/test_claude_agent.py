@@ -11,6 +11,10 @@ FEATURE_DIR = REPO_ROOT / "features" / "claude-agent"
 CURL_STUB = """#!/bin/bash
 if [[ "$*" == *claude.ai/install.sh* ]]; then
     echo 'mkdir -p ~/.local/bin && touch ~/.local/bin/claude && chmod +x ~/.local/bin/claude'
+elif [[ "$*" == *pi.dev/install.sh* ]]; then
+    echo 'mkdir -p ~/.local/bin && touch ~/.local/bin/pi && chmod +x ~/.local/bin/pi'
+elif [[ "$*" == *omp.sh/install* ]]; then
+    echo 'mkdir -p ~/.local/bin && touch ~/.local/bin/omp && chmod +x ~/.local/bin/omp'
 fi
 """
 
@@ -43,8 +47,14 @@ def test_vibe_installed_executable_by_dev(installed_container):
     assert _stat(installed_container, "/home/dev/.local/bin/vibe") == "755 dev dev"
 
 
-def test_vibe_execs_claude_with_skip_permissions(installed_container):
+def test_vibe_defaults_to_omp_yolo(installed_container):
     content = _exec(installed_container, "cat /home/dev/.local/bin/vibe")
+    assert "exec omp --yolo" in content
+
+
+def test_vibe_claude_execs_claude_with_skip_permissions(installed_container):
+    content = _exec(installed_container, "cat /home/dev/.local/bin/vibe")
+    assert '"${1:-}" = "claude"' in content
     assert "--dangerously-skip-permissions" in content
 
 
@@ -63,6 +73,31 @@ def test_claude_installed_for_dev_user(installed_container):
         capture_output=True,
     )
     assert result.returncode == 0
+
+
+def test_pi_installed_for_dev_user(installed_container):
+    result = subprocess.run(
+        ["docker", "exec", installed_container, "test", "-f", "/home/dev/.local/bin/pi"],
+        capture_output=True,
+    )
+    assert result.returncode == 0
+
+
+def test_omp_installed_for_dev_user(installed_container):
+    result = subprocess.run(
+        ["docker", "exec", installed_container, "test", "-f", "/home/dev/.local/bin/omp"],
+        capture_output=True,
+    )
+    assert result.returncode == 0
+
+
+def test_npm_prefix_set_before_pi_install(installed_container):
+    # install.sh must fully-qualify this npm call (/home/dev/.local/share/pixi/bin/npm) —
+    # `su dev -c` doesn't inherit PATH, so a bare `npm` would silently no-op under
+    # `set -e` only if npm itself were missing; here the mock proves the call actually
+    # ran by writing its args, catching a regression back to the bare-`npm` bug.
+    content = _exec(installed_container, "cat /home/dev/.local/share/pixi/bin/npm.log")
+    assert "config set prefix" in content
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +184,10 @@ def test_firewall_survives_a_second_run(firewalled_container):
 # ---------------------------------------------------------------------------
 
 def _prepare(cid: str, tmp_path: Path) -> None:
-    """Create the dev user, stub curl for the claude.ai installer, copy the feature in."""
+    """Create the dev user, stub curl for the claude.ai/pi.dev/omp.sh installers, stub
+    pixi and npm at the fully-qualified paths install.sh actually invokes (bare ubuntu:24.04
+    has neither — real base/Dockerfile installs pixi under PIXI_HOME, nodejs's npm shim
+    lands alongside it), and copy the feature in."""
     subprocess.run(["docker", "exec", cid, "useradd", "-m", "-s", "/bin/bash", "dev"], check=True)
 
     stub = tmp_path / "curl"
@@ -160,6 +198,17 @@ def _prepare(cid: str, tmp_path: Path) -> None:
     stub.write_text(CURL_STUB, newline="\n")
     stub.chmod(0o755)
     subprocess.run(["docker", "cp", str(stub), f"{cid}:/usr/local/bin/curl"], check=True)
+
+    subprocess.run(
+        ["docker", "exec", cid, "bash", "-c",
+         "mkdir -p /home/dev/.local/share/pixi/bin && "
+         "printf '#!/bin/bash\\necho pixi: $@\\n' > /home/dev/.local/share/pixi/bin/pixi && "
+         "printf '#!/bin/bash\\necho npm: \"$@\" >> /home/dev/.local/share/pixi/bin/npm.log\\n'"
+         " > /home/dev/.local/share/pixi/bin/npm && "
+         "chmod +x /home/dev/.local/share/pixi/bin/pixi /home/dev/.local/share/pixi/bin/npm && "
+         "chown -R dev:dev /home/dev/.local"],
+        check=True,
+    )
 
     subprocess.run(["docker", "exec", cid, "mkdir", "-p", "/tmp/claude-agent"], check=True)
     for name in ("install.sh", "init-firewall.sh", "vibe", "devcontainer-feature.json"):
