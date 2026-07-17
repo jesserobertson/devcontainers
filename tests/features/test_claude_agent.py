@@ -75,6 +75,20 @@ def test_claude_installed_for_dev_user(installed_container):
     assert result.returncode == 0
 
 
+def test_pi_config_dir_precreated_dev_owned(installed_container):
+    # Consumers that volume-mount ~/.pi (to persist /login state, e.g. kidinnu's
+    # devcontainer.json) need this path to exist and be dev-owned *before* the
+    # mount happens - otherwise Docker creates the mount point as root:root and
+    # dev can never write there (no sudo for chown). Confirmed directly: without
+    # pre-creating this in install.sh, `touch ~/.pi/x` as dev fails with
+    # "Permission denied" once a volume is mounted at that path.
+    assert _stat(installed_container, "/home/dev/.pi") == "755 dev dev"
+
+
+def test_omp_config_dir_precreated_dev_owned(installed_container):
+    assert _stat(installed_container, "/home/dev/.omp") == "755 dev dev"
+
+
 def test_pi_installed_for_dev_user(installed_container):
     result = subprocess.run(
         ["docker", "exec", installed_container, "test", "-f", "/home/dev/.local/bin/pi"],

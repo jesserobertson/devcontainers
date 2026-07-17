@@ -1,6 +1,6 @@
 {
   "id": "claude-agent",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "name": "Claude Agent (contained auto mode)",
   "description": "Installs Claude Code, Pi, and oh-my-pi (omp) - all usable against the same Anthropic account or a local model - plus an egress-allowlist firewall and a `vibe` wrapper for opt-in unattended auto mode (`vibe` runs omp --yolo, `vibe claude` runs claude --dangerously-skip-permissions). Plain `pi` has no built-in auto mode, so it's supervised-only. Consuming devcontainer.json must set runArgs: [\"--cap-add=NET_ADMIN\", \"--cap-add=NET_RAW\"] and postStartCommand: \"sudo /usr/local/bin/init-firewall.sh\".",
   "options": {}

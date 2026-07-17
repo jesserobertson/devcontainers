@@ -42,6 +42,17 @@ su dev -c '/home/dev/.local/share/pixi/bin/npm config set prefix "$HOME/.local"'
 curl -fsSL https://pi.dev/install.sh | su dev -c 'PATH="/home/dev/.local/share/pixi/bin:$PATH" bash'
 curl -fsSL https://omp.sh/install | su dev -s /bin/bash
 
+# Pre-create pi/omp's config dirs as dev, same as Claude's own installer already
+# does for ~/.claude. Docker copies a mount target's existing ownership into a
+# named volume the first time it's populated - if a consumer mounts a volume at
+# ~/.pi or ~/.omp (to persist /login state across rebuilds, same idea as
+# kidinnu-claude-config) and these paths don't exist yet, Docker creates them as
+# root:root instead, and dev - no sudo for chown, only for the firewall script -
+# can never write there again. Confirmed directly: without this, `touch ~/.pi/x`
+# as dev fails with "Permission denied" once a volume is mounted there.
+mkdir -p /home/dev/.pi /home/dev/.omp
+chown dev:dev /home/dev/.pi /home/dev/.omp
+
 # Egress-allowlist firewall: root-owned, root-only. dev can only run it via
 # the scoped sudoers rule below, never edit or replace it.
 install -m 0700 -o root -g root "$SCRIPT_DIR/init-firewall.sh" /usr/local/bin/init-firewall.sh
