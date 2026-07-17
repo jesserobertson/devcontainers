@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).parent.parent
 FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
-    "claude-agent",
+    "agent",
 ]
 
 SU_DEV_FEATURES = [
@@ -100,11 +100,11 @@ def test_ollama_no_container_env():
     assert "containerEnv" not in _feature_json("ollama")
 
 
-# --- claude-agent ---
+# --- agent ---
 
 @pytest.mark.parametrize("script", ["init-firewall.sh", "vibe"])
-def test_claude_agent_script_syntax(script):
-    path = REPO_ROOT / "features" / "claude-agent" / script
+def test_agent_script_syntax(script):
+    path = REPO_ROOT / "features" / "agent" / script
     # See test_install_sh_syntax above: bytes, not text=True, to dodge
     # Windows' \n -> \r\n pipe translation corrupting reserved-word tokens.
     result = subprocess.run(
@@ -115,8 +115,8 @@ def test_claude_agent_script_syntax(script):
     assert result.returncode == 0, result.stderr
 
 
-def test_claude_agent_no_options():
-    assert _feature_json("claude-agent").get("options", {}) == {}
+def test_agent_no_options():
+    assert _feature_json("agent").get("options", {}) == {}
 
 
 # --- example devcontainer configs ---
@@ -126,16 +126,16 @@ def test_ollama_sidecar_example_remote_user_dev():
     assert data["remoteUser"] == "dev"
 
 
-def test_claude_agent_consumer_declares_net_caps():
-    # Any devcontainer.json under examples/ that references the claude-agent feature
-    # must declare both NET_ADMIN and NET_RAW in runArgs, or init-firewall.sh fails at
+def test_agent_consumer_declares_net_caps():
+    # Any devcontainer.json under examples/ that references the agent feature must
+    # declare both NET_ADMIN and NET_RAW in runArgs, or init-firewall.sh fails at
     # container start (iptables/ipset need those caps). No example currently uses
-    # claude-agent, so `referencing` is expected to be empty here — the loop below
-    # then does nothing and the test passes, which is a legitimate pass (nothing to
+    # agent, so `referencing` is expected to be empty here — the loop below then
+    # does nothing and the test passes, which is a legitimate pass (nothing to
     # violate the invariant), not a false negative from a skipped/uncollected test.
     referencing = [
         p for p in sorted((REPO_ROOT / "examples").glob("**/devcontainer.json"))
-        if "ghcr.io/jesserobertson/devcontainers/claude-agent" in json.dumps(
+        if "ghcr.io/jesserobertson/devcontainers/agent" in json.dumps(
             json.loads(p.read_text()).get("features", {})
         )
     ]
@@ -152,8 +152,8 @@ def test_readme_no_root_remote_user():
     assert "/root/.cache/pixi" not in content
 
 
-def test_readme_documents_claude_agent():
-    assert "claude-agent" in (REPO_ROOT / "README.md").read_text()
+def test_readme_documents_agent():
+    assert "agent" in (REPO_ROOT / "README.md").read_text()
 
 
 # --- compose YAML ---

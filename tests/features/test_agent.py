@@ -1,4 +1,4 @@
-"""Docker tests for the claude-agent feature: install.sh side effects and a live firewall exercise."""
+"""Docker tests for the agent feature: install.sh side effects and a live firewall exercise."""
 
 import subprocess
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-FEATURE_DIR = REPO_ROOT / "features" / "claude-agent"
+FEATURE_DIR = REPO_ROOT / "features" / "agent"
 
 CURL_STUB = """#!/bin/bash
 if [[ "$*" == *claude.ai/install.sh* ]]; then
@@ -29,9 +29,9 @@ def installed_container(tmp_path_factory):
         ["docker", "run", "-d", "ubuntu:24.04", "sleep", "infinity"], text=True
     ).strip()
     try:
-        _prepare(cid, tmp_path_factory.mktemp("claude-agent-stub"))
+        _prepare(cid, tmp_path_factory.mktemp("agent-stub"))
         subprocess.run(
-            ["docker", "exec", cid, "bash", "/tmp/claude-agent/install.sh"],
+            ["docker", "exec", cid, "bash", "/tmp/agent/install.sh"],
             check=True,
         )
         yield cid
@@ -59,12 +59,12 @@ def test_vibe_claude_execs_claude_with_skip_permissions(installed_container):
 
 
 def test_sudoers_rule_scoped_to_firewall_script(installed_container):
-    content = _exec(installed_container, "cat /etc/sudoers.d/claude-agent")
+    content = _exec(installed_container, "cat /etc/sudoers.d/agent")
     assert content.strip() == "dev ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh"
 
 
 def test_sudoers_file_permissions(installed_container):
-    assert _stat(installed_container, "/etc/sudoers.d/claude-agent") == "440 root root"
+    assert _stat(installed_container, "/etc/sudoers.d/agent") == "440 root root"
 
 
 def test_claude_installed_for_dev_user(installed_container):
@@ -224,13 +224,13 @@ def _prepare(cid: str, tmp_path: Path) -> None:
         check=True,
     )
 
-    subprocess.run(["docker", "exec", cid, "mkdir", "-p", "/tmp/claude-agent"], check=True)
+    subprocess.run(["docker", "exec", cid, "mkdir", "-p", "/tmp/agent"], check=True)
     for name in ("install.sh", "init-firewall.sh", "vibe", "devcontainer-feature.json"):
         subprocess.run(
-            ["docker", "cp", str(FEATURE_DIR / name), f"{cid}:/tmp/claude-agent/{name}"],
+            ["docker", "cp", str(FEATURE_DIR / name), f"{cid}:/tmp/agent/{name}"],
             check=True,
         )
-    subprocess.run(["docker", "exec", cid, "chmod", "+x", "/tmp/claude-agent/install.sh"], check=True)
+    subprocess.run(["docker", "exec", cid, "chmod", "+x", "/tmp/agent/install.sh"], check=True)
 
 
 def _exec(cid: str, cmd: str) -> str:

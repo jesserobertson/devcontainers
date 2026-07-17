@@ -26,7 +26,7 @@ Composable features that install on top of a base image at container creation ti
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
 | `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
-| `…/claude-agent:latest` | Agent | base-ubuntu / base-cuda | Contained agents — `claude`/`pi`/`omp` CLIs, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
+| `…/agent:latest` | Agent | base-ubuntu / base-cuda | Contained agents — `claude`/`pi`/`omp` CLIs, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
 
 All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainers`.
 
@@ -165,9 +165,9 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-## Contained auto mode (claude-agent)
+## Contained auto mode (agent)
 
-The `claude-agent` feature installs Claude Code, [Pi](https://pi.dev), and
+The `agent` feature installs Claude Code, [Pi](https://pi.dev), and
 [oh-my-pi](https://omp.sh) (`omp`, a Pi fork/superset with LSP/DAP/subagents) — all usable
 against the same Anthropic account (built-in provider, reads `ANTHROPIC_API_KEY`) or a
 local model (see [Local LLM (ollama)](#local-llm-ollama) above) — plus an egress-allowlist
@@ -179,7 +179,7 @@ for the reasoning.
 ```json
 {
   "features": {
-    "ghcr.io/jesserobertson/devcontainers/claude-agent:latest": {}
+    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
   },
   "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
@@ -226,7 +226,7 @@ features/
   huggingface/               ← ML: huggingface_hub, tokenizers
   transformers/              ← ML: transformers, datasets, accelerate
   ollama/                    ← ML: OpenAI-compatible Ollama client
-  claude-agent/              ← Agent: contained claude/pi/omp (firewall + vibe auto-mode wrapper)
+  agent/                     ← Agent: contained claude/pi/omp (firewall + vibe auto-mode wrapper)
 host-services/ollama/        ← local LLM host service (real Ollama via Docker Compose)
 .github/workflows/
   build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes

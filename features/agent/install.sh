@@ -65,5 +65,5 @@ install -m 0755 -o dev -g dev "$SCRIPT_DIR/vibe" /home/dev/.local/bin/vibe
 chown dev:dev /home/dev/.local/bin
 
 # The only sudo access dev ever gets: this one script, nothing else.
-echo 'dev ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh' > /etc/sudoers.d/claude-agent
-chmod 0440 /etc/sudoers.d/claude-agent
+echo 'dev ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh' > /etc/sudoers.d/agent
+chmod 0440 /etc/sudoers.d/agent
