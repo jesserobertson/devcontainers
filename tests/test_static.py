@@ -10,13 +10,13 @@ import yaml
 REPO_ROOT = Path(__file__).parent.parent
 FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
-    "cli", "py-devtools", "huggingface", "transformers", "ramalama",
+    "cli", "py-devtools", "huggingface", "transformers", "ollama",
     "claude-agent",
 ]
 
 SU_DEV_FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
-    "cli", "py-devtools", "huggingface", "transformers", "ramalama",
+    "cli", "py-devtools", "huggingface", "transformers", "ollama",
 ]
 
 
@@ -79,25 +79,25 @@ def test_transformers_no_options():
     assert _feature_json("transformers").get("options", {}) == {}
 
 
-# --- ramalama ---
+# --- ollama ---
 
-def test_ramalama_has_five_options():
-    assert set(_feature_json("ramalama")["options"]) == {"host", "port", "model", "apiKey", "contextSize"}
+def test_ollama_has_five_options():
+    assert set(_feature_json("ollama")["options"]) == {"host", "port", "model", "apiKey", "contextSize"}
 
 
 @pytest.mark.parametrize("option,expected", [
     ("host",        "host.docker.internal"),
-    ("port",        "8080"),
-    ("model",       "ollama://llama3.2"),
-    ("apiKey",      "ramalama"),
+    ("port",        "11434"),
+    ("model",       "llama3.2"),
+    ("apiKey",      "ollama"),
     ("contextSize", "4096"),
 ])
-def test_ramalama_option_default(option, expected):
-    assert _feature_json("ramalama")["options"][option]["default"] == expected
+def test_ollama_option_default(option, expected):
+    assert _feature_json("ollama")["options"][option]["default"] == expected
 
 
-def test_ramalama_no_container_env():
-    assert "containerEnv" not in _feature_json("ramalama")
+def test_ollama_no_container_env():
+    assert "containerEnv" not in _feature_json("ollama")
 
 
 # --- claude-agent ---
@@ -121,8 +121,8 @@ def test_claude_agent_no_options():
 
 # --- example devcontainer configs ---
 
-def test_ramalama_sidecar_example_remote_user_dev():
-    data = _devcontainer_json("examples/ramalama-sidecar/.devcontainer/devcontainer.json")
+def test_ollama_sidecar_example_remote_user_dev():
+    data = _devcontainer_json("examples/ollama-sidecar/.devcontainer/devcontainer.json")
     assert data["remoteUser"] == "dev"
 
 
@@ -159,35 +159,35 @@ def test_readme_documents_claude_agent():
 # --- compose YAML ---
 
 @pytest.mark.parametrize("rel_path", [
-    "examples/ramalama-sidecar/.devcontainer/docker-compose.yml",
-    "host-services/ramalama/docker-compose.yml",
+    "examples/ollama-sidecar/.devcontainer/docker-compose.yml",
+    "host-services/ollama/docker-compose.yml",
 ])
 def test_compose_valid_yaml(rel_path):
     data = _yaml(rel_path)
     assert "services" in data
 
 
-def test_example_sidecar_has_app_and_ramalama():
-    data = _yaml("examples/ramalama-sidecar/.devcontainer/docker-compose.yml")
+def test_example_sidecar_has_app_and_ollama():
+    data = _yaml("examples/ollama-sidecar/.devcontainer/docker-compose.yml")
     assert "app" in data["services"]
-    assert "ramalama" in data["services"]
+    assert "ollama" in data["services"]
 
 
-def test_example_sidecar_ramalama_image():
-    data = _yaml("examples/ramalama-sidecar/.devcontainer/docker-compose.yml")
-    assert data["services"]["ramalama"]["image"] == "ghcr.io/jesserobertson/ramalama:latest"
+def test_example_sidecar_ollama_image():
+    data = _yaml("examples/ollama-sidecar/.devcontainer/docker-compose.yml")
+    assert data["services"]["ollama"]["image"] == "ollama/ollama:latest"
 
 
 def test_example_sidecar_gpu_config():
-    data = _yaml("examples/ramalama-sidecar/.devcontainer/docker-compose.yml")
-    devices = data["services"]["ramalama"]["deploy"]["resources"]["reservations"]["devices"]
+    data = _yaml("examples/ollama-sidecar/.devcontainer/docker-compose.yml")
+    devices = data["services"]["ollama"]["deploy"]["resources"]["reservations"]["devices"]
     assert any(d.get("driver") == "nvidia" for d in devices)
 
 
 def test_host_services_model_volume():
-    data = _yaml("host-services/ramalama/docker-compose.yml")
-    volumes = data["services"]["ramalama"].get("volumes", [])
-    assert any("/root/.local/share/ramalama" in str(v) for v in volumes)
+    data = _yaml("host-services/ollama/docker-compose.yml")
+    volumes = data["services"]["ollama"].get("volumes", [])
+    assert any("/root/.ollama" in str(v) for v in volumes)
 
 
 # --- base Dockerfile ---
@@ -211,13 +211,6 @@ def test_dockerfile_ends_as_dev_user():
 
 def test_dockerfile_sets_pixi_home():
     assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in _dockerfile_text()
-
-
-# --- ramalama Dockerfile ---
-
-def test_ramalama_dockerfile_explicit_root():
-    content = (REPO_ROOT / "ramalama" / "Dockerfile").read_text()
-    assert "USER root" in content
 
 
 # --- helpers ---

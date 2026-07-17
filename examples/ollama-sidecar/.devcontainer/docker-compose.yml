@@ -3,7 +3,7 @@ services:
     image: ghcr.io/jesserobertson/base-cuda:latest
     volumes:
       - ..:/workspace:cached
-      - pixi-cache:/root/.cache/pixi
+      - pixi-cache:/home/dev/.cache/pixi
     command: sleep infinity
     deploy:
       resources:
@@ -13,11 +13,8 @@ services:
               count: all
               capabilities: [gpu]
 
-  ramalama:
-    image: ghcr.io/jesserobertson/ramalama:latest
-    environment:
-      - RAMALAMA_MODEL=ollama://llama3.2
-      - RAMALAMA_PORT=8080
+  ollama:
+    image: ollama/ollama:latest
     deploy:
       resources:
         reservations:
@@ -26,8 +23,8 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - ramalama-models:/root/.local/share/ramalama
+      - ollama-models:/root/.ollama
 
 volumes:
   pixi-cache:
-  ramalama-models:
+  ollama-models:

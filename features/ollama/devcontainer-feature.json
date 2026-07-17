@@ -1,0 +1,33 @@
+{
+  "id": "ollama",
+  "version": "1.0.0",
+  "name": "Ollama client",
+  "description": "Installs the OpenAI-compatible Python client and configures connection env vars for an Ollama service running on the host. Assumes Ollama is running via Docker Desktop — see host-services/ollama/ for setup.",
+  "options": {
+    "host": {
+      "type": "string",
+      "default": "host.docker.internal",
+      "description": "Hostname where the Ollama service is running. Docker Desktop maps host.docker.internal to the Windows host automatically."
+    },
+    "port": {
+      "type": "string",
+      "default": "11434",
+      "description": "Port the Ollama service is listening on."
+    },
+    "model": {
+      "type": "string",
+      "default": "llama3.2",
+      "description": "Default model tag (any tag from https://ollama.com/library, e.g. llama3.2, gemma4:e2b)."
+    },
+    "apiKey": {
+      "type": "string",
+      "default": "ollama",
+      "description": "Value for OPENAI_API_KEY. Ollama does not require a real key; override only when pointing at a real OpenAI-compatible API."
+    },
+    "contextSize": {
+      "type": "string",
+      "default": "4096",
+      "description": "Context window size hint written as OLLAMA_CONTEXT_SIZE for use by client code."
+    }
+  }
+}

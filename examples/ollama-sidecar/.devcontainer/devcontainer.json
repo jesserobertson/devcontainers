@@ -6,10 +6,10 @@
   "features": {
     "ghcr.io/jesserobertson/devcontainers/huggingface:latest": {},
     "ghcr.io/jesserobertson/devcontainers/transformers:latest": {},
-    "ghcr.io/jesserobertson/devcontainers/ramalama:latest": {
-      "host": "ramalama",
-      "port": "8080",
-      "model": "ollama://llama3.2"
+    "ghcr.io/jesserobertson/devcontainers/ollama:latest": {
+      "host": "ollama",
+      "port": "11434",
+      "model": "llama3.2"
     },
     "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
   },

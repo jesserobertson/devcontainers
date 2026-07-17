@@ -1,8 +1,8 @@
-"""Docker tests for the ramalama feature's install.sh env-var generation.
+"""Docker tests for the ollama feature's install.sh env-var generation.
 
 Spins up a plain ubuntu:24.04 container with a mock pixi (so no packages
 are actually downloaded) and verifies that install.sh writes the correct
-values to /etc/profile.d/ramalama.sh.
+values to /etc/profile.d/ollama.sh.
 """
 
 import subprocess
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-FEATURE_DIR = REPO_ROOT / "features" / "ramalama"
+FEATURE_DIR = REPO_ROOT / "features" / "ollama"
 
 
 # ---------------------------------------------------------------------------
@@ -42,9 +42,9 @@ def container_custom():
         subprocess.run(
             [
                 "docker", "exec",
-                "-e", "HOST=ramalama",
+                "-e", "HOST=ollama",
                 "-e", "PORT=9090",
-                "-e", "MODEL=huggingface://microsoft/Phi-3-mini-4k-instruct",
+                "-e", "MODEL=gemma4:e2b",
                 "-e", "APIKEY=sk-test",
                 "-e", "CONTEXTSIZE=8192",
                 cid, "bash", "/tmp/install.sh",
@@ -62,39 +62,39 @@ def container_custom():
 
 def test_profile_script_exists(container_defaults):
     result = subprocess.run(
-        ["docker", "exec", container_defaults, "test", "-f", "/etc/profile.d/ramalama.sh"],
+        ["docker", "exec", container_defaults, "test", "-f", "/etc/profile.d/ollama.sh"],
         capture_output=True,
     )
     assert result.returncode == 0
 
 
 def test_profile_script_permissions(container_defaults):
-    assert _exec(container_defaults, "stat -c '%a' /etc/profile.d/ramalama.sh") == "644"
+    assert _exec(container_defaults, "stat -c '%a' /etc/profile.d/ollama.sh") == "644"
 
 
 def test_openai_base_url_default(container_defaults):
     val = _sourced(container_defaults, "OPENAI_BASE_URL")
-    assert val == "http://host.docker.internal:8080/v1"
+    assert val == "http://host.docker.internal:11434/v1"
 
 
-def test_ramalama_host_default(container_defaults):
-    assert _sourced(container_defaults, "RAMALAMA_HOST") == "host.docker.internal"
+def test_ollama_host_default(container_defaults):
+    assert _sourced(container_defaults, "OLLAMA_HOST") == "host.docker.internal"
 
 
-def test_ramalama_port_default(container_defaults):
-    assert _sourced(container_defaults, "RAMALAMA_PORT") == "8080"
+def test_ollama_port_default(container_defaults):
+    assert _sourced(container_defaults, "OLLAMA_PORT") == "11434"
 
 
-def test_ramalama_model_default(container_defaults):
-    assert _sourced(container_defaults, "RAMALAMA_MODEL") == "ollama://llama3.2"
+def test_ollama_model_default(container_defaults):
+    assert _sourced(container_defaults, "OLLAMA_MODEL") == "llama3.2"
 
 
 def test_openai_api_key_default(container_defaults):
-    assert _sourced(container_defaults, "OPENAI_API_KEY") == "ramalama"
+    assert _sourced(container_defaults, "OPENAI_API_KEY") == "ollama"
 
 
 def test_context_size_default(container_defaults):
-    assert _sourced(container_defaults, "RAMALAMA_CONTEXT_SIZE") == "4096"
+    assert _sourced(container_defaults, "OLLAMA_CONTEXT_SIZE") == "4096"
 
 
 # ---------------------------------------------------------------------------
@@ -102,27 +102,27 @@ def test_context_size_default(container_defaults):
 # ---------------------------------------------------------------------------
 
 def test_openai_base_url_custom(container_custom):
-    assert _sourced(container_custom, "OPENAI_BASE_URL") == "http://ramalama:9090/v1"
+    assert _sourced(container_custom, "OPENAI_BASE_URL") == "http://ollama:9090/v1"
 
 
-def test_ramalama_model_custom(container_custom):
-    assert _sourced(container_custom, "RAMALAMA_MODEL") == "huggingface://microsoft/Phi-3-mini-4k-instruct"
+def test_ollama_model_custom(container_custom):
+    assert _sourced(container_custom, "OLLAMA_MODEL") == "gemma4:e2b"
 
 
 def test_context_size_custom(container_custom):
-    assert _sourced(container_custom, "RAMALAMA_CONTEXT_SIZE") == "8192"
+    assert _sourced(container_custom, "OLLAMA_CONTEXT_SIZE") == "8192"
 
 
 def test_openai_api_key_custom(container_custom):
     assert _sourced(container_custom, "OPENAI_API_KEY") == "sk-test"
 
 
-def test_ramalama_host_custom(container_custom):
-    assert _sourced(container_custom, "RAMALAMA_HOST") == "ramalama"
+def test_ollama_host_custom(container_custom):
+    assert _sourced(container_custom, "OLLAMA_HOST") == "ollama"
 
 
-def test_ramalama_port_custom(container_custom):
-    assert _sourced(container_custom, "RAMALAMA_PORT") == "9090"
+def test_ollama_port_custom(container_custom):
+    assert _sourced(container_custom, "OLLAMA_PORT") == "9090"
 
 
 # ---------------------------------------------------------------------------
@@ -162,4 +162,4 @@ def _exec(cid: str, cmd: str) -> str:
 
 
 def _sourced(cid: str, var: str) -> str:
-    return _exec(cid, f"source /etc/profile.d/ramalama.sh && echo ${var}")
+    return _exec(cid, f"source /etc/profile.d/ollama.sh && echo ${var}")

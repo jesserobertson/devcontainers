@@ -8,7 +8,6 @@ Base images and composable devcontainer features for Python development, publish
 |-------|------|---------|
 | `ghcr.io/jesserobertson/base-ubuntu:latest` | `ubuntu:24.04` | CPU-only projects |
 | `ghcr.io/jesserobertson/base-cuda:latest` | `nvidia/cuda:12.8.0-devel-ubuntu24.04` | GPU projects (rapids, jax, mojo, pytorch) |
-| `ghcr.io/jesserobertson/ramalama:latest` | `base-cuda` | Local LLM sidecar — ramalama + llama.cpp with CUDA |
 
 ## Features
 
@@ -26,7 +25,7 @@ Composable features that install on top of a base image at container creation ti
 | `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings |
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
-| `…/ramalama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for a ramalama service |
+| `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
 | `…/claude-agent:latest` | Agent | base-ubuntu / base-cuda | Contained Claude Code — native `claude` CLI, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
 
 All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainers`.
@@ -111,23 +110,30 @@ fastapi = ">=0.110"
 sqlalchemy = ">=2.0"
 ```
 
-## Local LLM (ramalama)
+## Local LLM (ollama)
 
 Run CUDA-accelerated local models on your Windows host via Docker Desktop and connect from any devcontainer.
+
+Runs actual [Ollama](https://ollama.com), not a llama.cpp wrapper — verified this matters:
+a ramalama-wrapped-llama.cpp setup used here previously failed to load recent Gemma
+releases (stale bundled llama.cpp with no way to update it independently of the whole
+image), while Ollama's own more current runtime loads the exact same model files fine. See
+`host-services/ollama/README.md` for the specifics.
 
 ### 1. Start the host service
 
 ```bash
-cd host-services/ramalama
-cp .env.example .env        # edit RAMALAMA_MODEL if desired
+cd host-services/ollama
+cp .env.example .env        # edit if you want a non-default port
 docker compose up -d
+docker compose exec ollama ollama pull llama3.2   # or any model from ollama.com/library
 ```
 
-See `host-services/ramalama/README.md` for prerequisites (NVIDIA Container Toolkit) and model management commands.
+See `host-services/ollama/README.md` for prerequisites (NVIDIA Container Toolkit) and model management commands.
 
 ### 2. Add the feature to your devcontainer
 
-Use `base-cuda` if you also want the `transformers` feature for Python-side inference. `base-ubuntu` is sufficient for the `ramalama` client alone.
+Use `base-cuda` if you also want the `transformers` feature for Python-side inference. `base-ubuntu` is sufficient for the `ollama` client alone.
 
 ```json
 {
@@ -135,8 +141,8 @@ Use `base-cuda` if you also want the `transformers` feature for Python-side infe
   "features": {
     "ghcr.io/jesserobertson/devcontainers/huggingface:latest": {},
     "ghcr.io/jesserobertson/devcontainers/transformers:latest": {},
-    "ghcr.io/jesserobertson/devcontainers/ramalama:latest": {
-      "model": "ollama://llama3.2",
+    "ghcr.io/jesserobertson/devcontainers/ollama:latest": {
+      "model": "llama3.2",
       "contextSize": "8192"
     }
   },
@@ -144,7 +150,7 @@ Use `base-cuda` if you also want the `transformers` feature for Python-side infe
 }
 ```
 
-Inside the container, `OPENAI_BASE_URL` and `RAMALAMA_MODEL` are set automatically. Use the `openai` client to talk to ramalama:
+Inside the container, `OPENAI_BASE_URL` and `OLLAMA_MODEL` are set automatically. Use the `openai` client to talk to Ollama:
 
 ```python
 import os
@@ -152,7 +158,7 @@ from openai import OpenAI
 
 client = OpenAI()  # picks up OPENAI_BASE_URL and OPENAI_API_KEY from env
 response = client.chat.completions.create(
-    model=os.environ["RAMALAMA_MODEL"],
+    model=os.environ["OLLAMA_MODEL"],
     messages=[{"role": "user", "content": "Hello!"}],
 )
 print(response.choices[0].message.content)
@@ -202,7 +208,6 @@ regression introduced here.
 
 ```
 base/Dockerfile              ← ARG BASE_IMAGE; installs brew, pixi, dotfiles
-ramalama/Dockerfile          ← local LLM sidecar image (FROM base-cuda + ramalama + llama.cpp)
 features/
   rapids/                    ← ML: cuDF, JAX, Polars GPU, Marimo
   mojo/                      ← ML: Modular MAX / Mojo
@@ -214,10 +219,10 @@ features/
   py-devtools/               ← Dev: ruff, mypy, pytest, mkdocs
   huggingface/               ← ML: huggingface_hub, tokenizers
   transformers/              ← ML: transformers, datasets, accelerate
-  ramalama/                  ← ML: OpenAI-compatible ramalama client
+  ollama/                    ← ML: OpenAI-compatible Ollama client
   claude-agent/              ← Agent: contained Claude Code (firewall + vibe auto-mode wrapper)
+host-services/ollama/        ← local LLM host service (real Ollama via Docker Compose)
 .github/workflows/
   build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes
-  build-ramalama.yml         ← builds ramalama image on ramalama/Dockerfile changes
   publish-features.yml       ← publishes features via devcontainers/action on features/** changes
 ```

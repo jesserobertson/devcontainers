@@ -26,3 +26,6 @@ pixi.lock
 
 # Local git worktrees (scratch, not shared)
 .worktrees/
+
+# Local env config (host-services/*/.env.example is the tracked template)
+.env
