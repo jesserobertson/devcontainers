@@ -142,6 +142,7 @@ Use `base-cuda` if you also want the `transformers` feature for Python-side infe
     "ghcr.io/jesserobertson/devcontainers/huggingface:latest": {},
     "ghcr.io/jesserobertson/devcontainers/transformers:latest": {},
     "ghcr.io/jesserobertson/devcontainers/ollama:latest": {
+      "port": "11435",
       "model": "llama3.2",
       "contextSize": "8192"
     }

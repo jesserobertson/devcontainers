@@ -1,8 +1,14 @@
 # ollama host service
 
 Runs [Ollama](https://ollama.com) as a persistent CUDA-accelerated service on the host via
-Docker Desktop. Devcontainers reach it at `host.docker.internal:11434` (Docker Desktop maps
+Docker Desktop. Devcontainers reach it at `host.docker.internal:11435` (Docker Desktop maps
 this automatically on Windows).
+
+Port 11435, not Ollama's default 11434: verified directly that a native Windows Ollama
+install (if you have one — many people do) already answers on 11434, and `host.docker.internal`
+from inside a container reaches the native install, not this Docker service, when both are
+bound to the same port. If you don't have a native Ollama install, feel free to use 11434
+instead — 11435 is just a collision-avoiding default.
 
 !!! Previously this ran `ramalama` (a llama.cpp wrapper). Switched to Ollama directly after
 finding ramalama's bundled llama.cpp (as of the `quay.io/ramalama/cuda:latest` image built

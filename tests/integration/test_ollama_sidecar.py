@@ -10,8 +10,6 @@ GPU tests (local only, pytest --gpu):
 
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -53,7 +51,20 @@ def test_compose_services_defined():
 
 @pytest.mark.gpu
 def test_ollama_sidecar_serves():
-    """ollama sidecar starts and exposes an OpenAI-compatible /v1/models endpoint.
+    """ollama sidecar starts and exposes an OpenAI-compatible /v1/models endpoint,
+    reachable from the app service via the internal compose network.
+
+    The sidecar's ollama service has no host port mapping by design (it's only
+    meant to be reached from the app container, over the internal compose
+    network, at the service name "ollama" — matching exactly how the ollama
+    feature's "host": "ollama" option resolves it). So this test execs into
+    the app container and curls http://ollama:11434 from there, rather than
+    querying a host-mapped port — querying localhost:PORT from the test
+    runner would silently pass against an unrelated process on that port
+    (verified this happens in practice: a native Ollama install, or the
+    separate host-services/ollama service, can both be listening on a
+    similar port from the host's point of view without this sidecar being
+    reachable at all).
 
     Unlike the old ramalama-based sidecar, Ollama's server listens immediately on
     startup regardless of whether any model has been pulled yet (`/v1/models` just
@@ -62,21 +73,24 @@ def test_ollama_sidecar_serves():
     """
     try:
         subprocess.run(
-            ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "ollama"],
+            ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "app", "ollama"],
             check=True,
         )
         deadline = time.time() + 60
         ready = False
         while time.time() < deadline:
-            try:
-                r = urllib.request.urlopen("http://localhost:11434/v1/models", timeout=3)
-                if r.status == 200:
-                    ready = True
-                    break
-            except (urllib.error.URLError, OSError):
-                pass
+            result = subprocess.run(
+                ["docker", "compose", "-f", str(COMPOSE_FILE), "exec", "-T", "app",
+                 "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                 "http://ollama:11434/v1/models"],
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout.strip() == "200":
+                ready = True
+                break
             time.sleep(2)
-        assert ready, "ollama did not become ready within 60 seconds"
+        assert ready, "ollama (reached via the app container's internal network) did not become ready within 60 seconds"
     finally:
         subprocess.run(
             ["docker", "compose", "-f", str(COMPOSE_FILE), "down"],
