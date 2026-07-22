@@ -26,12 +26,9 @@ rm -f /run/firewall-armed
 
 # 2. Selectively restore ONLY internal Docker DNS resolution
 if [ -n "$DOCKER_DNS_RULES" ]; then
-    echo "Restoring Docker DNS rules..."
     iptables -t nat -N DOCKER_OUTPUT 2>/dev/null || true
     iptables -t nat -N DOCKER_POSTROUTING 2>/dev/null || true
     echo "$DOCKER_DNS_RULES" | xargs -L 1 iptables -t nat
-else
-    echo "No Docker DNS rules to restore"
 fi
 
 # Allow DNS and localhost before any restrictions
@@ -44,7 +41,6 @@ iptables -A OUTPUT -o lo -j ACCEPT
 ipset create allowed-domains hash:net
 
 # GitHub: fetch and aggregate their published IP ranges
-echo "Fetching GitHub IP ranges..."
 gh_ranges=$(curl -s https://api.github.com/meta)
 if [ -z "$gh_ranges" ]; then
     echo "ERROR: Failed to fetch GitHub IP ranges"
@@ -54,7 +50,7 @@ if ! echo "$gh_ranges" | jq -e '.web and .api and .git' >/dev/null; then
     echo "ERROR: GitHub API response missing required fields"
     exit 1
 fi
-echo "Processing GitHub IPs..."
+gh_range_count=0
 while read -r cidr; do
     # IPv4-only by design: `ipset create allowed-domains hash:net` above is an IPv4
     # set, and this regex deliberately rejects anything else. If GitHub's /meta
@@ -65,14 +61,15 @@ while read -r cidr; do
         echo "ERROR: Invalid CIDR range from GitHub meta: $cidr"
         exit 1
     fi
-    echo "Adding GitHub range $cidr"
     # -exist: two allowed domains can resolve to the same IP (shared CDN/anycast),
     # and without it ipset add hard-fails on a duplicate, aborting the whole
     # script under set -e before the firewall ever arms.
     ipset add allowed-domains "$cidr" -exist
+    gh_range_count=$((gh_range_count + 1))
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
 
 # Resolve and add the remaining allowed domains
+domain_ip_count=0
 for domain in \
     "api.anthropic.com" \
     "claude.ai" \
@@ -82,7 +79,6 @@ for domain in \
     "files.pythonhosted.org" \
     "conda.anaconda.org" \
     "repo.anaconda.com"; do
-    echo "Resolving $domain..."
     ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
     if [ -z "$ips" ]; then
         echo "ERROR: Failed to resolve $domain"
@@ -93,10 +89,10 @@ for domain in \
             echo "ERROR: Invalid IP from DNS for $domain: $ip"
             exit 1
         fi
-        echo "Adding $ip for $domain"
         # -exist: see the GitHub-range loop above — duplicate IPs across
         # allowed domains are expected, not an error.
         ipset add allowed-domains "$ip" -exist
+        domain_ip_count=$((domain_ip_count + 1))
     done < <(echo "$ips")
 done
 
@@ -107,7 +103,6 @@ if [ -z "$HOST_IP" ]; then
     exit 1
 fi
 HOST_NETWORK=$(echo "$HOST_IP" | sed "s/\.[0-9]*$/.0\/24/")
-echo "Host network detected as: $HOST_NETWORK"
 iptables -A INPUT -s "$HOST_NETWORK" -j ACCEPT
 iptables -A OUTPUT -d "$HOST_NETWORK" -j ACCEPT
 
@@ -121,22 +116,16 @@ iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -m set --match-set allowed-domains dst -j ACCEPT
 iptables -A OUTPUT -j REJECT --reject-with icmp-admin-prohibited
 
-echo "Firewall configuration complete"
-echo "Verifying firewall rules..."
 if curl --connect-timeout 5 https://example.com >/dev/null 2>&1; then
     echo "ERROR: Firewall verification failed - was able to reach https://example.com"
     exit 1
-else
-    echo "Firewall verification passed - unable to reach https://example.com as expected"
 fi
 
 if ! curl --connect-timeout 5 https://api.github.com/zen >/dev/null 2>&1; then
     echo "ERROR: Firewall verification failed - unable to reach https://api.github.com"
     exit 1
-else
-    echo "Firewall verification passed - able to reach https://api.github.com as expected"
 fi
 
 touch /run/firewall-armed
 chmod 644 /run/firewall-armed
-echo "Firewall armed."
+echo "Firewall armed: $gh_range_count GitHub ranges + $domain_ip_count domain IPs allowlisted, host network $HOST_NETWORK. Full allowlist: features/agent/init-firewall.sh."
