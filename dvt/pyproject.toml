@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "platformdirs>=4.0",
     "httpx>=0.27",
+    "jsonschema>=4.18",
 ]
 
 [project.scripts]
@@ -66,4 +67,4 @@ default = { features = ["dev"], solve-group = "default" }
 runtime = { solve-group = "default" }
 
 [dependency-groups]
-dev = ["mypy>=2.3.0,<3"]
+dev = ["mypy>=2.3.0,<3", "types-jsonschema>=4.26.0.20260518,<5"]
