@@ -19,6 +19,8 @@
 - `add-feature` additionally strips `name`, `workspaceFolder`, `workspaceMount` from the incoming template before merging — those are project-identity fields, not feature-declared fields, and every template in this repo sets its own `name` to its own feature name (e.g. `templates/agent/devcontainer.json` has `"name": "agent"`), so merging it unfiltered would silently rename the target project.
 - JSON handling: plain `json` module only, strict parsing. If `add-feature`'s target file fails `json.loads` (comments/trailing commas), refuse to write and print the feature snippet instead.
 - Pydantic models never use `Any` — every field has a concrete type (`bool | int | str` for feature options, unions of concrete types elsewhere) so `hypothesis`'s pydantic integration (`st.from_type(...)`) can generate valid instances without needing a registered `Any` strategy.
+- Config-level identifier strings that gate a real filesystem write, URL, or process call get validated at the point they're accepted, not left as bare `str`: `Settings.github_repo` must be `owner/repo` shaped, `Settings.github_branch` non-empty with no stray whitespace (Task 2), and any template `name` used to build a path under `templates_dir` or a GitHub URL must match `^[a-z0-9][a-z0-9-]*$` — this repo's own template-directory naming convention (Task 7). This does not extend to `DevContainerConfig` (Task 3): its fields represent arbitrary devcontainer.json content from templates and user projects, deliberately permissive (`extra="allow"`), and over-constraining `image`/`features`-key patterns there would reject legitimate real-world content for no benefit to the merge algorithm, which only cares about field *shape*, not string format.
+- `mypy` runs alongside `pytest` in the `dev` pixi feature/environment (`pixi run mypy src`), configured in `dvt/pyproject.toml`'s `[tool.mypy]` (Python 3.11, `plugins = ["pydantic.mypy"]`, `disallow_untyped_defs`/`disallow_incomplete_defs`/`check_untyped_defs`/`no_implicit_optional`/`warn_redundant_casts`/`warn_unused_ignores`/`warn_return_any` all `true`; `tests.*` overridden to allow untyped defs). Every task must leave `pixi run mypy src` clean — no new errors, no unaddressed `# type: ignore`. Task reviewers check this alongside spec compliance.
 - All commands below assume the working directory is `dvt/` unless stated otherwise. Run tests with `pixi run pytest tests/<file> -v` from that directory.
 
 ---
@@ -74,6 +76,22 @@ packages = ["src/devtemplate"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64"]
@@ -91,7 +109,17 @@ hypothesis = ">=6.100"
 [tool.pixi.environments]
 default = { features = ["dev"], solve-group = "default" }
 runtime = { solve-group = "default" }
+
+[dependency-groups]
+dev = ["mypy>=2.3.0,<3"]
 ```
+
+`mypy` landed under `[dependency-groups]` (PEP 735) rather than
+`[tool.pixi.feature.dev.dependencies]` because it's a PyPI package added via
+`pixi add --feature dev --pypi mypy`, not a conda-forge package like
+`pytest`/`hypothesis` — pixi maps a PEP 735 group of the same name onto the
+matching pixi feature automatically, so it still only resolves into the
+`dev`-featured `default` environment, never `runtime`.
 
 `pytest`/`hypothesis` live in a `dev` pixi feature, not directly in
 `[tool.pixi.dependencies]`, so a pixi-based install of just the `runtime`
@@ -229,13 +257,16 @@ git commit -m "feat: scaffold dvt CLI package (pyproject.toml, entry point, smok
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `devtemplate.config.Settings` — a pydantic-settings class with `.github_repo: str`, `.github_branch: str`, and properties `.data_dir: Path`, `.templates_dir: Path`, `.manifest_path: Path`. Also produces the shared pytest fixture `settings` (in `conftest.py`) that every later task's tests reuse to point `Settings()` at a temp directory instead of the real user data dir.
+- Produces: `devtemplate.config.Settings` — a pydantic-settings class with `.github_repo: str` (validated `owner/repo` shape), `.github_branch: str` (validated non-empty, no stray whitespace), and properties `.data_dir: Path`, `.templates_dir: Path`, `.manifest_path: Path`. Also produces the shared pytest fixture `settings` (in `conftest.py`) that every later task's tests reuse to point `Settings()` at a temp directory instead of the real user data dir.
 
 - [ ] **Step 1: Write the failing tests**
 
 Create `dvt/tests/test_config.py`:
 
 ```python
+import pytest
+from pydantic import ValidationError
+
 from devtemplate.config import Settings
 
 
@@ -257,6 +288,28 @@ def test_settings_paths_derive_from_data_dir(settings, tmp_path):
     assert settings.data_dir == tmp_path
     assert settings.templates_dir == tmp_path / "templates"
     assert settings.manifest_path == tmp_path / "manifest.json"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "no-slash", "too/many/slashes", "/missing-owner", "missing-repo/", "has space/repo"],
+)
+def test_settings_rejects_malformed_github_repo(monkeypatch, value):
+    monkeypatch.setenv("DVT_GITHUB_REPO", value)
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize("value", ["", " ", "main ", " main", "\tmain"])
+def test_settings_rejects_malformed_github_branch(monkeypatch, value):
+    monkeypatch.setenv("DVT_GITHUB_BRANCH", value)
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_accepts_well_formed_github_repo(monkeypatch):
+    monkeypatch.setenv("DVT_GITHUB_REPO", "some-org_2/repo.name-2")
+    assert Settings().github_repo == "some-org_2/repo.name-2"
 ```
 
 Create `dvt/tests/conftest.py`:
@@ -289,10 +342,14 @@ Create `dvt/src/devtemplate/config.py`:
 ```python
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import platformdirs
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+GITHUB_REPO_PATTERN = re.compile(r"^[\w.-]+/[\w.-]+$")
 
 
 class Settings(BaseSettings):
@@ -300,6 +357,22 @@ class Settings(BaseSettings):
 
     github_repo: str = "jesserobertson/devcontainers"
     github_branch: str = "main"
+
+    @field_validator("github_repo")
+    @classmethod
+    def _validate_github_repo(cls, value: str) -> str:
+        if not GITHUB_REPO_PATTERN.fullmatch(value):
+            raise ValueError(f"github_repo must be in 'owner/repo' form, got {value!r}")
+        return value
+
+    @field_validator("github_branch")
+    @classmethod
+    def _validate_github_branch(cls, value: str) -> str:
+        if not value or value != value.strip():
+            raise ValueError(
+                f"github_branch must be a non-empty name with no leading/trailing whitespace, got {value!r}"
+            )
+        return value
 
     @property
     def data_dir(self) -> Path:
@@ -317,9 +390,14 @@ class Settings(BaseSettings):
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd dvt && pixi run pytest tests/test_config.py -v`
-Expected: PASS (3 tests)
+Expected: PASS (15 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/config.py dvt/tests/conftest.py dvt/tests/test_config.py
@@ -430,7 +508,12 @@ class DevContainerConfig(BaseModel):
 Run: `cd dvt && pixi run pytest tests/test_models.py -v`
 Expected: PASS (5 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/models.py dvt/tests/test_models.py
@@ -666,7 +749,12 @@ def _merge_map(base_value: Any, overlay_value: Any) -> dict[str, Any]:
 Run: `cd dvt && pixi run pytest tests/test_merge.py -v`
 Expected: PASS (11 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/merge.py dvt/tests/test_merge.py
@@ -872,7 +960,12 @@ def fetch_template(client: httpx.Client, repo: str, branch: str, name: str) -> d
 Run: `cd dvt && pixi run pytest tests/test_github.py -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/github.py dvt/tests/test_github.py
@@ -890,6 +983,18 @@ git commit -m "feat: add GitHub template fetch (Contents API + raw downloads)"
 **Interfaces:**
 - Consumes: `devtemplate.config.Settings` (Task 2), `devtemplate.github.list_template_names` / `fetch_template` (Task 6), the `settings` pytest fixture (Task 2's `conftest.py`).
 - Produces: `devtemplate.store.sync_templates(settings, client) -> list[str]`, `devtemplate.store.list_cached_templates(settings) -> list[str]`, `devtemplate.store.load_cached_template(settings, name) -> dict`, `devtemplate.store.read_manifest(settings) -> list[str]` — all consumed by Tasks 8, 9, 10.
+
+A template `name` reaches this module from two directions: GitHub's own directory
+listing during `sync_templates` (nominally trusted, but `Settings.github_repo` is
+user-overridable via `DVT_GITHUB_REPO`, so a malicious or compromised fork is a real
+input source, not a hypothetical one), and direct CLI arguments during
+`load_cached_template` (`dvt template show <name>`, `dvt project add-feature <name>` —
+always untrusted user input). Both paths build a filesystem path by joining `name`
+onto `settings.templates_dir` without any other sanitization, so an unvalidated name
+containing `..` or a path separator is a directory-traversal write/read. Validate at
+both entry points with the same pattern, matching this repo's own actual template
+directory naming convention (`rapids`, `py-devtools`, `agent`, etc. — lowercase,
+digits, hyphens only, never a leading hyphen).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -948,6 +1053,26 @@ def test_load_cached_template_missing_raises(settings):
 
 def test_list_cached_templates_empty_before_sync(settings):
     assert list_cached_templates(settings) == []
+
+
+@pytest.mark.parametrize(
+    "name", ["..", "has space", "UPPERCASE", "-leading-dash", "has_underscore", ""]
+)
+def test_load_cached_template_rejects_invalid_name(settings, name):
+    with pytest.raises(ValueError):
+        load_cached_template(settings, name)
+
+
+def test_sync_rejects_malicious_template_name_from_github(settings):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/templates"):
+            return httpx.Response(200, json=[{"name": "..", "type": "dir"}])
+        return httpx.Response(200, json={"name": "escape"})
+
+    with pytest.raises(ValueError):
+        sync_templates(settings, _client(handler))
+
+    assert list_cached_templates(settings) == []
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -963,6 +1088,7 @@ Create `dvt/src/devtemplate/store.py`:
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 
@@ -970,6 +1096,14 @@ from devtemplate.config import Settings
 from devtemplate.github import fetch_template, list_template_names
 
 MANIFEST_KEY = "managed_templates"
+TEMPLATE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _validate_template_name(name: str) -> None:
+    if not TEMPLATE_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            f"Invalid template name {name!r}: must match {TEMPLATE_NAME_PATTERN.pattern!r}"
+        )
 
 
 def read_manifest(settings: Settings) -> list[str]:
@@ -991,8 +1125,12 @@ def sync_templates(settings: Settings, client: httpx.Client) -> list[str]:
 
     Only ever writes to the names GitHub currently lists, so any custom template
     directories a user has dropped in by hand under a different name are never touched.
+    Every name is validated before use — `settings.github_repo` is user-overridable,
+    so a malicious or compromised fork's directory listing is untrusted input.
     """
     names = list_template_names(client, settings.github_repo, settings.github_branch)
+    for name in names:
+        _validate_template_name(name)
     settings.templates_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
         template = fetch_template(client, settings.github_repo, settings.github_branch, name)
@@ -1010,6 +1148,7 @@ def list_cached_templates(settings: Settings) -> list[str]:
 
 
 def load_cached_template(settings: Settings, name: str) -> dict:
+    _validate_template_name(name)
     path = settings.templates_dir / name / "devcontainer.json"
     if not path.exists():
         raise FileNotFoundError(
@@ -1018,12 +1157,23 @@ def load_cached_template(settings: Settings, name: str) -> dict:
     return json.loads(path.read_text())
 ```
 
+`sync_templates` validates every name before creating `settings.templates_dir` or
+writing anything, so a malicious listing aborts the whole sync rather than partially
+writing trusted templates and then failing partway through on the bad one — verified
+by `test_sync_rejects_malicious_template_name_from_github` asserting the cache is
+still empty afterward.
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd dvt && pixi run pytest tests/test_store.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (10 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/store.py dvt/tests/test_store.py
@@ -1168,7 +1318,12 @@ def sync() -> None:
 Run: `cd dvt && pixi run pytest tests/test_template_command.py -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/commands/__init__.py dvt/src/devtemplate/commands/template.py dvt/tests/test_template_command.py
@@ -1304,7 +1459,12 @@ def init(
 Run: `cd dvt && pixi run pytest tests/test_project_command.py -v`
 Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/commands/project.py dvt/tests/test_project_command.py
@@ -1505,7 +1665,12 @@ def add_feature(name: str) -> None:
 Run: `cd dvt && pixi run pytest tests/test_project_command.py -v`
 Expected: PASS (6 tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run mypy**
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add dvt/src/devtemplate/commands/project.py dvt/tests/test_project_command.py
@@ -1679,10 +1844,13 @@ if __name__ == "__main__":
 Run: `cd dvt && pixi run pytest tests/test_cli.py -v`
 Expected: PASS (6 tests)
 
-- [ ] **Step 5: Run the full test suite**
+- [ ] **Step 5: Run the full test suite and mypy**
 
 Run: `cd dvt && pixi run pytest -v`
 Expected: PASS — every test from Tasks 1–11 (config, models, merge fixtures + properties, github, store, template command, project command, cli) green, nothing regressed.
+
+Run: `cd dvt && pixi run mypy src`
+Expected: `Success: no issues found in N source files`
 
 - [ ] **Step 6: Commit**
 
@@ -1700,3 +1868,4 @@ git commit -m "feat: wire up dvt CLI with devpod passthroughs and subcommands"
 - **New behavior beyond the spec's literal text, needed for correctness:** `IDENTITY_FIELDS` stripping in `add_feature` (Task 10). The spec's merge section didn't call this out explicitly, but it follows directly from adopting `dev`'s scalar-overlay-wins rule verbatim — without stripping `name`/`workspaceFolder`/`workspaceMount`, adding any feature would silently rename the target project to that feature's own template name. Covered by `test_add_feature_merges_into_existing_devcontainer_json`.
 - **Placeholder scan:** no TBD/TODO; every step shows complete file content or exact code to insert.
 - **Type consistency:** `Settings`, `DevContainerConfig`, `merge_layer`/`merge_layers`, `list_template_names`/`fetch_template`, `sync_templates`/`list_cached_templates`/`load_cached_template`/`read_manifest` are each defined once (Tasks 2, 3, 4, 6, 7 respectively) and reused verbatim (same names, same signatures) in every later task that imports them.
+- **Post-approval additions (during execution, not in the original spec):** (1) pixi dev/runtime environment split, so `pytest`/`hypothesis`/`mypy` never leak into a would-be runtime install (Task 1) — `default` still resolves to the dev-featured environment so `pixi run pytest`/`pixi run mypy` need no `-e` flag. (2) `mypy` added to the dev loop (`[tool.mypy]` in `dvt/pyproject.toml`, Task 1), with a "run mypy, must stay clean" step added to every task that touches `src/`. (3) `Settings.github_repo`/`github_branch` validated (`owner/repo` shape, non-empty/no-whitespace) rather than accepted as bare strings (Task 2). (4) Template `name` validated against this repo's own naming convention (`^[a-z0-9][a-z0-9-]*$`) at both entry points in `store.py` — GitHub's directory listing during `sync_templates` and CLI arguments during `load_cached_template` — since `github_repo` is user-overridable and an unvalidated name is a directory-traversal write/read via `settings.templates_dir / name` (Task 7). `DevContainerConfig` (Task 3) deliberately does NOT get this treatment: its fields represent arbitrary devcontainer.json content, permissive by design (`extra="allow"`), and the merge algorithm only cares about field shape, not string format.
