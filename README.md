@@ -41,29 +41,7 @@ my-project/
     devcontainer.json
 ```
 
-**GPU project (e.g. rapids):**
-
-```json
-{
-  "name": "my-project",
-  "image": "ghcr.io/jesserobertson/base-cuda:latest",
-  "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-  "features": {
-    "ghcr.io/jesserobertson/devcontainers/rapids:latest": {},
-    "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
-  },
-  "runArgs": ["--gpus", "all"],
-  "mounts": [
-    "source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
-  ],
-  "postCreateCommand": "pixi install",
-  "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
-  "remoteUser": "dev"
-}
-```
-
-**CPU project (e.g. FastAPI service):**
+**Example (FastAPI service):**
 
 ```json
 {
@@ -79,9 +57,28 @@ my-project/
     "source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
-  "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
   "remoteUser": "dev"
 }
+```
+
+Every other feature (GPU: `rapids`, `mojo`, `jax`, `pytorch`, `transformers` · CPU: `marimo`,
+`cli`, `py-devtools`, `huggingface`, `ollama` · `agent` for contained auto mode) has a
+complete, ready-to-copy `devcontainer.json` under [`templates/`](templates/) instead of a
+repeated block here. `marimo`'s template uses `base-ubuntu`; swap in `base-cuda` (and add
+`"runArgs": ["--gpus", "all"]`) if you want GPU-accelerated plotting backends.
+
+### Using with a CLI
+
+No VS Code required. Copy a template into your project and drive it with
+[DevPod](https://devpod.sh) or the official
+[`@devcontainers/cli`](https://github.com/devcontainers/cli):
+
+```bash
+mkdir -p my-project/.devcontainer
+cp templates/fastapi/devcontainer.json my-project/.devcontainer/devcontainer.json
+
+devpod up my-project        # or: npx @devcontainers/cli up --workspace-folder my-project
+devpod ssh my-project        # or: npx @devcontainers/cli exec --workspace-folder my-project -- bash
 ```
 
 ### How it works
