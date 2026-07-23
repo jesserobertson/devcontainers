@@ -1,0 +1,14 @@
+{
+  "name": "huggingface",
+  "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/huggingface:latest": {}
+  },
+  "mounts": [
+    "source=huggingface-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+  ],
+  "postCreateCommand": "pixi install",
+  "remoteUser": "dev"
+}
