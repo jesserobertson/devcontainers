@@ -1,0 +1,17 @@
+{
+  "name": "agent",
+  "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+  },
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "mounts": [
+    "source=agent-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+  ],
+  "postCreateCommand": "pixi install",
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "waitFor": "postStartCommand",
+  "remoteUser": "dev"
+}

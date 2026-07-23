@@ -208,6 +208,35 @@ def test_cpu_template_no_sshd_waitloop(feature):
     assert "pgrep sshd" not in json.dumps(_template_json(feature))
 
 
+def test_agent_template_uses_base_ubuntu():
+    assert _template_json("agent")["image"] == "ghcr.io/jesserobertson/base-ubuntu:latest"
+
+
+def test_agent_template_references_own_feature():
+    data = _template_json("agent")
+    assert "ghcr.io/jesserobertson/devcontainers/agent:latest" in data["features"]
+
+
+def test_agent_template_remote_user_dev():
+    assert _template_json("agent")["remoteUser"] == "dev"
+
+
+def test_agent_template_declares_firewall_caps():
+    run_args = _template_json("agent")["runArgs"]
+    assert "--cap-add=NET_ADMIN" in run_args
+    assert "--cap-add=NET_RAW" in run_args
+
+
+def test_agent_template_arms_firewall_on_start():
+    data = _template_json("agent")
+    assert data["postStartCommand"] == "sudo /usr/local/bin/init-firewall.sh"
+    assert data["waitFor"] == "postStartCommand"
+
+
+def test_agent_template_no_sshd_waitloop():
+    assert "pgrep sshd" not in json.dumps(_template_json("agent"))
+
+
 # --- compose YAML ---
 
 @pytest.mark.parametrize("rel_path", [
