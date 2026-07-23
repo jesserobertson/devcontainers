@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from devtemplate.config import Settings
 
 
@@ -19,3 +22,25 @@ def test_settings_paths_derive_from_data_dir(settings, tmp_path):
     assert settings.data_dir == tmp_path
     assert settings.templates_dir == tmp_path / "templates"
     assert settings.manifest_path == tmp_path / "manifest.json"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "no-slash", "too/many/slashes", "/missing-owner", "missing-repo/", "has space/repo"],
+)
+def test_settings_rejects_malformed_github_repo(monkeypatch, value):
+    monkeypatch.setenv("DVT_GITHUB_REPO", value)
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize("value", ["", " ", "main ", " main", "\tmain"])
+def test_settings_rejects_malformed_github_branch(monkeypatch, value):
+    monkeypatch.setenv("DVT_GITHUB_BRANCH", value)
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_accepts_well_formed_github_repo(monkeypatch):
+    monkeypatch.setenv("DVT_GITHUB_REPO", "some-org_2/repo.name-2")
+    assert Settings().github_repo == "some-org_2/repo.name-2"
