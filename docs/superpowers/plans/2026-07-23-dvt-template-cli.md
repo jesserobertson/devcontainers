@@ -83,9 +83,23 @@ devtemplate = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = ">=3.11,<3.13"
+
+[tool.pixi.feature.dev.dependencies]
 pytest = ">=8.0"
 hypothesis = ">=6.100"
+
+[tool.pixi.environments]
+default = { features = ["dev"], solve-group = "default" }
+runtime = { solve-group = "default" }
 ```
+
+`pytest`/`hypothesis` live in a `dev` pixi feature, not directly in
+`[tool.pixi.dependencies]`, so a pixi-based install of just the `runtime`
+environment never carries test tooling. `default` is defined to include the
+`dev` feature, so `pixi run pytest` still works with no `-e` flag — pixi's
+unflagged `pixi run` always resolves to whichever environment is literally
+named `default`, and end users never touch pixi at all (they get `dvt` via
+`pipx install`, not `pixi run dvt`).
 
 - [ ] **Step 2: Create the empty package**
 
@@ -120,6 +134,13 @@ Templates are fetched from [jesserobertson/devcontainers](https://github.com/jes
     dvt ssh my-project
 
 ## Development
+
+The pixi `default` environment (what `pixi run` uses) carries `pytest` and
+`hypothesis` for the dev loop. A separate `runtime` environment
+(`pixi run -e runtime ...`) has none of that test tooling, for anyone who
+wants to confirm the package installs cleanly without it — actual
+distribution to end users is via `pipx install`, not pixi, so this is a
+verification aid rather than the real install path.
 
     pixi install
     pixi run pytest
@@ -164,6 +185,12 @@ import typer
 app = typer.Typer(help="dvt: dev-style named devcontainer templates on top of DevPod.")
 
 
+@app.callback(invoke_without_command=True)
+def callback() -> None:
+    """dvt: dev-style named devcontainer templates on top of DevPod."""
+    pass
+
+
 def main() -> None:
     app()
 
@@ -171,6 +198,13 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 ```
+
+Typer raises `RuntimeError: Could not get a command for this Typer instance`
+if the app has zero registered commands and no callback — a bare
+`typer.Typer()` with nothing attached yet isn't invokable. The no-op
+`@app.callback(invoke_without_command=True)` is the standard fix; Task 11
+replaces this whole file with one that has real commands, at which point
+the callback stops being load-bearing.
 
 - [ ] **Step 8: Run the test to verify it passes**
 
