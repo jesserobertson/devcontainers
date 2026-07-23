@@ -19,6 +19,8 @@ SU_DEV_FEATURES = [
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
 ]
 
+GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
+
 
 # --- per-feature parametrised checks ---
 
@@ -156,6 +158,34 @@ def test_readme_documents_agent():
     assert "agent" in (REPO_ROOT / "README.md").read_text()
 
 
+# --- templates/ (standalone per-feature devcontainer.json) ---
+
+@pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
+def test_gpu_template_uses_base_cuda(feature):
+    assert _template_json(feature)["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+@pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
+def test_gpu_template_requests_gpus(feature):
+    assert _template_json(feature)["runArgs"] == ["--gpus", "all"]
+
+
+@pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
+def test_gpu_template_references_own_feature(feature):
+    data = _template_json(feature)
+    assert f"ghcr.io/jesserobertson/devcontainers/{feature}:latest" in data["features"]
+
+
+@pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
+def test_gpu_template_remote_user_dev(feature):
+    assert _template_json(feature)["remoteUser"] == "dev"
+
+
+@pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
+def test_gpu_template_no_sshd_waitloop(feature):
+    assert "pgrep sshd" not in json.dumps(_template_json(feature))
+
+
 # --- compose YAML ---
 
 @pytest.mark.parametrize("rel_path", [
@@ -226,3 +256,8 @@ def _devcontainer_json(rel_path: str) -> dict:
 
 def _yaml(rel_path: str) -> dict:
     return yaml.safe_load((REPO_ROOT / rel_path).read_text())
+
+
+def _template_json(feature: str) -> dict:
+    path = REPO_ROOT / "templates" / feature / "devcontainer.json"
+    return json.loads(path.read_text())

@@ -1,0 +1,15 @@
+{
+  "name": "jax",
+  "image": "ghcr.io/jesserobertson/base-cuda:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/jax:latest": {}
+  },
+  "runArgs": ["--gpus", "all"],
+  "mounts": [
+    "source=jax-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+  ],
+  "postCreateCommand": "pixi install",
+  "remoteUser": "dev"
+}
