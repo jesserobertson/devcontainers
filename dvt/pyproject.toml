@@ -40,5 +40,11 @@ devtemplate = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = ">=3.11,<3.13"
+
+[tool.pixi.feature.dev.dependencies]
 pytest = ">=8.0"
 hypothesis = ">=6.100"
+
+[tool.pixi.environments]
+default = { features = ["dev"], solve-group = "default" }
+runtime = { solve-group = "default" }
