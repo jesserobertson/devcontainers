@@ -4,9 +4,9 @@
 
 **Goal:** Build `dvt`, a Typer/Rich/Pydantic CLI (package `devtemplate`) that scaffolds projects from named devcontainer templates fetched from this repo's `templates/` directory on GitHub, layers additional features onto an existing project's `devcontainer.json` via a field-typed merge, and passes lifecycle commands straight through to `devpod`.
 
-**Architecture:** A self-contained `dvt/` subdirectory with its own `pyproject.toml` (pip/pipx-installable, pixi for local dev). Six focused modules — `config.py` (XDG settings), `models.py` (devcontainer.json shape), `merge.py` (pure field-typed merge, ported from `dev`'s `merge.rs`), `github.py` (network fetch), `store.py` (local cache + sync orchestration), `cli.py` + `commands/` (Typer surface) — built bottom-up so every later task only depends on interfaces earlier tasks already shipped and tested.
+**Architecture:** A self-contained `dvt/` subdirectory with its own `pyproject.toml` (pip/pipx-installable, pixi for local dev). Seven focused modules — `config.py` (XDG settings), `models.py` (devcontainer.json shape), `merge.py` (pure field-typed merge, ported from `dev`'s `merge.rs`), `schema.py` (validate output against the official devcontainer.json JSON Schema), `github.py` (network fetch), `store.py` (local cache + sync orchestration), `cli.py` + `commands/` (Typer surface) — built bottom-up so every later task only depends on interfaces earlier tasks already shipped and tested.
 
-**Tech Stack:** Typer, Rich, Pydantic, pydantic-settings, `platformdirs`, `httpx`, pytest, `hypothesis`. Distribution: `pipx install ./dvt` (or a future git/PyPI ref); local dev loop via `pixi install` / `pixi run pytest` from `dvt/`.
+**Tech Stack:** Typer, Rich, Pydantic, pydantic-settings, `platformdirs`, `httpx`, `jsonschema`, pytest, `hypothesis`. Distribution: `pipx install ./dvt` (or a future git/PyPI ref); local dev loop via `pixi install` / `pixi run pytest` from `dvt/`.
 
 ## Global Constraints
 
@@ -21,6 +21,7 @@
 - Pydantic models never use `Any` — every field has a concrete type (`bool | int | str` for feature options, unions of concrete types elsewhere) so `hypothesis`'s pydantic integration (`st.from_type(...)`) can generate valid instances without needing a registered `Any` strategy.
 - Config-level identifier strings that gate a real filesystem write, URL, or process call get validated at the point they're accepted, not left as bare `str`: `Settings.github_repo` must be `owner/repo` shaped, `Settings.github_branch` non-empty with no stray whitespace (Task 2), and any template `name` used to build a path under `templates_dir` or a GitHub URL must match `^[a-z0-9][a-z0-9-]*$` — this repo's own template-directory naming convention (Task 7). This does not extend to `DevContainerConfig` (Task 3): its fields represent arbitrary devcontainer.json content from templates and user projects, deliberately permissive (`extra="allow"`), and over-constraining `image`/`features`-key patterns there would reject legitimate real-world content for no benefit to the merge algorithm, which only cares about field *shape*, not string format.
 - `mypy` runs alongside `pytest` in the `dev` pixi feature/environment (`pixi run mypy src`), configured in `dvt/pyproject.toml`'s `[tool.mypy]` (Python 3.11, `plugins = ["pydantic.mypy"]`, `disallow_untyped_defs`/`disallow_incomplete_defs`/`check_untyped_defs`/`no_implicit_optional`/`warn_redundant_casts`/`warn_unused_ignores`/`warn_return_any` all `true`; `tests.*` overridden to allow untyped defs). Every task must leave `pixi run mypy src` clean — no new errors, no unaddressed `# type: ignore`. Task reviewers check this alongside spec compliance.
+- `devtemplate.schema.validate_devcontainer_config(data: dict) -> None` (already shipped, ahead of Task 4) validates against a vendored copy of the official `devcontainer.json` base schema (`devtemplate/schemas/devContainer.base.schema.json`, sourced from `devcontainers/spec`, empirically checked against this repo's own real `templates/fastapi` and `templates/agent` before being trusted) — scoped to the base schema only, not the VS Code/Codespaces overlay schemas containers.dev also composes in, since every field this tool's merge algorithm touches is a base-schema property. `jsonschema>=4.18` is a runtime dependency (not dev-only): Task 4's merge fixture test validates its "add agent to fastapi" scenario output against it, and Task 10's `add-feature` validates the merge result against it before writing, refusing (same pattern as the JSONC-refusal) if merging would produce spec-invalid output.
 - All commands below assume the working directory is `dvt/` unless stated otherwise. Run tests with `pixi run pytest tests/<file> -v` from that directory.
 
 ---
@@ -529,7 +530,7 @@ git commit -m "feat: add DevContainerConfig pydantic model"
 - Test: `dvt/tests/test_merge.py`
 
 **Interfaces:**
-- Consumes: nothing new (operates on plain `dict[str, Any]`, not the Task 3 model, so it stays a faithful, reusable port of `dev`'s generic `merge_layer` primitive).
+- Consumes: `devtemplate.schema.validate_devcontainer_config` (already shipped — vendored devcontainer.json base schema + `jsonschema` wrapper, added ahead of this task) — used only in this task's *test*, not in `merge.py` itself, which stays a faithful, reusable port of `dev`'s generic `merge_layer` primitive operating on plain `dict[str, Any]`, with no schema awareness of its own.
 - Produces: `devtemplate.merge.merge_layer(base: dict, overlay: dict) -> dict` and `devtemplate.merge.merge_layers(layers: list[dict]) -> dict`, both consumed by Task 5 (property tests) and Task 10 (`add-feature`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -538,6 +539,7 @@ Create `dvt/tests/test_merge.py`:
 
 ```python
 from devtemplate.merge import merge_layer
+from devtemplate.schema import validate_devcontainer_config
 
 
 def test_scalar_field_overlay_wins():
@@ -640,7 +642,13 @@ def test_add_agent_to_fastapi_scenario():
         "source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume",
         "source=agent-pixi-cache,target=/home/dev/.cache/pixi,type=volume",
     ]
+    validate_devcontainer_config(merged)
 ```
+
+The final `validate_devcontainer_config(merged)` call (no assertion needed — it
+raises `jsonschema.ValidationError` on failure, so simply not raising is the pass
+condition) confirms the merge algorithm's output is real-spec-valid, not just
+shaped the way this test's own assertions expect.
 
 Note: this test does not assert on `merged["name"]` — `merge_layer` itself is the generic, faithful port of `dev`'s primitive where scalar fields are always overlay-wins by design. The project-identity-field stripping that makes `add-feature` safe to use in practice is a caller-side policy, tested separately in Task 10.
 
@@ -1480,7 +1488,7 @@ git commit -m "feat: add dvt project init command"
 - Modify: `dvt/tests/test_project_command.py`
 
 **Interfaces:**
-- Consumes: `devtemplate.merge.merge_layer` (Task 4), `devtemplate.store.load_cached_template` (Task 7).
+- Consumes: `devtemplate.merge.merge_layer` (Task 4), `devtemplate.store.load_cached_template` (Task 7), `devtemplate.schema.validate_devcontainer_config` (already shipped — vendored devcontainer.json base schema + `jsonschema` wrapper).
 - Produces: `add-feature` command on the existing `devtemplate.commands.project.app` (Task 9) — nothing new consumed by later tasks beyond the already-registered `app`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1544,6 +1552,27 @@ def test_add_feature_refuses_on_invalid_json(tmp_path, settings, monkeypatch):
 
     assert result.exit_code == 1
     assert (devcontainer_dir / "devcontainer.json").read_text() == original
+
+
+def test_add_feature_refuses_when_merge_result_is_schema_invalid(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    original = json.dumps(
+        {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(original)
+
+    # remoteUser must be a string per the devcontainer.json schema; this
+    # template is deliberately broken to exercise the write-time refusal.
+    template_dir = settings.templates_dir / "broken"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"remoteUser": 12345}))
+
+    result = runner.invoke(app, ["add-feature", "broken"])
+
+    assert result.exit_code == 1
+    assert (devcontainer_dir / "devcontainer.json").read_text() == original
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1553,13 +1582,16 @@ Expected: FAIL — `AssertionError` from Typer reporting "No such command 'add-f
 
 - [ ] **Step 3: Implement `add-feature`**
 
-Add to `dvt/src/devtemplate/commands/project.py` (after the existing imports, add `merge_layer`; after the `init` command, add):
+Add to `dvt/src/devtemplate/commands/project.py` (after the existing imports, add `jsonschema`, `merge_layer`, and `validate_devcontainer_config`; after the `init` command, add):
 
 ```python
+import jsonschema
+
 from devtemplate.merge import merge_layer
+from devtemplate.schema import validate_devcontainer_config
 ```
 
-(Insert this import alongside the existing `from devtemplate.store import ...` line.)
+(Insert these alongside the existing imports — `jsonschema` next to `httpx`/`typer`, the two `devtemplate.*` imports next to the existing `from devtemplate.store import ...` line.)
 
 ```python
 IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount"}
@@ -1585,6 +1617,15 @@ def add_feature(name: str) -> None:
     template = load_cached_template(settings, name)
     overlay = {key: value for key, value in template.items() if key not in IDENTITY_FIELDS}
     merged = merge_layer(base_config, overlay)
+
+    try:
+        validate_devcontainer_config(merged)
+    except jsonschema.ValidationError as exc:
+        console.print(
+            f"[red]Merging '{name}' would produce an invalid devcontainer.json:[/red] {exc.message}"
+        )
+        raise typer.Exit(code=1)
+
     target.write_text(json.dumps(merged, indent=2) + "\n")
     console.print(f"Merged feature '{name}' into {target}.")
 ```
@@ -1598,11 +1639,13 @@ import json
 from pathlib import Path
 
 import httpx
+import jsonschema
 import typer
 from rich.console import Console
 
 from devtemplate.config import Settings
 from devtemplate.merge import merge_layer
+from devtemplate.schema import validate_devcontainer_config
 from devtemplate.store import list_cached_templates, load_cached_template, sync_templates
 
 app = typer.Typer(help="Scaffold and evolve a project's devcontainer.json from templates.")
@@ -1656,6 +1699,15 @@ def add_feature(name: str) -> None:
     template = load_cached_template(settings, name)
     overlay = {key: value for key, value in template.items() if key not in IDENTITY_FIELDS}
     merged = merge_layer(base_config, overlay)
+
+    try:
+        validate_devcontainer_config(merged)
+    except jsonschema.ValidationError as exc:
+        console.print(
+            f"[red]Merging '{name}' would produce an invalid devcontainer.json:[/red] {exc.message}"
+        )
+        raise typer.Exit(code=1)
+
     target.write_text(json.dumps(merged, indent=2) + "\n")
     console.print(f"Merged feature '{name}' into {target}.")
 ```
@@ -1663,7 +1715,7 @@ def add_feature(name: str) -> None:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd dvt && pixi run pytest tests/test_project_command.py -v`
-Expected: PASS (6 tests)
+Expected: PASS (7 tests)
 
 - [ ] **Step 5: Run mypy**
 
@@ -1868,4 +1920,4 @@ git commit -m "feat: wire up dvt CLI with devpod passthroughs and subcommands"
 - **New behavior beyond the spec's literal text, needed for correctness:** `IDENTITY_FIELDS` stripping in `add_feature` (Task 10). The spec's merge section didn't call this out explicitly, but it follows directly from adopting `dev`'s scalar-overlay-wins rule verbatim — without stripping `name`/`workspaceFolder`/`workspaceMount`, adding any feature would silently rename the target project to that feature's own template name. Covered by `test_add_feature_merges_into_existing_devcontainer_json`.
 - **Placeholder scan:** no TBD/TODO; every step shows complete file content or exact code to insert.
 - **Type consistency:** `Settings`, `DevContainerConfig`, `merge_layer`/`merge_layers`, `list_template_names`/`fetch_template`, `sync_templates`/`list_cached_templates`/`load_cached_template`/`read_manifest` are each defined once (Tasks 2, 3, 4, 6, 7 respectively) and reused verbatim (same names, same signatures) in every later task that imports them.
-- **Post-approval additions (during execution, not in the original spec):** (1) pixi dev/runtime environment split, so `pytest`/`hypothesis`/`mypy` never leak into a would-be runtime install (Task 1) — `default` still resolves to the dev-featured environment so `pixi run pytest`/`pixi run mypy` need no `-e` flag. (2) `mypy` added to the dev loop (`[tool.mypy]` in `dvt/pyproject.toml`, Task 1), with a "run mypy, must stay clean" step added to every task that touches `src/`. (3) `Settings.github_repo`/`github_branch` validated (`owner/repo` shape, non-empty/no-whitespace) rather than accepted as bare strings (Task 2). (4) Template `name` validated against this repo's own naming convention (`^[a-z0-9][a-z0-9-]*$`) at both entry points in `store.py` — GitHub's directory listing during `sync_templates` and CLI arguments during `load_cached_template` — since `github_repo` is user-overridable and an unvalidated name is a directory-traversal write/read via `settings.templates_dir / name` (Task 7). `DevContainerConfig` (Task 3) deliberately does NOT get this treatment: its fields represent arbitrary devcontainer.json content, permissive by design (`extra="allow"`), and the merge algorithm only cares about field shape, not string format.
+- **Post-approval additions (during execution, not in the original spec):** (1) pixi dev/runtime environment split, so `pytest`/`hypothesis`/`mypy` never leak into a would-be runtime install (Task 1) — `default` still resolves to the dev-featured environment so `pixi run pytest`/`pixi run mypy` need no `-e` flag. (2) `mypy` added to the dev loop (`[tool.mypy]` in `dvt/pyproject.toml`, Task 1), with a "run mypy, must stay clean" step added to every task that touches `src/`. (3) `Settings.github_repo`/`github_branch` validated (`owner/repo` shape, non-empty/no-whitespace) rather than accepted as bare strings (Task 2). (4) Template `name` validated against this repo's own naming convention (`^[a-z0-9][a-z0-9-]*$`) at both entry points in `store.py` — GitHub's directory listing during `sync_templates` and CLI arguments during `load_cached_template` — since `github_repo` is user-overridable and an unvalidated name is a directory-traversal write/read via `settings.templates_dir / name` (Task 7). (5) `devtemplate.schema.validate_devcontainer_config`, a vendored-schema `jsonschema` wrapper, shipped ahead of Task 4 and wired into Task 4's merge fixture test (extra confidence the algorithm's output is real-spec-valid) and Task 10's `add-feature` write path (refuses to write a schema-invalid merge result, same pattern as the existing JSONC refusal). `DevContainerConfig` (Task 3) deliberately does NOT get schema-pattern validation on its own fields: its fields represent arbitrary devcontainer.json content, permissive by design (`extra="allow"`), and the merge algorithm only cares about field shape, not string format — schema conformance is checked once, at the point `dvt` actually writes output, not on every intermediate representation.
