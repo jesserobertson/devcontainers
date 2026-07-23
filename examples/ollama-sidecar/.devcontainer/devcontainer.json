@@ -14,6 +14,5 @@
     "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
   },
   "postCreateCommand": "pixi install",
-  "postStartCommand": "until pgrep sshd > /dev/null 2>&1; do sleep 1; done",
   "remoteUser": "dev"
 }

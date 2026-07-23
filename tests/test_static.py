@@ -129,6 +129,22 @@ def test_ollama_sidecar_example_remote_user_dev():
     assert data["remoteUser"] == "dev"
 
 
+def test_no_pgrep_sshd_anywhere():
+    # Confirmed dead code: DevPod's in-container SSH server is an embedded Go
+    # binary (cmd/agent/container/ssh_server.go), never a process named sshd.
+    # See docs/superpowers/specs/2026-07-23-cli-first-templates-design.md.
+    offenders = []
+    if "pgrep sshd" in (REPO_ROOT / "README.md").read_text():
+        offenders.append("README.md")
+    for path in sorted(REPO_ROOT.glob("examples/**/devcontainer.json")):
+        if "pgrep sshd" in path.read_text():
+            offenders.append(str(path.relative_to(REPO_ROOT)))
+    for path in sorted(REPO_ROOT.glob("templates/**/devcontainer.json")):
+        if "pgrep sshd" in path.read_text():
+            offenders.append(str(path.relative_to(REPO_ROOT)))
+    assert not offenders, f"pgrep sshd wait-loop found in: {offenders}"
+
+
 def test_agent_consumer_declares_net_caps():
     # Any devcontainer.json under examples/ that references the agent feature must
     # declare both NET_ADMIN and NET_RAW in runArgs, or init-firewall.sh fails at
