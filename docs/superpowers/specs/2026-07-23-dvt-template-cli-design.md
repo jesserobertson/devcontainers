@@ -142,12 +142,31 @@ hand instead of risking silently dropping comments or corrupting formatting.
 
 ## Testing
 
-`dvt/tests/` (pytest), mirroring this repo's `tests/test_static.py` conventions:
+`dvt/tests/` (pytest + `hypothesis` + `pydantic`'s own testing conventions), mirroring this
+repo's `tests/test_static.py` conventions where they still apply (fixture-file-based JSON
+checks), extended for the parts of `dvt` that are actual logic rather than static content:
 
-- Merge algorithm tested against fixture JSON pairs (base + overlay → expected result),
-  covering each field-type rule above individually and in combination (e.g. adding `agent`
-  to an existing `fastapi` project: features union, `runArgs`/`postStartCommand`/`waitFor`
-  added).
+- **Pydantic model tests** (`models.py`): standard pydantic testing patterns — round-trip
+  `model_validate` / `model_dump` for every model, and explicit tests that malformed input
+  (wrong types, missing required fields) raises `pydantic.ValidationError` rather than
+  silently coercing. Every model in `models.py` gets at least one valid-input and one
+  invalid-input case.
+- **Property-based tests** (`hypothesis`), primarily for the merge algorithm in `merge.py`,
+  where example-based fixtures alone won't catch order-dependence or edge cases:
+  - `merge(base, overlay)` is idempotent when `overlay == base` (merging a template into a
+    project that already has it produces the same result).
+  - `features` union never drops a key present in either input.
+  - `runArgs` concatenation length always equals `len(base) + len(overlay)` (no silent
+    dedup where none should happen).
+  - `mounts`/`forwardPorts` concatenation never produces duplicate entries.
+  - Since pydantic registers a Hypothesis plugin when both packages are installed,
+    `st.from_type(SomeModel)` generates arbitrary valid instances of `models.py` types
+    directly — used to feed the merge properties above with realistic generated
+    devcontainer.json fragments instead of hand-written fixtures alone.
+- **Fixture-based tests**: merge algorithm also tested against concrete fixture JSON pairs
+  (base + overlay → expected result) for the concrete scenario this tool exists for — e.g.
+  adding `agent` to an existing `fastapi` project: features union, `runArgs`/
+  `postStartCommand`/`waitFor` added, everything else untouched.
 - GitHub fetch (`github.py`) tested with `httpx`'s mock transport — no real network calls in
   the test suite.
 - XDG paths overridden via env vars (`XDG_DATA_HOME` etc., or `platformdirs`' own test hooks)
