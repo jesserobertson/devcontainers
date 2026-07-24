@@ -6,7 +6,7 @@
 
 **Architecture:** A self-contained `dvt/` subdirectory with its own `pyproject.toml` (pip/pipx-installable, pixi for local dev). Seven focused modules — `config.py` (XDG settings), `models.py` (devcontainer.json shape), `merge.py` (pure field-typed merge, ported from `dev`'s `merge.rs`), `schema.py` (validate output against the official devcontainer.json JSON Schema), `github.py` (network fetch), `store.py` (local cache + sync orchestration), `cli.py` + `commands/` (Typer surface) — built bottom-up so every later task only depends on interfaces earlier tasks already shipped and tested.
 
-**Tech Stack:** Typer, Rich, Pydantic, pydantic-settings, `platformdirs`, `httpx`, `jsonschema`, pytest, `hypothesis`. Distribution: `pipx install ./dvt` (or a future git/PyPI ref); local dev loop via `pixi install` / `pixi run pytest` from `dvt/`.
+**Tech Stack:** Typer, Rich, Pydantic, pydantic-settings, `platformdirs`, `httpx`, `jsonschema`, pytest, `hypothesis`, `pytest-cov`. Distribution: `pipx install ./dvt` (or a future git/PyPI ref); local dev loop via `pixi install` / `pixi run pytest` from `dvt/`.
 
 ## Global Constraints
 
@@ -22,6 +22,7 @@
 - Config-level identifier strings that gate a real filesystem write, URL, or process call get validated at the point they're accepted, not left as bare `str`: `Settings.github_repo` must be `owner/repo` shaped, `Settings.github_branch` non-empty with no stray whitespace (Task 2), and any template `name` used to build a path under `templates_dir` or a GitHub URL must match `^[a-z0-9][a-z0-9-]*$` — this repo's own template-directory naming convention (Task 7). This does not extend to `DevContainerConfig` (Task 3): its fields represent arbitrary devcontainer.json content from templates and user projects, deliberately permissive (`extra="allow"`), and over-constraining `image`/`features`-key patterns there would reject legitimate real-world content for no benefit to the merge algorithm, which only cares about field *shape*, not string format.
 - `mypy` runs alongside `pytest` in the `dev` pixi feature/environment (`pixi run mypy src`), configured in `dvt/pyproject.toml`'s `[tool.mypy]` (Python 3.11, `plugins = ["pydantic.mypy"]`, `disallow_untyped_defs`/`disallow_incomplete_defs`/`check_untyped_defs`/`no_implicit_optional`/`warn_redundant_casts`/`warn_unused_ignores`/`warn_return_any` all `true`; `tests.*` overridden to allow untyped defs). Every task must leave `pixi run mypy src` clean — no new errors, no unaddressed `# type: ignore`. Task reviewers check this alongside spec compliance.
 - `devtemplate.schema.validate_devcontainer_config(data: dict) -> None` (already shipped, ahead of Task 4) validates against a vendored copy of the official `devcontainer.json` base schema (`devtemplate/schemas/devContainer.base.schema.json`, sourced from `devcontainers/spec`, empirically checked against this repo's own real `templates/fastapi` and `templates/agent` before being trusted) — scoped to the base schema only, not the VS Code/Codespaces overlay schemas containers.dev also composes in, since every field this tool's merge algorithm touches is a base-schema property. `jsonschema>=4.18` is a runtime dependency (not dev-only): Task 4's merge fixture test validates its "add agent to fastapi" scenario output against it, and Task 10's `add-feature` validates the merge result against it before writing, refusing (same pattern as the JSONC-refusal) if merging would produce spec-invalid output.
+- `pixi run pytest` reports coverage by default (`addopts = "--cov=devtemplate --cov-report=term-missing"` in `dvt/pyproject.toml`, backed by `pytest-cov` in the `dev` pixi feature). Running a single test file still reports coverage for the whole package, so a low percentage on a single-file run is expected and not a defect — it reflects only what that file's tests exercised, not the full suite. GitHub Actions wiring (uploading coverage, gating a threshold) is a deliberate follow-up, not part of this plan.
 - All commands below assume the working directory is `dvt/` unless stated otherwise. Run tests with `pixi run pytest tests/<file> -v` from that directory.
 
 ---
@@ -56,6 +57,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "platformdirs>=4.0",
     "httpx>=0.27",
+    "jsonschema>=4.18",
 ]
 
 [project.scripts]
@@ -65,6 +67,7 @@ dvt = "devtemplate.cli:main"
 test = [
     "pytest>=8.0",
     "hypothesis>=6.100",
+    "pytest-cov>=5.0",
 ]
 
 [build-system]
@@ -76,6 +79,17 @@ packages = ["src/devtemplate"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=devtemplate --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src/devtemplate"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
 
 [tool.mypy]
 python_version = "3.11"
@@ -106,14 +120,23 @@ python = ">=3.11,<3.13"
 [tool.pixi.feature.dev.dependencies]
 pytest = ">=8.0"
 hypothesis = ">=6.100"
+pytest-cov = ">=5.0"
 
 [tool.pixi.environments]
 default = { features = ["dev"], solve-group = "default" }
 runtime = { solve-group = "default" }
 
 [dependency-groups]
-dev = ["mypy>=2.3.0,<3"]
+dev = ["mypy>=2.3.0,<3", "types-jsonschema>=4.26.0.20260518,<5"]
 ```
+
+This block reflects `dvt/pyproject.toml`'s state as of the last post-approval
+amendment (coverage reporting), not just this task's original content — `jsonschema`
+(schema validation, shipped ahead of Task 4), `pytest-cov`/`[tool.coverage.*]`
+(coverage reporting), and `types-jsonschema` (mypy stubs) were all added after this
+task was first implemented. A fresh implementer starting from this plan file alone
+gets the correct end state; see the Self-Review Notes' "Post-approval additions" for
+the full list and reasoning behind each.
 
 `mypy` landed under `[dependency-groups]` (PEP 735) rather than
 `[tool.pixi.feature.dev.dependencies]` because it's a PyPI package added via
@@ -1926,4 +1949,4 @@ git commit -m "feat: wire up dvt CLI with devpod passthroughs and subcommands"
 - **New behavior beyond the spec's literal text, needed for correctness:** `IDENTITY_FIELDS` stripping in `add_feature` (Task 10). The spec's merge section didn't call this out explicitly, but it follows directly from adopting `dev`'s scalar-overlay-wins rule verbatim — without stripping `name`/`workspaceFolder`/`workspaceMount`, adding any feature would silently rename the target project to that feature's own template name. Covered by `test_add_feature_merges_into_existing_devcontainer_json`.
 - **Placeholder scan:** no TBD/TODO; every step shows complete file content or exact code to insert.
 - **Type consistency:** `Settings`, `DevContainerConfig`, `merge_layer`/`merge_layers`, `list_template_names`/`fetch_template`, `sync_templates`/`list_cached_templates`/`load_cached_template`/`read_manifest` are each defined once (Tasks 2, 3, 4, 6, 7 respectively) and reused verbatim (same names, same signatures) in every later task that imports them.
-- **Post-approval additions (during execution, not in the original spec):** (1) pixi dev/runtime environment split, so `pytest`/`hypothesis`/`mypy` never leak into a would-be runtime install (Task 1) — `default` still resolves to the dev-featured environment so `pixi run pytest`/`pixi run mypy` need no `-e` flag. (2) `mypy` added to the dev loop (`[tool.mypy]` in `dvt/pyproject.toml`, Task 1), with a "run mypy, must stay clean" step added to every task that touches `src/`. (3) `Settings.github_repo`/`github_branch` validated (`owner/repo` shape, non-empty/no-whitespace) rather than accepted as bare strings (Task 2). (4) Template `name` validated against this repo's own naming convention (`^[a-z0-9][a-z0-9-]*$`) at both entry points in `store.py` — GitHub's directory listing during `sync_templates` and CLI arguments during `load_cached_template` — since `github_repo` is user-overridable and an unvalidated name is a directory-traversal write/read via `settings.templates_dir / name` (Task 7). (5) `devtemplate.schema.validate_devcontainer_config`, a vendored-schema `jsonschema` wrapper, shipped ahead of Task 4 and wired into Task 4's merge fixture test (extra confidence the algorithm's output is real-spec-valid) and Task 10's `add-feature` write path (refuses to write a schema-invalid merge result, same pattern as the existing JSONC refusal). `DevContainerConfig` (Task 3) deliberately does NOT get schema-pattern validation on its own fields: its fields represent arbitrary devcontainer.json content, permissive by design (`extra="allow"`), and the merge algorithm only cares about field shape, not string format — schema conformance is checked once, at the point `dvt` actually writes output, not on every intermediate representation.
+- **Post-approval additions (during execution, not in the original spec):** (1) pixi dev/runtime environment split, so `pytest`/`hypothesis`/`mypy` never leak into a would-be runtime install (Task 1) — `default` still resolves to the dev-featured environment so `pixi run pytest`/`pixi run mypy` need no `-e` flag. (2) `mypy` added to the dev loop (`[tool.mypy]` in `dvt/pyproject.toml`, Task 1), with a "run mypy, must stay clean" step added to every task that touches `src/`. (3) `Settings.github_repo`/`github_branch` validated (`owner/repo` shape, non-empty/no-whitespace) rather than accepted as bare strings (Task 2). (4) Template `name` validated against this repo's own naming convention (`^[a-z0-9][a-z0-9-]*$`) at both entry points in `store.py` — GitHub's directory listing during `sync_templates` and CLI arguments during `load_cached_template` — since `github_repo` is user-overridable and an unvalidated name is a directory-traversal write/read via `settings.templates_dir / name` (Task 7). (5) `devtemplate.schema.validate_devcontainer_config`, a vendored-schema `jsonschema` wrapper, shipped ahead of Task 4 and wired into Task 4's merge fixture test (extra confidence the algorithm's output is real-spec-valid) and Task 10's `add-feature` write path (refuses to write a schema-invalid merge result, same pattern as the existing JSONC refusal). `DevContainerConfig` (Task 3) deliberately does NOT get schema-pattern validation on its own fields: its fields represent arbitrary devcontainer.json content, permissive by design (`extra="allow"`), and the merge algorithm only cares about field shape, not string format — schema conformance is checked once, at the point `dvt` actually writes output, not on every intermediate representation. (6) `pytest-cov` added to the dev loop; `pixi run pytest` reports coverage by default via `addopts`. GitHub Actions wiring is a noted follow-up, not part of this plan.
