@@ -53,6 +53,8 @@ def init(
         case Ok(config):
             pass
 
+    config["name"] = path.resolve().name
+
     try:
         validate_devcontainer_config(config)
     except jsonschema.ValidationError as exc:

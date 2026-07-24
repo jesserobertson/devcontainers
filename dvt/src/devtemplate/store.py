@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from typing import Any, cast
 
 import httpx
@@ -52,6 +53,12 @@ def sync_templates(settings: Settings, client: httpx.Client) -> Result[list[str]
     malicious or compromised fork's directory listing is untrusted input. All names are
     validated before templates_dir is created or anything is written, so a bad name
     anywhere in the listing aborts the whole sync with nothing written.
+
+    Also prunes: any template that was in the *previous* sync's manifest but is missing
+    from this sync's listing (removed or renamed upstream) has its local copy deleted.
+    Only ever deletes names that were themselves previously written by dvt (i.e. present
+    in the old manifest) — a hand-added custom template directory was never in any
+    manifest dvt wrote, so it's never a pruning candidate.
     """
     names_result = list_template_names(client, settings.github_repo, settings.github_branch)
     if names_result.is_err():
@@ -67,6 +74,9 @@ def sync_templates(settings: Settings, client: httpx.Client) -> Result[list[str]
             # idiom this codebase already used pre-retrofit for stub gaps.
             return Err(cast(Err[Any, Any], validation).unwrap_err())
 
+    previous_result = read_manifest(settings)
+    previous_names = previous_result.unwrap() if previous_result.is_ok() else []
+
     settings.templates_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
         template_result = fetch_template(client, settings.github_repo, settings.github_branch, name)
@@ -77,6 +87,14 @@ def sync_templates(settings: Settings, client: httpx.Client) -> Result[list[str]
         (template_dir / "devcontainer.json").write_text(
             json.dumps(template_result.unwrap(), indent=2)
         )
+
+    removed = set(previous_names) - set(names)
+    for stale_name in removed:
+        if _validate_template_name(stale_name).is_err():
+            continue
+        stale_dir = settings.templates_dir / stale_name
+        if stale_dir.is_dir():
+            shutil.rmtree(stale_dir)
 
     manifest_result = write_manifest(settings, names)
     if manifest_result.is_err():

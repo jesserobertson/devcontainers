@@ -70,6 +70,62 @@ def test_load_cached_template_rejects_invalid_name(settings, name):
     assert isinstance(result.unwrap_err(), ValueError)
 
 
+def test_sync_prunes_templates_removed_upstream(settings):
+    def handler_v1(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/templates"):
+            return httpx.Response(
+                200,
+                json=[
+                    {"name": "fastapi", "type": "dir"},
+                    {"name": "old-feature", "type": "dir"},
+                ],
+            )
+        if request.url.path.endswith("old-feature/devcontainer.json"):
+            return httpx.Response(200, json={"name": "old-feature"})
+        return httpx.Response(200, json={"name": "fastapi"})
+
+    first = sync_templates(settings, _client(handler_v1))
+    assert first.is_ok()
+    assert set(list_cached_templates(settings)) == {"fastapi", "old-feature"}
+
+    def handler_v2(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/templates"):
+            return httpx.Response(200, json=[{"name": "fastapi", "type": "dir"}])
+        return httpx.Response(200, json={"name": "fastapi"})
+
+    second = sync_templates(settings, _client(handler_v2))
+
+    assert second.is_ok()
+    assert second.unwrap() == ["fastapi"]
+    assert list_cached_templates(settings) == ["fastapi"]
+
+
+def test_sync_prune_never_touches_a_dir_that_was_never_managed(settings):
+    custom_dir = settings.templates_dir / "my-custom"
+    custom_dir.mkdir(parents=True)
+    (custom_dir / "devcontainer.json").write_text('{"name": "custom"}')
+
+    def handler_v1(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/templates"):
+            return httpx.Response(200, json=[{"name": "fastapi", "type": "dir"}])
+        return httpx.Response(200, json={"name": "fastapi"})
+
+    sync_templates(settings, _client(handler_v1))
+
+    def handler_v2(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/contents/templates"):
+            return httpx.Response(200, json=[{"name": "agent", "type": "dir"}])
+        return httpx.Response(200, json={"name": "agent"})
+
+    result = sync_templates(settings, _client(handler_v2))
+
+    assert result.is_ok()
+    # fastapi (previously managed, now gone upstream) is pruned...
+    assert "fastapi" not in list_cached_templates(settings)
+    # ...but my-custom (never in any manifest dvt wrote) survives untouched.
+    assert (custom_dir / "devcontainer.json").read_text() == '{"name": "custom"}'
+
+
 def test_sync_rejects_malicious_template_name_from_github(settings):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/contents/templates"):

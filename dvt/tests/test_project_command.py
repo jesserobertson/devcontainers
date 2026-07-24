@@ -20,7 +20,7 @@ def test_init_scaffolds_devcontainer_json(tmp_path, settings):
     assert result.exit_code == 0
     target = project_dir / ".devcontainer" / "devcontainer.json"
     assert target.exists()
-    assert json.loads(target.read_text())["name"] == "fastapi"
+    assert json.loads(target.read_text())["name"] == "my-project"
 
 
 def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path, settings):
@@ -70,6 +70,21 @@ def test_init_refuses_when_template_is_schema_invalid(tmp_path, settings):
 
     assert result.exit_code == 1
     assert not (project_dir / ".devcontainer" / "devcontainer.json").exists()
+
+
+def test_init_derives_name_from_target_directory(tmp_path, settings):
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+    )
+
+    project_dir = tmp_path / "my-actual-project"
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
+
+    assert result.exit_code == 0
+    written = json.loads((project_dir / ".devcontainer" / "devcontainer.json").read_text())
+    assert written["name"] == "my-actual-project"
 
 
 def test_add_feature_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):
