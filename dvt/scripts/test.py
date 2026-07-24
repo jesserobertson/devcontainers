@@ -45,9 +45,9 @@ def integration(
 ) -> None:
     """Run integration tests (real devpod/network calls).
 
-    No tests carry this marker yet — dvt's whole suite is currently hermetic (httpx
-    mocked, subprocess.run monkeypatched). This tier is reserved for when real
-    devpod-calling integration tests are added; running it today is a fast no-op.
+    Opt-in only: creates real containers via a real devpod, skipped automatically if
+    devpod isn't installed. Not run by `unit`, `fast`, `all`, or plain `pytest` — this
+    is the only command that runs them.
     """
     console.print(Panel.fit("Running Integration Tests", style="blue"))
     cmd = ["pytest", "tests/", "-m", "integration"]
@@ -62,9 +62,13 @@ def integration(
 def all(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ) -> None:
-    """Run the entire test suite (unit + integration)."""
+    """Run the entire hermetic test suite (everything except integration).
+
+    Integration tests are opt-in only, via `pixi run test integration` — never run
+    here, since they create real containers via a real devpod.
+    """
     console.print(Panel.fit("Running All Tests", style="blue"))
-    cmd = ["pytest", "tests/"]
+    cmd = ["pytest", "tests/", "-m", "not integration"]
     if verbose:
         cmd.append("-v")
     with Status("Running all tests...", console=console, spinner="dots"):
@@ -76,9 +80,9 @@ def all(
 def fast(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ) -> None:
-    """Run tests excluding anything marked slow."""
+    """Run tests excluding anything marked slow or integration."""
     console.print(Panel.fit("Running Fast Tests", style="blue"))
-    cmd = ["pytest", "tests/", "-m", "not slow"]
+    cmd = ["pytest", "tests/", "-m", "not slow and not integration"]
     if verbose:
         cmd.append("-v")
     with Status("Running fast tests...", console=console, spinner="dots"):

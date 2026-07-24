@@ -36,7 +36,7 @@ allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=devtemplate --cov-report=term-missing"
+addopts = "--cov=devtemplate --cov-report=term-missing -m \"not integration\""
 markers = [
     "unit: fast, fully mocked tests (auto-applied by default, see conftest.py)",
     "integration: tests that exercise a real devpod/network call",
