@@ -26,7 +26,9 @@ def test_init_scaffolds_devcontainer_json(tmp_path, settings):
 def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path, settings):
     template_dir = settings.templates_dir / "fastapi"
     template_dir.mkdir(parents=True)
-    (template_dir / "devcontainer.json").write_text(json.dumps({"name": "fastapi"}))
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+    )
 
     project_dir = tmp_path / "my-project"
     (project_dir / ".devcontainer").mkdir(parents=True)
