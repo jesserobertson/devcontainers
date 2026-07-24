@@ -75,7 +75,9 @@ def test_add_agent_to_fastapi_scenario():
         "name": "my-project",
         "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
         "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
-        "mounts": ["source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume"],
+        "mounts": [
+            "source=my-project-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+        ],
         "postCreateCommand": "pixi install",
         "remoteUser": "dev",
     }

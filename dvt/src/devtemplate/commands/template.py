@@ -10,7 +10,11 @@ from rich.markup import escape
 from rich.table import Table
 
 from devtemplate.config import load_settings
-from devtemplate.store import list_cached_templates, load_cached_template, sync_templates
+from devtemplate.store import (
+    list_cached_templates,
+    load_cached_template,
+    sync_templates,
+)
 
 app = typer.Typer(help="Inspect and refresh cached devcontainer templates.")
 console = Console()
@@ -39,7 +43,9 @@ def list_templates() -> None:
                     ", ".join(template.get("features", {}).keys()),
                 )
             case Err(error):
-                console.print(f"[red]Skipping {escape(repr(name))}: {escape(str(error))}[/red]")
+                console.print(
+                    f"[red]Skipping {escape(repr(name))}: {escape(str(error))}[/red]"
+                )
     console.print(table)
 
 

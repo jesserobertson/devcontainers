@@ -26,7 +26,14 @@ def test_settings_paths_derive_from_data_dir(settings, tmp_path):
 
 @pytest.mark.parametrize(
     "value",
-    ["", "no-slash", "too/many/slashes", "/missing-owner", "missing-repo/", "has space/repo"],
+    [
+        "",
+        "no-slash",
+        "too/many/slashes",
+        "/missing-owner",
+        "missing-repo/",
+        "has space/repo",
+    ],
 )
 def test_settings_rejects_malformed_github_repo(monkeypatch, value):
     monkeypatch.setenv("DVT_GITHUB_REPO", value)

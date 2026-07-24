@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logerr
 import pytest
 
 from devtemplate.config import Settings
+
+logerr.configure(enabled=False)
 
 
 @pytest.fixture

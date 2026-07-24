@@ -14,9 +14,15 @@ from rich.markup import escape
 from devtemplate.config import load_settings
 from devtemplate.merge import merge_layer
 from devtemplate.schema import validate_devcontainer_config
-from devtemplate.store import list_cached_templates, load_cached_template, sync_templates
+from devtemplate.store import (
+    list_cached_templates,
+    load_cached_template,
+    sync_templates,
+)
 
-app = typer.Typer(help="Scaffold and evolve a project's devcontainer.json from templates.")
+app = typer.Typer(
+    help="Scaffold and evolve a project's devcontainer.json from templates."
+)
 console = Console()
 
 IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount"}
@@ -24,9 +30,15 @@ IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount"}
 
 @app.command("init")
 def init(
-    path: Path = typer.Argument(..., help="Project directory to scaffold."),
-    template: str = typer.Option(..., help="Cached template name to scaffold from."),
-    refresh: bool = typer.Option(False, help="Sync templates from GitHub before scaffolding."),
+    path: Path = typer.Argument(  # noqa: B008
+        ..., help="Project directory to scaffold."
+    ),
+    template: str = typer.Option(  # noqa: B008
+        ..., help="Cached template name to scaffold from."
+    ),
+    refresh: bool = typer.Option(  # noqa: B008
+        False, help="Sync templates from GitHub before scaffolding."
+    ),
 ) -> None:
     match load_settings():
         case Err(error):
@@ -62,7 +74,7 @@ def init(
             f"[red]Template '{escape(template)}' is not a valid devcontainer.json:[/red] "
             f"{escape(exc.message)}"
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     devcontainer_dir = path / ".devcontainer"
     target = devcontainer_dir / "devcontainer.json"
@@ -88,18 +100,20 @@ def add_feature(name: str) -> None:
 
     target = Path(".devcontainer") / "devcontainer.json"
     if not target.exists():
-        console.print(f"[red]{escape(str(target))} not found.[/red] Run 'dvt project init' first.")
+        console.print(
+            f"[red]{escape(str(target))} not found.[/red] Run 'dvt project init' first."
+        )
         raise typer.Exit(code=1)
 
     try:
         base_config = json.loads(target.read_text())
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         console.print(
             f"[red]{escape(str(target))} is not strict JSON "
             "(comments/trailing commas are not supported).[/red] "
             "Add this feature's devcontainer.json snippet by hand instead."
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     match load_cached_template(settings, name):
         case Err(error):
@@ -108,7 +122,9 @@ def add_feature(name: str) -> None:
         case Ok(template):
             pass
 
-    overlay = {key: value for key, value in template.items() if key not in IDENTITY_FIELDS}
+    overlay = {
+        key: value for key, value in template.items() if key not in IDENTITY_FIELDS
+    }
     merged = merge_layer(base_config, overlay)
 
     try:
@@ -118,7 +134,7 @@ def add_feature(name: str) -> None:
             f"[red]Merging '{escape(name)}' would produce an invalid devcontainer.json:[/red] "
             f"{escape(exc.message)}"
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     target.write_text(json.dumps(merged, indent=2) + "\n")
     console.print(f"Merged feature '{name}' into {target}.")

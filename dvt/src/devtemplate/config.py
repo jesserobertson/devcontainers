@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import cast
 
 import platformdirs
-from logerr import Err, Ok, Result
+from logerr import Result
+from logerr.utilities import execute
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -51,7 +53,4 @@ def load_settings() -> Result[Settings, Exception]:
     DVT_GITHUB_REPO env var) as an Err instead of letting pydantic.ValidationError
     crash the CLI with a raw traceback. The validators themselves are untouched —
     they still raise, per pydantic's own protocol; this only wraps construction."""
-    try:
-        return Ok(Settings())
-    except Exception as exc:
-        return Err(exc)
+    return cast(Result[Settings, Exception], execute(Settings))

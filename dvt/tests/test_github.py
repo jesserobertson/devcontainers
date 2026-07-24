@@ -45,6 +45,8 @@ def test_fetch_template_returns_err_on_http_error():
         return httpx.Response(404)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    result = fetch_template(client, "jesserobertson/devcontainers", "main", "nonexistent")
+    result = fetch_template(
+        client, "jesserobertson/devcontainers", "main", "nonexistent"
+    )
     assert result.is_err()
     assert isinstance(result.unwrap_err(), httpx.HTTPStatusError)

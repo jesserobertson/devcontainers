@@ -18,7 +18,9 @@ TEMPLATE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 def _validate_template_name(name: str) -> Result[str, ValueError]:
     if not TEMPLATE_NAME_PATTERN.fullmatch(name):
         return Err(
-            ValueError(f"Invalid template name {name!r}: must match {TEMPLATE_NAME_PATTERN.pattern!r}")
+            ValueError(
+                f"Invalid template name {name!r}: must match {TEMPLATE_NAME_PATTERN.pattern!r}"
+            )
         )
     return Ok(name)
 
@@ -33,7 +35,9 @@ def read_manifest(settings: Settings) -> Result[list[str], Exception]:
         return Err(exc)
 
 
-def write_manifest(settings: Settings, managed_templates: list[str]) -> Result[None, Exception]:
+def write_manifest(
+    settings: Settings, managed_templates: list[str]
+) -> Result[None, Exception]:
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         settings.manifest_path.write_text(
@@ -44,7 +48,9 @@ def write_manifest(settings: Settings, managed_templates: list[str]) -> Result[N
         return Err(exc)
 
 
-def sync_templates(settings: Settings, client: httpx.Client) -> Result[list[str], Exception]:
+def sync_templates(
+    settings: Settings, client: httpx.Client
+) -> Result[list[str], Exception]:
     """Fetch every template listed under templates/ on GitHub into the local cache.
 
     Only ever writes to the names GitHub currently lists, so any custom template
@@ -60,7 +66,9 @@ def sync_templates(settings: Settings, client: httpx.Client) -> Result[list[str]
     in the old manifest) — a hand-added custom template directory was never in any
     manifest dvt wrote, so it's never a pruning candidate.
     """
-    names_result = list_template_names(client, settings.github_repo, settings.github_branch)
+    names_result = list_template_names(
+        client, settings.github_repo, settings.github_branch
+    )
     if names_result.is_err():
         return names_result
     names = names_result.unwrap()
@@ -79,7 +87,9 @@ def sync_templates(settings: Settings, client: httpx.Client) -> Result[list[str]
 
     settings.templates_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
-        template_result = fetch_template(client, settings.github_repo, settings.github_branch, name)
+        template_result = fetch_template(
+            client, settings.github_repo, settings.github_branch, name
+        )
         if template_result.is_err():
             return Err(cast(Err[Any, Any], template_result).unwrap_err())
         template_dir = settings.templates_dir / name
@@ -110,14 +120,18 @@ def list_cached_templates(settings: Settings) -> list[str]:
     return sorted(p.name for p in settings.templates_dir.iterdir() if p.is_dir())
 
 
-def load_cached_template(settings: Settings, name: str) -> Result[dict[str, Any], Exception]:
+def load_cached_template(
+    settings: Settings, name: str
+) -> Result[dict[str, Any], Exception]:
     validation = _validate_template_name(name)
     if validation.is_err():
         return Err(cast(Err[Any, Any], validation).unwrap_err())
     path = settings.templates_dir / name / "devcontainer.json"
     if not path.exists():
         return Err(
-            FileNotFoundError(f"No cached template named {name!r}. Run 'dvt template sync' first.")
+            FileNotFoundError(
+                f"No cached template named {name!r}. Run 'dvt template sync' first."
+            )
         )
     try:
         return Ok(json.loads(path.read_text()))

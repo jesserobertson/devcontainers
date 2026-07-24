@@ -11,7 +11,9 @@ def test_init_scaffolds_devcontainer_json(tmp_path, settings):
     template_dir = settings.templates_dir / "fastapi"
     template_dir.mkdir(parents=True)
     (template_dir / "devcontainer.json").write_text(
-        json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+        json.dumps(
+            {"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
     )
 
     project_dir = tmp_path / "my-project"
@@ -27,17 +29,26 @@ def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path, settings
     template_dir = settings.templates_dir / "fastapi"
     template_dir.mkdir(parents=True)
     (template_dir / "devcontainer.json").write_text(
-        json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+        json.dumps(
+            {"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
     )
 
     project_dir = tmp_path / "my-project"
     (project_dir / ".devcontainer").mkdir(parents=True)
-    (project_dir / ".devcontainer" / "devcontainer.json").write_text('{"name": "existing"}')
+    (project_dir / ".devcontainer" / "devcontainer.json").write_text(
+        '{"name": "existing"}'
+    )
 
     result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
 
     assert result.exit_code == 1
-    assert json.loads((project_dir / ".devcontainer" / "devcontainer.json").read_text())["name"] == "existing"
+    assert (
+        json.loads((project_dir / ".devcontainer" / "devcontainer.json").read_text())[
+            "name"
+        ]
+        == "existing"
+    )
 
 
 def test_init_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
@@ -47,7 +58,12 @@ def test_init_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
         template_dir = settings_arg.templates_dir / "fastapi"
         template_dir.mkdir(parents=True)
         (template_dir / "devcontainer.json").write_text(
-            json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+            json.dumps(
+                {
+                    "name": "fastapi",
+                    "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                }
+            )
         )
         return Ok(["fastapi"])
 
@@ -76,40 +92,54 @@ def test_init_derives_name_from_target_directory(tmp_path, settings):
     template_dir = settings.templates_dir / "fastapi"
     template_dir.mkdir(parents=True)
     (template_dir / "devcontainer.json").write_text(
-        json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+        json.dumps(
+            {"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
     )
 
     project_dir = tmp_path / "my-actual-project"
     result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
 
     assert result.exit_code == 0
-    written = json.loads((project_dir / ".devcontainer" / "devcontainer.json").read_text())
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
     assert written["name"] == "my-actual-project"
 
 
-def test_add_feature_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):
+def test_add_feature_merges_into_existing_devcontainer_json(
+    tmp_path, settings, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"
     devcontainer_dir.mkdir()
-    (devcontainer_dir / "devcontainer.json").write_text(json.dumps({
-        "name": "my-project",
-        "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
-        "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
-        "remoteUser": "dev",
-    }))
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "my-project",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
+                "remoteUser": "dev",
+            }
+        )
+    )
 
     template_dir = settings.templates_dir / "agent"
     template_dir.mkdir(parents=True)
-    (template_dir / "devcontainer.json").write_text(json.dumps({
-        "name": "agent",
-        "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
-        "workspaceFolder": "/workspace",
-        "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}},
-        "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
-        "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
-        "waitFor": "postStartCommand",
-        "remoteUser": "dev",
-    }))
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "workspaceFolder": "/workspace",
+                "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}},
+                "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+                "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+                "waitFor": "postStartCommand",
+                "remoteUser": "dev",
+            }
+        )
+    )
 
     result = runner.invoke(app, ["add-feature", "agent"])
     assert result.exit_code == 0
@@ -126,7 +156,9 @@ def test_add_feature_merges_into_existing_devcontainer_json(tmp_path, settings, 
     assert merged["waitFor"] == "postStartCommand"
 
 
-def test_add_feature_refuses_when_devcontainer_json_missing(tmp_path, settings, monkeypatch):
+def test_add_feature_refuses_when_devcontainer_json_missing(
+    tmp_path, settings, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["add-feature", "agent"])
     assert result.exit_code == 1
@@ -145,7 +177,9 @@ def test_add_feature_refuses_on_invalid_json(tmp_path, settings, monkeypatch):
     assert (devcontainer_dir / "devcontainer.json").read_text() == original
 
 
-def test_add_feature_refuses_when_merge_result_is_schema_invalid(tmp_path, settings, monkeypatch):
+def test_add_feature_refuses_when_merge_result_is_schema_invalid(
+    tmp_path, settings, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"
     devcontainer_dir.mkdir()

@@ -46,7 +46,9 @@ def test_merge_run_args_concatenates_without_dropping(
     base_data = base.model_dump(exclude_defaults=True)
     overlay_data = overlay.model_dump(exclude_defaults=True)
     merged = merge_layer(base_data, overlay_data)
-    expected_length = len(base_data.get("runArgs", [])) + len(overlay_data.get("runArgs", []))
+    expected_length = len(base_data.get("runArgs", [])) + len(
+        overlay_data.get("runArgs", [])
+    )
     assert len(merged.get("runArgs", [])) == expected_length
 
 

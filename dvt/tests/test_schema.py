@@ -12,7 +12,9 @@ def test_valid_devcontainer_config_passes():
             "name": "fastapi",
             "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
             "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
-            "mounts": ["source=fastapi-pixi-cache,target=/home/dev/.cache/pixi,type=volume"],
+            "mounts": [
+                "source=fastapi-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+            ],
             "postCreateCommand": "pixi install",
             "remoteUser": "dev",
         }

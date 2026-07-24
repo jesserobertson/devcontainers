@@ -64,7 +64,10 @@ def test_stop_and_delete_invoke_devpod(monkeypatch):
     runner.invoke(cli_module.app, ["stop", "my-project"])
     runner.invoke(cli_module.app, ["delete", "my-project"])
 
-    assert calls == [["devpod", "stop", "my-project"], ["devpod", "delete", "my-project"]]
+    assert calls == [
+        ["devpod", "stop", "my-project"],
+        ["devpod", "delete", "my-project"],
+    ]
 
 
 def test_template_subcommand_is_registered():

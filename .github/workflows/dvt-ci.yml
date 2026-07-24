@@ -1,0 +1,45 @@
+name: dvt CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dvt/**"
+      - ".github/workflows/dvt-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "dvt/**"
+      - ".github/workflows/dvt-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: dvt
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          manifest-path: dvt/pyproject.toml
+
+      - name: Install dependencies
+        run: pixi install
+
+      - name: Run mypy
+        run: pixi run mypy src
+
+      - name: Run ruff
+        run: |
+          pixi run ruff check src tests
+          pixi run ruff format --check src tests
+
+      - name: Run tests
+        run: pixi run pytest -v

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
+import logerr
 import typer
 from logerr import Err, Ok, Result
 from rich.console import Console
@@ -15,7 +16,9 @@ app.add_typer(project.app, name="project")
 console = Console()
 
 
-def _run_devpod(subcommand: str, name: str, extra_args: list[str]) -> Result[int, Exception]:
+def _run_devpod(
+    subcommand: str, name: str, extra_args: list[str]
+) -> Result[int, Exception]:
     """Run a devpod subcommand, forwarding its exit code.
 
     Deliberately not retried: unlike the GitHub API calls in github.py, a devpod
@@ -45,7 +48,9 @@ def _devpod_passthrough(subcommand: str, name: str, extra_args: list[str]) -> No
 @app.command()
 def up(
     name: str,
-    extra_args: list[str] = typer.Argument(None, help="Extra args forwarded to devpod up."),
+    extra_args: list[str] = typer.Argument(  # noqa: B008
+        None, help="Extra args forwarded to devpod up."
+    ),
 ) -> None:
     """Passthrough to `devpod up`."""
     _devpod_passthrough("up", name, extra_args or [])
@@ -54,7 +59,9 @@ def up(
 @app.command()
 def ssh(
     name: str,
-    extra_args: list[str] = typer.Argument(None, help="Extra args forwarded to devpod ssh."),
+    extra_args: list[str] = typer.Argument(  # noqa: B008
+        None, help="Extra args forwarded to devpod ssh."
+    ),
 ) -> None:
     """Passthrough to `devpod ssh`."""
     _devpod_passthrough("ssh", name, extra_args or [])
@@ -63,7 +70,9 @@ def ssh(
 @app.command()
 def stop(
     name: str,
-    extra_args: list[str] = typer.Argument(None, help="Extra args forwarded to devpod stop."),
+    extra_args: list[str] = typer.Argument(  # noqa: B008
+        None, help="Extra args forwarded to devpod stop."
+    ),
 ) -> None:
     """Passthrough to `devpod stop`."""
     _devpod_passthrough("stop", name, extra_args or [])
@@ -72,13 +81,16 @@ def stop(
 @app.command()
 def delete(
     name: str,
-    extra_args: list[str] = typer.Argument(None, help="Extra args forwarded to devpod delete."),
+    extra_args: list[str] = typer.Argument(  # noqa: B008
+        None, help="Extra args forwarded to devpod delete."
+    ),
 ) -> None:
     """Passthrough to `devpod delete`."""
     _devpod_passthrough("delete", name, extra_args or [])
 
 
 def main() -> None:
+    logerr.configure(enabled=False)
     app()
 
 
