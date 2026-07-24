@@ -11,7 +11,7 @@ dependencies = [
     "platformdirs>=4.0",
     "httpx>=0.27",
     "jsonschema>=4.18",
-    "logerr[recipes] @ git+https://github.com/jesserobertson/logerr.git@ecd44f734768b6f4cb77415f708ebb62c5c4fe36",
+    "logerr[retry] @ git+https://github.com/jesserobertson/logerr.git@f9b178d4866f59e8f2c1832f00f99c0a80413997",
 ]
 
 [project.scripts]
