@@ -2,7 +2,7 @@
 name = "devtemplate"
 version = "0.1.0"
 description = "Layered, dev-style named devcontainer templates on top of DevPod"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "typer>=0.12",
     "rich>=13.0",
@@ -100,7 +100,7 @@ platforms = ["win-64", "linux-64", "osx-arm64", "osx-64"]
 devtemplate = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
-python = ">=3.12,<3.14"
+python = ">=3.12,<3.15"
 
 [tool.pixi.feature.dev.dependencies]
 pytest = ">=8.0"

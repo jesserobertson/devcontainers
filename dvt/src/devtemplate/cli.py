@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 
 import logerr
 import typer
 from logerr import Err, Ok, Result
+from loguru import logger
 from rich.console import Console
 from rich.markup import escape
 
@@ -26,9 +28,20 @@ def _run_devpod(
     `dvt ssh proj -- pytest` should return pytest's real exit code, not something
     dvt silently retries past), not a transient failure. Only a genuine launch
     failure (devpod missing from PATH, etc.) is an Err here.
+
+    Resolves the executable via shutil.which() rather than passing the bare name
+    "devpod" to subprocess.run: on Windows, devpod installs as devpod.CMD (plus an
+    extensionless POSIX-shell variant) — Win32 CreateProcess (what subprocess.run
+    uses without shell=True) cannot resolve a bare command name to a .CMD file the
+    way a shell's own PATH/PATHEXT search does, so the un-resolved bare name fails
+    with WinError 2 even though devpod is genuinely on PATH. shutil.which() applies
+    the same PATHEXT-aware resolution a shell would, cross-platform.
     """
+    devpod_executable = shutil.which("devpod")
+    if devpod_executable is None:
+        return Err(FileNotFoundError("devpod not found on PATH. Install it from https://devpod.sh"))
     try:
-        result = subprocess.run(["devpod", subcommand, name, *extra_args])
+        result = subprocess.run([devpod_executable, subcommand, name, *extra_args])
         return Ok(result.returncode)
     except Exception as exc:
         return Err(exc)
@@ -90,6 +103,13 @@ def delete(
 
 
 def main() -> None:
+    # Removes loguru's default stderr sink entirely — logerr.configure(enabled=False)
+    # only stops logerr's own Err-construction auto-logging; it doesn't touch other
+    # code (e.g. logerr.recipes.retry's own direct logger.debug(...) calls) that
+    # writes to loguru's shared logger directly. With no sink at all, nothing from
+    # either path reaches the console, keeping dvt's own Rich-formatted messages as
+    # the only user-facing output.
+    logger.remove()
     logerr.configure(enabled=False)
     app()
 

@@ -22,11 +22,12 @@ def test_up_invokes_devpod_up(monkeypatch):
         calls.append(args)
         return FakeResult()
 
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/usr/bin/devpod")
     monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
     result = runner.invoke(cli_module.app, ["up", "my-project"])
 
     assert result.exit_code == 0
-    assert calls == [["devpod", "up", "my-project"]]
+    assert calls == [["/usr/bin/devpod", "up", "my-project"]]
 
 
 def test_ssh_forwards_extra_args(monkeypatch):
@@ -41,11 +42,12 @@ def test_ssh_forwards_extra_args(monkeypatch):
         calls.append(args)
         return FakeResult()
 
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/usr/bin/devpod")
     monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
     result = runner.invoke(cli_module.app, ["ssh", "my-project", "--", "ls", "-la"])
 
     assert result.exit_code == 0
-    assert calls == [["devpod", "ssh", "my-project", "ls", "-la"]]
+    assert calls == [["/usr/bin/devpod", "ssh", "my-project", "ls", "-la"]]
 
 
 def test_stop_and_delete_invoke_devpod(monkeypatch):
@@ -60,13 +62,14 @@ def test_stop_and_delete_invoke_devpod(monkeypatch):
         calls.append(args)
         return FakeResult()
 
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/usr/bin/devpod")
     monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
     runner.invoke(cli_module.app, ["stop", "my-project"])
     runner.invoke(cli_module.app, ["delete", "my-project"])
 
     assert calls == [
-        ["devpod", "stop", "my-project"],
-        ["devpod", "delete", "my-project"],
+        ["/usr/bin/devpod", "stop", "my-project"],
+        ["/usr/bin/devpod", "delete", "my-project"],
     ]
 
 
@@ -84,12 +87,23 @@ def test_project_subcommand_is_registered():
     assert result.exit_code == 0
 
 
+def test_devpod_not_on_path_reports_clean_error(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: None)
+    result = runner.invoke(cli_module.app, ["up", "my-project"])
+
+    assert result.exit_code == 1
+    assert "devpod" in result.stdout
+
+
 def test_devpod_launch_failure_reports_clean_error(monkeypatch):
     import devtemplate.cli as cli_module
 
     def fake_run(args):
         raise FileNotFoundError("devpod not found")
 
+    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/usr/bin/devpod")
     monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
     result = runner.invoke(cli_module.app, ["up", "my-project"])
 
