@@ -49,8 +49,12 @@ These require `devpod` on `PATH` and a working container runtime; if `devpod` ca
 unlike `template sync`'s GitHub calls, a devpod exit code is meaningful output to forward,
 not a transient error).
 
+Any extra arguments that look like flags (start with `-`) need a `--` separator before them,
+so Typer forwards them instead of trying to parse them as `dvt`'s own options — e.g.
+`dvt up my-project -- --id my-project --ide none`, not `dvt up my-project --id ...`.
+
 ```bash
-dvt up <path-or-workspace-name> [extra devpod args]
+dvt up <path-or-workspace-name> [-- extra devpod args]
 dvt ssh <workspace-name> [-- command]
 dvt stop <workspace-name>
 dvt delete <workspace-name>
