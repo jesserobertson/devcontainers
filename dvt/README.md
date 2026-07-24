@@ -8,6 +8,9 @@ Templates are fetched from [jesserobertson/devcontainers](https://github.com/jes
 
     pipx install ./dvt
 
+Requires network access to `github.com/jesserobertson/logerr` at install time (a
+dependency not yet published to PyPI, pinned to a specific commit).
+
 ## Usage
 
     dvt template sync

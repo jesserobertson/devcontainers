@@ -9,6 +9,7 @@ import jsonschema
 import typer
 from logerr import Err, Ok
 from rich.console import Console
+from rich.markup import escape
 
 from devtemplate.config import load_settings
 from devtemplate.merge import merge_layer
@@ -29,7 +30,7 @@ def init(
 ) -> None:
     match load_settings():
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(settings):
             pass
@@ -42,21 +43,30 @@ def init(
             # abstract base, only on the concrete Ok/Err subclasses, so mypy can't
             # see it here even though we've just confirmed .is_err().
             error = cast(Err[Any, Any], sync_result).unwrap_err()
-            console.print(f"[red]Sync failed: {error}[/red]")
+            console.print(f"[red]Sync failed: {escape(str(error))}[/red]")
             raise typer.Exit(code=1)
 
     match load_cached_template(settings, template):
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(config):
             pass
+
+    try:
+        validate_devcontainer_config(config)
+    except jsonschema.ValidationError as exc:
+        console.print(
+            f"[red]Template '{escape(template)}' is not a valid devcontainer.json:[/red] "
+            f"{escape(exc.message)}"
+        )
+        raise typer.Exit(code=1)
 
     devcontainer_dir = path / ".devcontainer"
     target = devcontainer_dir / "devcontainer.json"
     if target.exists():
         console.print(
-            f"[red]{target} already exists.[/red] "
+            f"[red]{escape(str(target))} already exists.[/red] "
             "Use 'dvt project add-feature' to layer onto it instead."
         )
         raise typer.Exit(code=1)
@@ -69,28 +79,29 @@ def init(
 def add_feature(name: str) -> None:
     match load_settings():
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(settings):
             pass
 
     target = Path(".devcontainer") / "devcontainer.json"
     if not target.exists():
-        console.print(f"[red]{target} not found.[/red] Run 'dvt project init' first.")
+        console.print(f"[red]{escape(str(target))} not found.[/red] Run 'dvt project init' first.")
         raise typer.Exit(code=1)
 
     try:
         base_config = json.loads(target.read_text())
     except json.JSONDecodeError:
         console.print(
-            f"[red]{target} is not strict JSON (comments/trailing commas are not supported).[/red] "
+            f"[red]{escape(str(target))} is not strict JSON "
+            "(comments/trailing commas are not supported).[/red] "
             "Add this feature's devcontainer.json snippet by hand instead."
         )
         raise typer.Exit(code=1)
 
     match load_cached_template(settings, name):
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(template):
             pass
@@ -102,7 +113,8 @@ def add_feature(name: str) -> None:
         validate_devcontainer_config(merged)
     except jsonschema.ValidationError as exc:
         console.print(
-            f"[red]Merging '{name}' would produce an invalid devcontainer.json:[/red] {exc.message}"
+            f"[red]Merging '{escape(name)}' would produce an invalid devcontainer.json:[/red] "
+            f"{escape(exc.message)}"
         )
         raise typer.Exit(code=1)
 

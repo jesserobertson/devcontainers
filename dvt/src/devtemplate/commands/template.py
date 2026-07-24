@@ -6,6 +6,7 @@ import httpx
 import typer
 from logerr import Err, Ok
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from devtemplate.config import load_settings
@@ -19,7 +20,7 @@ console = Console()
 def list_templates() -> None:
     match load_settings():
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(settings):
             pass
@@ -38,7 +39,7 @@ def list_templates() -> None:
                     ", ".join(template.get("features", {}).keys()),
                 )
             case Err(error):
-                console.print(f"[red]Skipping {name!r}: {error}[/red]")
+                console.print(f"[red]Skipping {escape(repr(name))}: {escape(str(error))}[/red]")
     console.print(table)
 
 
@@ -46,7 +47,7 @@ def list_templates() -> None:
 def show_template(name: str) -> None:
     match load_settings():
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(settings):
             pass
@@ -55,7 +56,7 @@ def show_template(name: str) -> None:
         case Ok(template):
             console.print_json(json.dumps(template))
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
 
 
@@ -63,7 +64,7 @@ def show_template(name: str) -> None:
 def sync() -> None:
     match load_settings():
         case Err(error):
-            console.print(f"[red]{error}[/red]")
+            console.print(f"[red]{escape(str(error))}[/red]")
             raise typer.Exit(code=1)
         case Ok(settings):
             pass
@@ -74,5 +75,5 @@ def sync() -> None:
         case Ok(names):
             console.print(f"Synced {len(names)} templates: {', '.join(names)}")
         case Err(error):
-            console.print(f"[red]Sync failed: {error}[/red]")
+            console.print(f"[red]Sync failed: {escape(str(error))}[/red]")
             raise typer.Exit(code=1)

@@ -44,7 +44,9 @@ def test_init_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
     def fake_sync(settings_arg, client):
         template_dir = settings_arg.templates_dir / "fastapi"
         template_dir.mkdir(parents=True)
-        (template_dir / "devcontainer.json").write_text(json.dumps({"name": "fastapi"}))
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps({"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"})
+        )
         return Ok(["fastapi"])
 
     monkeypatch.setattr("devtemplate.commands.project.sync_templates", fake_sync)
@@ -54,6 +56,18 @@ def test_init_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
 
     assert result.exit_code == 0
     assert (project_dir / ".devcontainer" / "devcontainer.json").exists()
+
+
+def test_init_refuses_when_template_is_schema_invalid(tmp_path, settings):
+    template_dir = settings.templates_dir / "broken"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"remoteUser": 12345}))
+
+    project_dir = tmp_path / "my-project"
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "broken"])
+
+    assert result.exit_code == 1
+    assert not (project_dir / ".devcontainer" / "devcontainer.json").exists()
 
 
 def test_add_feature_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):

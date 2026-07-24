@@ -5,6 +5,7 @@ import subprocess
 import typer
 from logerr import Err, Ok, Result
 from rich.console import Console
+from rich.markup import escape
 
 from devtemplate.commands import project, template
 
@@ -35,7 +36,9 @@ def _devpod_passthrough(subcommand: str, name: str, extra_args: list[str]) -> No
         case Ok(returncode):
             raise typer.Exit(code=returncode)
         case Err(error):
-            console.print(f"[red]Failed to run devpod {subcommand}: {error}[/red]")
+            console.print(
+                f"[red]Failed to run devpod {escape(subcommand)}: {escape(str(error))}[/red]"
+            )
             raise typer.Exit(code=1)
 
 
