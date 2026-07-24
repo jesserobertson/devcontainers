@@ -16,6 +16,7 @@ htmlcov/
 venv/
 dist/
 build/
+site/
 
 # Pixi
 .pixi/
