@@ -838,13 +838,19 @@ def test_merge_run_args_concatenates_without_dropping(
 
 
 @given(st.from_type(DevContainerConfig), st.from_type(DevContainerConfig))
-def test_merge_mounts_never_produces_duplicates(
+def test_merge_mounts_dedup_is_a_proper_set_union(
     base: DevContainerConfig, overlay: DevContainerConfig
 ) -> None:
+    # Not "never produces duplicates": _merge_array_dedup only prevents overlay
+    # from adding a *new* duplicate; it never cleans up duplicates base already
+    # had (matching dev's original Rust behavior). base=["",""], overlay=[] is
+    # a real, hypothesis-found counterexample to a naive no-duplicates claim.
+    # The property that actually and unconditionally holds is set equality.
     base_data = base.model_dump(exclude_defaults=True)
     overlay_data = overlay.model_dump(exclude_defaults=True)
-    mounts = merge_layer(base_data, overlay_data).get("mounts", [])
-    assert len(mounts) == len(set(mounts))
+    merged_mounts = merge_layer(base_data, overlay_data).get("mounts", [])
+    expected = set(base_data.get("mounts", [])) | set(overlay_data.get("mounts", []))
+    assert set(merged_mounts) == expected
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1915,7 +1921,7 @@ git commit -m "feat: wire up dvt CLI with devpod passthroughs and subcommands"
 
 ## Self-Review Notes
 
-- **Spec coverage:** Package layout & naming (Task 1) ✓, config/XDG (Task 2) ✓, template sync via GitHub Contents API + raw downloads with manifest-scoped safety (Tasks 6–7) ✓, command surface — template list/show/sync (Task 8), project init (Task 9), project add-feature (Task 10), up/ssh/stop/delete passthroughs (Task 11) ✓, merge algorithm ported from `dev`'s field-typed rules (Task 4) ✓, JSON handling — strict parse, refuse-and-print on failure (Task 10) ✓, pydantic model testing conventions — round-trip, `ValidationError` cases (Task 3) ✓, hypothesis property tests — idempotence (with the `runArgs` carve-out), features-union-never-drops, runArgs-concatenation-length, mounts-no-duplicates (Task 5) ✓, distribution (pipx + pixi dev loop) baked into Task 1's `pyproject.toml` ✓.
+- **Spec coverage:** Package layout & naming (Task 1) ✓, config/XDG (Task 2) ✓, template sync via GitHub Contents API + raw downloads with manifest-scoped safety (Tasks 6–7) ✓, command surface — template list/show/sync (Task 8), project init (Task 9), project add-feature (Task 10), up/ssh/stop/delete passthroughs (Task 11) ✓, merge algorithm ported from `dev`'s field-typed rules (Task 4) ✓, JSON handling — strict parse, refuse-and-print on failure (Task 10) ✓, pydantic model testing conventions — round-trip, `ValidationError` cases (Task 3) ✓, hypothesis property tests — idempotence (with the `runArgs` carve-out), features-union-never-drops, runArgs-concatenation-length, mounts-dedup-is-a-proper-set-union (Task 5, corrected from an initial "never produces duplicates" claim a hypothesis-found counterexample disproved — see Post-approval additions) ✓, distribution (pipx + pixi dev loop) baked into Task 1's `pyproject.toml` ✓.
 - **Deviation from spec text, called out explicitly:** the spec's merge-algorithm bullet says "merging is idempotent" without qualification; Task 5 implements and tests the correct, narrower version (idempotent for every field except `runArgs`, which by design concatenates without dedup even on repeat application) rather than the imprecise blanket claim.
 - **New behavior beyond the spec's literal text, needed for correctness:** `IDENTITY_FIELDS` stripping in `add_feature` (Task 10). The spec's merge section didn't call this out explicitly, but it follows directly from adopting `dev`'s scalar-overlay-wins rule verbatim — without stripping `name`/`workspaceFolder`/`workspaceMount`, adding any feature would silently rename the target project to that feature's own template name. Covered by `test_add_feature_merges_into_existing_devcontainer_json`.
 - **Placeholder scan:** no TBD/TODO; every step shows complete file content or exact code to insert.

@@ -153,12 +153,18 @@ checks), extended for the parts of `dvt` that are actual logic rather than stati
   invalid-input case.
 - **Property-based tests** (`hypothesis`), primarily for the merge algorithm in `merge.py`,
   where example-based fixtures alone won't catch order-dependence or edge cases:
-  - `merge(base, overlay)` is idempotent when `overlay == base` (merging a template into a
-    project that already has it produces the same result).
+  - `merge(base, overlay)` is idempotent when `overlay == base`, for every field except
+    `runArgs` — which by design concatenates without dedup even on repeat application
+    (repeated flags like `--env-file` are legitimate), so it's excluded from this property
+    and covered by its own doubling-on-repeat test instead.
   - `features` union never drops a key present in either input.
   - `runArgs` concatenation length always equals `len(base) + len(overlay)` (no silent
     dedup where none should happen).
-  - `mounts`/`forwardPorts` concatenation never produces duplicate entries.
+  - `mounts`/`forwardPorts` concatenation is a proper set union: `set(merged) == set(base) |
+    set(overlay)`. Not "never produces duplicate entries" — the dedup step only prevents
+    *overlay* from adding a new duplicate; it never cleans up duplicates already present in
+    `base` (matching `dev`'s original Rust behavior), so a `base` that already contains
+    repeated entries legitimately keeps them after merging.
   - Since pydantic registers a Hypothesis plugin when both packages are installed,
     `st.from_type(SomeModel)` generates arbitrary valid instances of `models.py` types
     directly — used to feed the merge properties above with realistic generated
