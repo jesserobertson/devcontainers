@@ -53,6 +53,10 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - Commands: commands.md
+  - Concepts: concepts.md
   - API Reference: api.md
 
 watch:
