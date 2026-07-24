@@ -39,7 +39,11 @@ def _run_devpod(
     """
     devpod_executable = shutil.which("devpod")
     if devpod_executable is None:
-        return Err(FileNotFoundError("devpod not found on PATH. Install it from https://devpod.sh"))
+        return Err(
+            FileNotFoundError(
+                "devpod not found on PATH. Install it from https://devpod.sh"
+            )
+        )
     try:
         result = subprocess.run([devpod_executable, subcommand, name, *extra_args])
         return Ok(result.returncode)
