@@ -6,7 +6,7 @@
 
 **Architecture:** A self-contained `dvt/` subdirectory with its own `pyproject.toml` (pip/pipx-installable, pixi for local dev). Seven focused modules — `config.py` (XDG settings), `models.py` (devcontainer.json shape), `merge.py` (pure field-typed merge, ported from `dev`'s `merge.rs`), `schema.py` (validate output against the official devcontainer.json JSON Schema), `github.py` (network fetch), `store.py` (local cache + sync orchestration), `cli.py` + `commands/` (Typer surface) — built bottom-up so every later task only depends on interfaces earlier tasks already shipped and tested.
 
-**Tech Stack:** Typer, Rich, Pydantic, pydantic-settings, `platformdirs`, `httpx`, `jsonschema`, pytest, `hypothesis`, `pytest-cov`. Distribution: `pipx install ./dvt` (or a future git/PyPI ref); local dev loop via `pixi install` / `pixi run pytest` from `dvt/`.
+**Tech Stack:** Typer, Rich, Pydantic, pydantic-settings, `platformdirs`, `httpx`, `jsonschema`, `logerr[retry]` (Result/Option types + loguru logging + tenacity-backed retry, git dependency — not on PyPI), pytest, `hypothesis`, `pytest-cov`. Distribution: `pipx install ./dvt` (or a future git/PyPI ref); local dev loop via `pixi install` / `pixi run pytest` from `dvt/`. Requires Python **>=3.12** (bumped from the original >=3.11 — `logerr` uses PEP 695 generic class syntax).
 
 ## Global Constraints
 
@@ -23,6 +23,15 @@
 - `mypy` runs alongside `pytest` in the `dev` pixi feature/environment (`pixi run mypy src`), configured in `dvt/pyproject.toml`'s `[tool.mypy]` (Python 3.11, `plugins = ["pydantic.mypy"]`, `disallow_untyped_defs`/`disallow_incomplete_defs`/`check_untyped_defs`/`no_implicit_optional`/`warn_redundant_casts`/`warn_unused_ignores`/`warn_return_any` all `true`; `tests.*` overridden to allow untyped defs). Every task must leave `pixi run mypy src` clean — no new errors, no unaddressed `# type: ignore`. Task reviewers check this alongside spec compliance.
 - `devtemplate.schema.validate_devcontainer_config(data: dict) -> None` (already shipped, ahead of Task 4) validates against a vendored copy of the official `devcontainer.json` base schema (`devtemplate/schemas/devContainer.base.schema.json`, sourced from `devcontainers/spec`, empirically checked against this repo's own real `templates/fastapi` and `templates/agent` before being trusted) — scoped to the base schema only, not the VS Code/Codespaces overlay schemas containers.dev also composes in, since every field this tool's merge algorithm touches is a base-schema property. `jsonschema>=4.18` is a runtime dependency (not dev-only): Task 4's merge fixture test validates its "add agent to fastapi" scenario output against it, and Task 10's `add-feature` validates the merge result against it before writing, refusing (same pattern as the JSONC-refusal) if merging would produce spec-invalid output.
 - `pixi run pytest` reports coverage by default (`addopts = "--cov=devtemplate --cov-report=term-missing"` in `dvt/pyproject.toml`, backed by `pytest-cov` in the `dev` pixi feature). Running a single test file still reports coverage for the whole package, so a low percentage on a single-file run is expected and not a defect — it reflects only what that file's tests exercised, not the full suite. GitHub Actions wiring (uploading coverage, gating a threshold) is a deliberate follow-up, not part of this plan.
+- **Major post-approval retrofit (supersedes the exception-based signatures described in Tasks 6-10 below):** after Task 9 shipped, the project owner requested integrating [`logerr`](https://github.com/jesserobertson/logerr) (Rust-like `Result`/`Option` types with automatic loguru logging, plus `tenacity`-backed retry via `logerr.recipes.retry.on_err`) and explicitly chose to retrofit already-approved modules rather than apply it only going forward. Full rationale, exact target code, and the "what does NOT get retrofitted and why" reasoning live in `.superpowers/sdd/retrofit-logerr-and-task10-brief.md` (local scratch, not committed) and are summarized here for anyone rebuilding from this plan file alone:
+  - `devtemplate.github`'s `list_template_names`/`fetch_template` now return `Result[list[str], Exception]` / `Result[dict[str, Any], Exception]` instead of raising, and are decorated with `@on_err(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.5, min=0.5, max=2), log_attempts=True)` for retry (deliberately fast/small bounds — an interactive CLI, not a rate-limit-sensitive service).
+  - `devtemplate.store`'s `read_manifest`, `write_manifest`, `sync_templates`, `load_cached_template` now return `Result[..., Exception]`; `_validate_template_name` returns `Result[str, ValueError]`. `list_cached_templates` stays a plain `list[str]` — it never fails (degrades to `[]`), so there's nothing to wrap. The security-critical property from Task 7 (every name from GitHub's listing validated before `templates_dir` is created or anything written) is unchanged, just expressed as `Result` propagation instead of exception propagation.
+  - `devtemplate.config` gained `load_settings() -> Result[Settings, Exception]`, a thin wrapper around `Settings()` construction used at every CLI command's entry point instead of calling `Settings()` directly — so a malformed `DVT_GITHUB_REPO` env var produces a clean Rich error instead of a raw traceback. `Settings`'s own `@field_validator` methods are untouched: pydantic's validation protocol requires validators to raise, not return `Result`, and fighting that would break pydantic's actual mechanism for no benefit.
+  - `devtemplate.commands.template` and `devtemplate.commands.project` now `match`/`case` on `Result` values from the store layer and print clean Rich errors + `typer.Exit(1)` instead of letting exceptions propagate as raw tracebacks (this also resolves the Task 8 reviewer's minor finding about `show`/`sync`'s uncaught-exception UX).
+  - `devtemplate.merge` and `devtemplate.models` are deliberately **untouched** — `merge.py`'s helpers already degrade gracefully with no real failure mode to retrofit (wrapping an infallible function in `Result` "for consistency" would be over-engineering), and `models.py` is pydantic-protocol-bound the same way `Settings` is.
+  - `logerr[retry]` is pinned as a git dependency (not on PyPI) — originally added as `logerr[recipes]` (which also pulled in `pymongo`/`pandas`, unrelated to this CLI, accepted as a known temporary cost), then switched to `logerr[retry]` once the project owner split that extra upstream specifically to drop the unneeded dependencies. Current pin: commit `f9b178d4866f59e8f2c1832f00f99c0a80413997`.
+  - `confection` (the config library `logerr` itself uses internally) was considered for `Settings` and rejected: it's a `.cfg`-file, registry-driven config system for describing trees of pluggable objects (ML-hyperparameter-style), a mismatch for `Settings`'s two flat, env-var-driven, format-validated fields — `pydantic-settings` stays.
+  - `dvt project add-feature` (Task 10) was implemented directly against this retrofitted API rather than the plan's original exception-based design — see the superseded Task 10 section below for what still applies (the merge/`IDENTITY_FIELDS`/schema-validation behavior is unchanged, only the error-handling mechanics differ).
 - All commands below assume the working directory is `dvt/` unless stated otherwise. Run tests with `pixi run pytest tests/<file> -v` from that directory.
 
 ---
@@ -1512,6 +1521,15 @@ git commit -m "feat: add dvt project init command"
 
 ### Task 10: `dvt project add-feature` command
 
+> **SUPERSEDED — already complete.** This task was implemented and reviewed as part of the
+> logerr Result/Option retrofit (see Global Constraints' "Major post-approval retrofit"
+> bullet), not by dispatching this section's original exception-based code as written below.
+> The behavior described here (strip `IDENTITY_FIELDS`, merge via `devtemplate.merge.merge_layer`,
+> validate the result via `devtemplate.schema.validate_devcontainer_config`, refuse to write on
+> invalid input JSON / missing file / schema-invalid output) is all still accurate — only the
+> error-handling mechanics changed, from `try`/`except`/`raise typer.Exit` to `Result`/`match`.
+> The section below is kept as a historical record of the original design; do not dispatch it.
+
 **Files:**
 - Modify: `dvt/src/devtemplate/commands/project.py`
 - Modify: `dvt/tests/test_project_command.py`
@@ -1762,12 +1780,22 @@ git commit -m "feat: add dvt project add-feature command"
 
 ### Task 11: Wire up the root CLI (devpod passthroughs + subcommands)
 
+> **Updated for the logerr retrofit** (see Global Constraints). `_devpod_passthrough` now
+> returns a `Result` internally instead of relying purely on `subprocess.run`'s return value,
+> but **deliberately does NOT retry devpod subcommands** — unlike the GitHub API calls in
+> `github.py`, a devpod subcommand's exit code is meaningful output to forward to the user
+> (`dvt ssh proj -- pytest` must return pytest's real exit code, not something silently
+> retried past), not a transient failure. Only a genuine launch failure (`devpod` missing
+> from `PATH`, etc. — a real `subprocess.run`-raised exception) is modeled as `Err`. If you
+> think blind retry-on-nonzero-exit was actually wanted here, stop and ask — it would be
+> wrong for the reason above, so this plan deliberately doesn't do it.
+
 **Files:**
 - Modify: `dvt/src/devtemplate/cli.py`
 - Test: `dvt/tests/test_cli.py`
 
 **Interfaces:**
-- Consumes: `devtemplate.commands.template.app` (Task 8), `devtemplate.commands.project.app` (Tasks 9-10).
+- Consumes: `devtemplate.commands.template.app` (Task 8), `devtemplate.commands.project.app` (Tasks 9-10, now via the logerr retrofit).
 - Produces: the final `devtemplate.cli.app` — the complete command surface this plan builds toward. Nothing else consumes this; it's the plan's last task.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1844,9 +1872,22 @@ def test_project_subcommand_is_registered():
 
     result = runner.invoke(app, ["project", "--help"])
     assert result.exit_code == 0
+
+
+def test_devpod_launch_failure_reports_clean_error(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    def fake_run(args):
+        raise FileNotFoundError("devpod not found")
+
+    monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
+    result = runner.invoke(cli_module.app, ["up", "my-project"])
+
+    assert result.exit_code == 1
+    assert "devpod" in result.stdout
 ```
 
-The top of `dvt/tests/test_cli.py` (`from typer.testing import CliRunner` / `from devtemplate.cli import app` / `runner = CliRunner()`) already exists from Task 1 — leave it as-is.
+The top of `dvt/tests/test_cli.py` (`from typer.testing import CliRunner` / `from devtemplate.cli import app` / `runner = CliRunner()`) already exists from Task 1 — leave it as-is. The four passthrough tests above (`test_up_invokes_devpod_up`, `test_ssh_forwards_extra_args`, `test_stop_and_delete_invoke_devpod`) don't need any changes for the `Result` wrapping — `_run_devpod` still calls `subprocess.run` exactly once per passthrough and forwards its `.returncode` unchanged on the `Ok` path, so the existing `FakeResult`-based mocks and assertions keep working as written.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -1863,17 +1904,40 @@ from __future__ import annotations
 import subprocess
 
 import typer
+from logerr import Err, Ok, Result
+from rich.console import Console
 
 from devtemplate.commands import project, template
 
 app = typer.Typer(help="dvt: dev-style named devcontainer templates on top of DevPod.")
 app.add_typer(template.app, name="template")
 app.add_typer(project.app, name="project")
+console = Console()
+
+
+def _run_devpod(subcommand: str, name: str, extra_args: list[str]) -> Result[int, Exception]:
+    """Run a devpod subcommand, forwarding its exit code.
+
+    Deliberately not retried: unlike the GitHub API calls in github.py, a devpod
+    subcommand's exit code is meaningful output to forward to the user (e.g.
+    `dvt ssh proj -- pytest` should return pytest's real exit code, not something
+    dvt silently retries past), not a transient failure. Only a genuine launch
+    failure (devpod missing from PATH, etc.) is an Err here.
+    """
+    try:
+        result = subprocess.run(["devpod", subcommand, name, *extra_args])
+        return Ok(result.returncode)
+    except Exception as exc:
+        return Err(exc)
 
 
 def _devpod_passthrough(subcommand: str, name: str, extra_args: list[str]) -> None:
-    result = subprocess.run(["devpod", subcommand, name, *extra_args])
-    raise typer.Exit(code=result.returncode)
+    match _run_devpod(subcommand, name, extra_args):
+        case Ok(returncode):
+            raise typer.Exit(code=returncode)
+        case Err(error):
+            console.print(f"[red]Failed to run devpod {subcommand}: {error}[/red]")
+            raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1923,7 +1987,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd dvt && pixi run pytest tests/test_cli.py -v`
-Expected: PASS (6 tests)
+Expected: PASS (7 tests)
 
 - [ ] **Step 5: Run the full test suite and mypy**
 
