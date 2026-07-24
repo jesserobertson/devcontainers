@@ -37,10 +37,18 @@ def test_show_prints_cached_template(settings):
     assert "fastapi" in result.stdout
 
 
+def test_show_refuses_cleanly_on_unknown_template(settings):
+    result = runner.invoke(app, ["show", "nonexistent"])
+    assert result.exit_code == 1
+    assert "nonexistent" in result.stdout
+
+
 def test_sync_reports_synced_template_names(settings, monkeypatch):
+    from logerr import Ok
+
     monkeypatch.setattr(
         "devtemplate.commands.template.sync_templates",
-        lambda settings_arg, client: ["fastapi", "agent"],
+        lambda settings_arg, client: Ok(["fastapi", "agent"]),
     )
 
     result = runner.invoke(app, ["sync"])

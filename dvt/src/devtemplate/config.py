@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import platformdirs
+from logerr import Err, Ok, Result
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -43,3 +44,14 @@ class Settings(BaseSettings):
     @property
     def manifest_path(self) -> Path:
         return self.data_dir / "manifest.json"
+
+
+def load_settings() -> Result[Settings, Exception]:
+    """Construct Settings, wrapping any validation failure (e.g. a malformed
+    DVT_GITHUB_REPO env var) as an Err instead of letting pydantic.ValidationError
+    crash the CLI with a raw traceback. The validators themselves are untouched —
+    they still raise, per pydantic's own protocol; this only wraps construction."""
+    try:
+        return Ok(Settings())
+    except Exception as exc:
+        return Err(exc)

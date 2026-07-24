@@ -44,3 +44,19 @@ def test_settings_rejects_malformed_github_branch(monkeypatch, value):
 def test_settings_accepts_well_formed_github_repo(monkeypatch):
     monkeypatch.setenv("DVT_GITHUB_REPO", "some-org_2/repo.name-2")
     assert Settings().github_repo == "some-org_2/repo.name-2"
+
+
+def test_load_settings_returns_err_on_invalid_env(monkeypatch):
+    from devtemplate.config import load_settings
+
+    monkeypatch.setenv("DVT_GITHUB_REPO", "not-a-valid-repo-string")
+    result = load_settings()
+    assert result.is_err()
+
+
+def test_load_settings_returns_ok_with_defaults():
+    from devtemplate.config import load_settings
+
+    result = load_settings()
+    assert result.is_ok()
+    assert result.unwrap().github_repo == "jesserobertson/devcontainers"
