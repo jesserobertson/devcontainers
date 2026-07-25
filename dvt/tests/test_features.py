@@ -281,7 +281,10 @@ def test_pull_feature_works_with_digest_ref(tmp_path):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if path.endswith(f"/manifests/{digest}") and "authorization" not in request.headers:
+        if (
+            path.endswith(f"/manifests/{digest}")
+            and "authorization" not in request.headers
+        ):
             return httpx.Response(
                 401,
                 headers={
