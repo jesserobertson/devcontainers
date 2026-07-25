@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import platformdirs
 from logerr import Result
@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     github_repo: str = "jesserobertson/devcontainers"
     github_branch: str = "main"
+    runtime: Literal["auto", "docker", "podman"] = "auto"
 
     @field_validator("github_repo")
     @classmethod

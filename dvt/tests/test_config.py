@@ -67,3 +67,14 @@ def test_load_settings_returns_ok_with_defaults():
     result = load_settings()
     assert result.is_ok()
     assert result.unwrap().github_repo == "jesserobertson/devcontainers"
+
+
+def test_runtime_defaults_to_auto(settings):
+    assert settings.runtime == "auto"
+
+
+def test_runtime_reads_from_env(monkeypatch, settings):
+    monkeypatch.setenv("DVT_RUNTIME", "podman")
+    from devtemplate.config import Settings
+
+    assert Settings().runtime == "podman"
