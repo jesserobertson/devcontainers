@@ -21,6 +21,21 @@ _FAKE_CONTAINER_SHELL = (
     "sys.exit(7)"
 )
 
+# A stand-in for `docker exec -i <name> sh -c "<command>"`: a minimal `sh -c`
+# that understands `echo`, so a requested command genuinely *runs* and its
+# output has to travel back over the SSH channel. Exits non-zero so the exec
+# path's exit-code propagation is observable too.
+_FAKE_SH_C = (
+    "import sys;"
+    "cmd = sys.argv[1];"
+    "assert cmd.startswith('echo '), cmd;"
+    # Binary write: text mode would translate \n to \r\n on Windows, which is
+    # the stand-in's artifact rather than anything the bridge does.
+    "sys.stdout.buffer.write(cmd[len('echo '):].encode() + b'\\n');"
+    "sys.stdout.buffer.flush();"
+    "sys.exit(3)"
+)
+
 
 def _patch_exec_to_fake_shell(monkeypatch, expected_cmd):
     """Redirect `_handle_process`'s docker/podman spawn to a stand-in Python
@@ -36,6 +51,24 @@ def _patch_exec_to_fake_shell(monkeypatch, expected_cmd):
         )
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+
+def _patch_exec_to_fake_sh_c(monkeypatch) -> list[tuple[str, ...]]:
+    """Same idea as `_patch_exec_to_fake_shell`, but the stand-in acts as
+    `sh -c` and is handed whatever command `_handle_process` decided to run.
+    Returns a list that records the argv actually spawned, so the test can
+    assert on it directly rather than from inside a background task."""
+    real_create_subprocess_exec = asyncio.create_subprocess_exec
+    spawned: list[tuple[str, ...]] = []
+
+    async def fake_create_subprocess_exec(*cmd: str, **kwargs: object):
+        spawned.append(cmd)
+        return await real_create_subprocess_exec(
+            sys.executable, "-c", _FAKE_SH_C, cmd[-1], **kwargs
+        )
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+    return spawned
 
 
 async def _serve(sock, host_key, process_factory) -> asyncssh.SSHServerConnection:
@@ -124,6 +157,45 @@ async def test_handle_process_bridges_a_real_subprocess_and_returns_its_exit_cod
     assert result.stdout == "from-container:hello\n"
     assert result.exit_status == 7
     assert returned == [7]
+    (await server_task).close()
+
+
+@pytest.mark.asyncio
+async def test_non_interactive_exec_request_runs_the_requested_command(monkeypatch):
+    """A non-interactive exec request (`ssh host "echo hello-from-real-ssh"` -
+    exactly the shape of this feature's end-to-end integration test) must
+    actually run the requested command, not silently drop the client into an
+    interactive shell that ignores it. asyncssh surfaces the distinction as
+    `SSHServerProcess.command`: None for a bare shell request, the command
+    line for an exec request. Real client, real server, real subprocess - only
+    the docker/podman argv is redirected.
+    """
+    spawned = _patch_exec_to_fake_sh_c(monkeypatch)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+    returned: list[int] = []
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        returned.append(await _handle_process(process, "docker", "myws"))
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_sock, known_hosts=None, username="anyone"
+        ) as conn:
+            process = await conn.create_process("echo hello-from-real-ssh")
+            result = await process.wait()
+
+    # The command reached the container's `sh -c` as its own argv entry...
+    assert spawned == [
+        ("docker", "exec", "-i", "myws", "sh", "-c", "echo hello-from-real-ssh")
+    ]
+    # ...actually ran there, and its output round-tripped back to the client.
+    assert result.stdout == "hello-from-real-ssh\n"
+    assert result.exit_status == 3
+    assert returned == [3]
     (await server_task).close()
 
 

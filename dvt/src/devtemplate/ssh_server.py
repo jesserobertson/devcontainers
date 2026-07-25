@@ -51,16 +51,26 @@ async def _handle_process(
     the same exec mechanism `exec_interactive` already uses, just with pipes
     instead of inherited stdio (asyncssh owns the actual terminal now).
 
+    Honours both kinds of session an SSH client can ask for. `process.command`
+    is `None` for a bare shell request (`ssh host`) and carries the requested
+    command line for an exec request (`ssh host "echo hi"`); the latter must
+    actually run that command rather than dropping the client into an
+    interactive shell that ignores it. Tools driving this as a `ProxyCommand`
+    - JetBrains Gateway especially - rely almost entirely on exec requests.
+
     Reports the subprocess's exit status to the SSH client *and* returns it,
     so the caller can use it as its own process exit code. `process.exit()`
     only sets the SSH channel's status; it hands nothing back to Python.
     """
+    # Passed as distinct argv entries, so the command reaches the container's
+    # `sh -c` exactly as the client wrote it - no shell runs on this side.
+    shell_argv = ["sh"] if process.command is None else ["sh", "-c", process.command]
     proc = await asyncio.create_subprocess_exec(
         cli_binary,
         "exec",
         "-i",
         container_name,
-        "sh",
+        *shell_argv,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
