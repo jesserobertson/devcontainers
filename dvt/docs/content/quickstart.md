@@ -1,7 +1,7 @@
 # Quickstart
 
 This walkthrough scaffolds a new project from the `fastapi` template, layers on the `agent`
-feature, and starts it in a real DevPod-managed container.
+feature, and starts it in a real container, built and run directly via Docker or Podman.
 
 ## 1. Sync templates
 
@@ -45,12 +45,15 @@ This merges the `agent` feature's requirements (its own `features` entry, `runAr
 
 ## 5. Start the container
 
+`up`'s `<name>` is the tag given to the workspace, not a path — run it from inside the
+project directory:
+
 ```bash
-dvt up .
+dvt up my-api
 ```
 
-DevPod builds the image (or reuses a cached one), applies the features, and runs
-`postCreateCommand`.
+`dvt` pulls the `agent` Feature, builds a multi-stage image from it, runs the container,
+and runs `postCreateCommand` (then `postStartCommand`, if the template sets one).
 
 ## 6. Connect
 

@@ -22,7 +22,9 @@ from devtemplate.runtime import get_client
 from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
 from devtemplate.workspace import up_workspace
 
-app = typer.Typer(help="dvt: dev-style named devcontainer templates on top of DevPod.")
+app = typer.Typer(
+    help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."
+)
 app.add_typer(template.app, name="template")
 app.add_typer(project.app, name="project")
 console = Console()
