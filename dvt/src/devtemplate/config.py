@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     github_repo: str = "jesserobertson/devcontainers"
     github_branch: str = "main"
     runtime: Literal["auto", "docker", "podman"] = "auto"
+    podman_machine_auto_init: bool = False
+    podman_machine_auto_start: bool = True
 
     @field_validator("github_repo")
     @classmethod

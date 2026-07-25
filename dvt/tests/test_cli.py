@@ -32,7 +32,7 @@ def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
 
     fake_handle = object()
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(fake_handle)
+        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(fake_handle)
     )
     monkeypatch.setattr(
         cli_module,
@@ -45,12 +45,47 @@ def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
     assert result.exit_code == 0
 
 
+def test_up_passes_podman_machine_settings_to_get_client(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DVT_PODMAN_MACHINE_AUTO_INIT", "true")
+    monkeypatch.setenv("DVT_PODMAN_MACHINE_AUTO_START", "false")
+
+    captured = {}
+
+    def fake_get_client(runtime, **kwargs):
+        captured["runtime"] = runtime
+        captured["kwargs"] = kwargs
+        return cli_module.Ok(_fake_handle())
+
+    monkeypatch.setattr(cli_module, "get_client", fake_get_client)
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path: cli_module.Ok(object()),
+    )
+
+    result = runner.invoke(cli_module.app, ["up", "my-project"])
+
+    assert result.exit_code == 0
+    assert captured["kwargs"] == {
+        "podman_machine_auto_init": True,
+        "podman_machine_auto_start": False,
+    }
+
+
 def test_up_reports_clean_error_on_failure(monkeypatch, tmp_path):
     import devtemplate.cli as cli_module
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(object())
+        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(object())
     )
     monkeypatch.setattr(
         cli_module,
@@ -70,7 +105,9 @@ def test_ssh_interactive_execs_into_container(monkeypatch):
     import devtemplate.cli as cli_module
 
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module,
@@ -87,7 +124,9 @@ def test_ssh_reports_clean_error_on_exec_failure(monkeypatch):
     import devtemplate.cli as cli_module
 
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module,
@@ -107,7 +146,9 @@ def test_stop_stops_the_labeled_container(monkeypatch):
 
     fake_container = type("C", (), {"stop": lambda self: None})()
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module, "find_workspace_container", lambda client, name: fake_container
@@ -122,7 +163,9 @@ def test_stop_reports_clean_error_when_not_found(monkeypatch):
     import devtemplate.cli as cli_module
 
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module, "find_workspace_container", lambda client, name: None
@@ -140,7 +183,9 @@ def test_stop_reports_clean_error_when_lookup_raises(monkeypatch):
         raise RuntimeError("daemon unreachable")
 
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(cli_module, "find_workspace_container", _raise)
 
@@ -155,7 +200,9 @@ def test_delete_removes_container(monkeypatch):
 
     fake_container = type("C", (), {"remove": lambda self, force=True: None})()
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module, "find_workspace_container", lambda client, name: fake_container

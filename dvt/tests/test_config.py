@@ -78,3 +78,15 @@ def test_runtime_reads_from_env(monkeypatch, settings):
     from devtemplate.config import Settings
 
     assert Settings().runtime == "podman"
+
+
+def test_podman_machine_settings_defaults(settings):
+    assert settings.podman_machine_auto_init is False
+    assert settings.podman_machine_auto_start is True
+
+
+def test_podman_machine_auto_init_reads_from_env(monkeypatch, settings):
+    monkeypatch.setenv("DVT_PODMAN_MACHINE_AUTO_INIT", "true")
+    from devtemplate.config import Settings
+
+    assert Settings().podman_machine_auto_init is True

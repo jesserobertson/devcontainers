@@ -34,7 +34,14 @@ console = Console()
 def up(name: str) -> None:
     """Build and run a workspace from ./.devcontainer/devcontainer.json."""
     settings = unwrap_or_exit(load_settings(), console)
-    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    handle = unwrap_or_exit(
+        get_client(
+            settings.runtime,
+            podman_machine_auto_init=settings.podman_machine_auto_init,
+            podman_machine_auto_start=settings.podman_machine_auto_start,
+        ),
+        console,
+    )
     unwrap_or_exit(up_workspace(handle, settings, name, Path.cwd()), console)
     console.print(
         f"[green]Workspace '{name}' is up.[/green] ssh in with: dvt ssh {name}"
@@ -45,7 +52,14 @@ def up(name: str) -> None:
 def ssh(name: str) -> None:
     """ssh into a running workspace."""
     settings = unwrap_or_exit(load_settings(), console)
-    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    handle = unwrap_or_exit(
+        get_client(
+            settings.runtime,
+            podman_machine_auto_init=settings.podman_machine_auto_init,
+            podman_machine_auto_start=settings.podman_machine_auto_start,
+        ),
+        console,
+    )
     result = exec_interactive(handle.cli_binary, handle.client, name)
     exit_code = unwrap_or_exit(result, console)
     raise typer.Exit(code=exit_code)
@@ -69,7 +83,14 @@ def _find_or_exit(client: DockerClient, name: str) -> Container:
 def stop(name: str) -> None:
     """Stop a running workspace."""
     settings = unwrap_or_exit(load_settings(), console)
-    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    handle = unwrap_or_exit(
+        get_client(
+            settings.runtime,
+            podman_machine_auto_init=settings.podman_machine_auto_init,
+            podman_machine_auto_start=settings.podman_machine_auto_start,
+        ),
+        console,
+    )
     container = _find_or_exit(handle.client, name)
     try:
         container.stop()
@@ -83,7 +104,14 @@ def stop(name: str) -> None:
 def delete(name: str) -> None:
     """Delete a workspace's container (the built image is left cached)."""
     settings = unwrap_or_exit(load_settings(), console)
-    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    handle = unwrap_or_exit(
+        get_client(
+            settings.runtime,
+            podman_machine_auto_init=settings.podman_machine_auto_init,
+            podman_machine_auto_start=settings.podman_machine_auto_start,
+        ),
+        console,
+    )
     container = _find_or_exit(handle.client, name)
     try:
         container.remove(force=True)
