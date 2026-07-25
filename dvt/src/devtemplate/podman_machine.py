@@ -17,7 +17,9 @@ _NAMED_PIPE_PATTERN = re.compile(r"\\\\\.\\pipe\\(.+)$")
 
 def _run_podman_json(cli_binary: str, args: list[str]) -> Result[Any, Exception]:
     try:
-        result = subprocess.run([cli_binary, *args], capture_output=True, text=True)
+        result = subprocess.run(
+            [cli_binary, *args], capture_output=True, text=True, timeout=30
+        )
         if result.returncode != 0:
             return Err(
                 RuntimeError(
@@ -58,7 +60,10 @@ def inspect_machine(cli_binary: str, name: str) -> Result[dict[str, Any], Except
 def start_machine(cli_binary: str, name: str) -> Result[None, Exception]:
     try:
         result = subprocess.run(
-            [cli_binary, "machine", "start", name], capture_output=True, text=True
+            [cli_binary, "machine", "start", name],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if result.returncode != 0:
             return Err(
@@ -88,6 +93,7 @@ def init_machine(cli_binary: str, name: str) -> Result[None, Exception]:
             ],
             capture_output=True,
             text=True,
+            timeout=300,
         )
         if result.returncode != 0:
             return Err(
@@ -106,7 +112,9 @@ def wait_until_ready(
     try:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            result = subprocess.run([cli_binary, "ps"], capture_output=True, text=True)
+            result = subprocess.run(
+                [cli_binary, "ps"], capture_output=True, text=True, timeout=10
+            )
             if result.returncode == 0:
                 return Ok(None)
             time.sleep(2)
@@ -202,6 +210,14 @@ def ensure_machine_ready(
             init_result = init_machine(cli_binary, _DEFAULT_MACHINE_NAME)
             if init_result.is_err():
                 return Err(init_result.unwrap_err())
+            if not auto_start:
+                return Err(
+                    RuntimeError(
+                        f"Machine {_DEFAULT_MACHINE_NAME!r} is not running. "
+                        f"Run 'podman machine start {_DEFAULT_MACHINE_NAME}' first, "
+                        "or set DVT_PODMAN_MACHINE_AUTO_START=true."
+                    )
+                )
             return _start_and_connect(cli_binary, _DEFAULT_MACHINE_NAME)
 
         first_machine = machines[0]

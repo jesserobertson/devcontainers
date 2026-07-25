@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from devtemplate.podman_machine import (
     ensure_machine_ready,
     inspect_machine,
     list_machines,
+    start_machine,
 )
 
 RUNNING_MACHINE = {
@@ -155,3 +157,33 @@ def test_ensure_machine_ready_no_machines_with_auto_init_creates_one():
 
     assert result.is_ok()
     assert any(c[1:3] == ["machine", "init"] for c in calls)
+
+
+def test_ensure_machine_ready_no_machines_auto_init_without_auto_start_does_not_start():
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args[1:3] == ["machine", "list"]:
+            return _fake_run(0, stdout="[]")
+        if args[1:3] == ["machine", "init"]:
+            return _fake_run(0)
+        raise AssertionError(f"unexpected call: {args}")
+
+    with patch("devtemplate.podman_machine.subprocess.run", side_effect=fake_run):
+        result = ensure_machine_ready("podman", auto_start=False, auto_init=True)
+
+    assert result.is_err()
+    assert any(c[1:3] == ["machine", "init"] for c in calls)
+    assert not any(c[1:3] == ["machine", "start"] for c in calls)
+
+
+def test_start_machine_returns_err_on_timeout():
+    with patch(
+        "devtemplate.podman_machine.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="podman machine start", timeout=120),
+    ):
+        result = start_machine("podman", "devpod-machine")
+
+    assert result.is_err()
+    assert isinstance(result.unwrap_err(), subprocess.TimeoutExpired)
