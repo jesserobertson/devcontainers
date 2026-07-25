@@ -62,7 +62,13 @@ def ssh(
 
 
 def _find_or_exit(client: DockerClient, name: str) -> Container:
-    container = find_workspace_container(client, name)
+    try:
+        container = find_workspace_container(client, name)
+    except Exception as exc:
+        console.print(
+            f"[red]Failed to look up workspace '{escape(name)}': {escape(str(exc))}[/red]"
+        )
+        raise typer.Exit(code=1) from exc
     if container is None:
         console.print(f"[red]No workspace named '{escape(name)}' found.[/red]")
         raise typer.Exit(code=1)

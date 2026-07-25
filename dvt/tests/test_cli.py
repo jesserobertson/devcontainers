@@ -157,6 +157,23 @@ def test_stop_reports_clean_error_when_not_found(monkeypatch):
     assert result.exit_code == 1
 
 
+def test_stop_reports_clean_error_when_lookup_raises(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    def _raise(client, name):
+        raise RuntimeError("daemon unreachable")
+
+    monkeypatch.setattr(
+        cli_module, "get_client", lambda runtime: cli_module.Ok(_fake_handle())
+    )
+    monkeypatch.setattr(cli_module, "find_workspace_container", _raise)
+
+    result = runner.invoke(cli_module.app, ["stop", "my-project"])
+
+    assert result.exit_code == 1
+    assert "daemon unreachable" in result.output
+
+
 def test_delete_removes_container_and_ssh_entry(monkeypatch):
     import devtemplate.cli as cli_module
 
