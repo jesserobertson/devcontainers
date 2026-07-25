@@ -122,6 +122,15 @@ def _translate_run_args(
         return Err(exc)
 
 
+# The devcontainer spec's `overrideCommand` defaults to true: the tool is expected
+# to replace the image's own entrypoint/CMD with something that just keeps the
+# container running, since `dvt ssh`/exec (not the image's foreground process) is
+# how commands actually get run inside it. Without this, images whose default CMD
+# doesn't block forever (a bare shell, most non-devcontainer base images) exit
+# immediately after `docker run -d`, before anything can exec into them.
+_KEEP_ALIVE_ENTRYPOINT = ["sleep", "infinity"]
+
+
 def run_container(
     client: DockerClient,
     image: str,
@@ -141,6 +150,10 @@ def run_container(
             return Err(run_args_result.unwrap_err())
         cap_adds, device_requests = run_args_result.unwrap()
 
+        entrypoint = (
+            _KEEP_ALIVE_ENTRYPOINT if config.get("overrideCommand", True) else None
+        )
+
         container = client.containers.run(
             image,
             detach=True,
@@ -152,6 +165,7 @@ def run_container(
             user=config.get("remoteUser"),
             cap_add=cap_adds,
             device_requests=device_requests,
+            entrypoint=entrypoint,
         )
         return Ok(container)
     except Exception as exc:

@@ -115,6 +115,43 @@ def test_run_container_translates_cap_add(tmp_path):
     assert set(kwargs["cap_add"]) == {"NET_ADMIN", "NET_RAW"}
 
 
+def test_run_container_overrides_entrypoint_to_keep_container_alive(tmp_path):
+    fake_client = MagicMock()
+    fake_client.containers.run.return_value = MagicMock()
+
+    result = run_container(
+        fake_client,
+        "dvt/agent:latest",
+        AGENT_CONFIG,
+        "agent",
+        tmp_path,
+        tmp_path / "devcontainer.json",
+    )
+
+    assert result.is_ok()
+    _, kwargs = fake_client.containers.run.call_args
+    assert kwargs["entrypoint"] == ["sleep", "infinity"]
+
+
+def test_run_container_respects_override_command_false(tmp_path):
+    config = {**AGENT_CONFIG, "overrideCommand": False}
+    fake_client = MagicMock()
+    fake_client.containers.run.return_value = MagicMock()
+
+    result = run_container(
+        fake_client,
+        "dvt/agent:latest",
+        config,
+        "agent",
+        tmp_path,
+        tmp_path / "devcontainer.json",
+    )
+
+    assert result.is_ok()
+    _, kwargs = fake_client.containers.run.call_args
+    assert kwargs["entrypoint"] is None
+
+
 def test_run_container_translates_gpus_all(tmp_path):
     config = {**FASTAPI_CONFIG, "runArgs": ["--gpus", "all"]}
     fake_client = MagicMock()
