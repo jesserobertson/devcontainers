@@ -84,6 +84,13 @@ def up_workspace(
     no in-place devcontainer.json changes are picked up on re-`up` in v1; delete
     and re-`up` for that.
     """
+    try:
+        existing = find_workspace_container(handle.client, name)
+    except Exception as exc:
+        return Err(exc)
+    if existing is not None:
+        return _resume_existing(existing, name)
+
     config_file = project_path / ".devcontainer" / "devcontainer.json"
     config_result = _load_config(config_file)
     if config_result.is_err():
@@ -93,13 +100,6 @@ def up_workspace(
     refusal = refuse_unsupported(config)
     if refusal.is_err():
         return Err(refusal.unwrap_err())
-
-    try:
-        existing = find_workspace_container(handle.client, name)
-    except Exception as exc:
-        return Err(exc)
-    if existing is not None:
-        return _resume_existing(existing, name)
 
     if "image" not in config:
         return Err(
