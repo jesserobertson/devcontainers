@@ -236,3 +236,60 @@ def test_up_workspace_skips_gpu_check_on_docker(project, settings, monkeypatch):
 
     assert result.is_ok()
     assert ensure_gpu_calls == []
+
+
+def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
+    project, settings, monkeypatch
+):
+    """Guard requires BOTH machine_name set AND --gpus in runArgs.
+    This test verifies that when machine_name is set but --gpus is absent
+    from runArgs, ensure_gpu_support is not called."""
+    handle = RuntimeHandle(
+        client=MagicMock(),
+        engine="podman",
+        cli_binary="/usr/bin/podman",
+        machine_name="devpod-machine",
+    )
+    (project / ".devcontainer" / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "python",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "runArgs": ["--network=host"],
+            }
+        )
+    )
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: None
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: workspace_module.Ok(Path("/x")),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "build_image",
+        lambda *a, **k: workspace_module.Ok("dvt/python:latest"),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "run_container",
+        lambda *a, **k: workspace_module.Ok(MagicMock()),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "run_lifecycle_commands",
+        lambda *a, **k: workspace_module.Ok(None),
+    )
+    ensure_gpu_calls = []
+    monkeypatch.setattr(
+        workspace_module.podman_machine,
+        "ensure_gpu_support",
+        lambda *a, **k: ensure_gpu_calls.append(1) or workspace_module.Ok(None),
+    )
+
+    result = up_workspace(handle, settings, "python", project)
+
+    assert result.is_ok()
+    assert ensure_gpu_calls == []
