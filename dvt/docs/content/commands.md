@@ -50,16 +50,19 @@ workspace with that name already exists, `up` starts it (if stopped) or leaves i
 running (if already running) rather than rebuilding — delete and re-`up` to pick up
 devcontainer.json changes.
 
-`dvt ssh <name>` execs into the running container. Under the hood this is a
-`ProxyCommand` shim over `docker exec`/`podman exec` — no SSH server is ever
-installed into any image, no port is ever published. `dvt up` writes a
-`~/.ssh/config` `Host <name>` entry the first time, so plain `ssh <name>`, VS Code
-Remote-SSH, and JetBrains Gateway all work the same way `dvt ssh <name>` does.
+`dvt ssh <name>` execs directly into the running container via `docker exec -it`/
+`podman exec -it` — no SSH server is ever installed into any image, no port is
+ever published, and no real SSH protocol is involved. No `~/.ssh/config` entry is
+written, so plain `ssh <name>`, VS Code Remote-SSH, and JetBrains Gateway are not
+supported through `dvt`; `dvt ssh <name>` is the only supported terminal-access
+path. (VS Code's own "Attach to Running Container", part of the Dev Containers
+extension, still works independently since it doesn't go through SSH at all — it
+uses the container's labels directly; see [Concepts](concepts.md)'s compatibility
+section.)
 
 `dvt stop <name>` / `dvt delete <name>` find the workspace via its `dvt.workspace`
 container label — not a `dvt`-side registry — so they work from any directory.
-`delete` also removes the workspace's `~/.ssh/config` entry, but leaves the built
-image cached for a faster `up` next time.
+`delete` leaves the built image cached for a faster `up` next time.
 
 These commands require a reachable Docker or Podman engine (see
 [Installation](installation.md)); `template`/`project` commands don't.

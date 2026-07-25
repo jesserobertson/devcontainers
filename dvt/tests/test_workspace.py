@@ -72,12 +72,6 @@ def test_up_workspace_full_build_and_run_sequence(
         "run_lifecycle_commands",
         lambda *a, **k: workspace_module.Ok(None),
     )
-    monkeypatch.setattr(
-        workspace_module,
-        "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
-    )
-
     result = up_workspace(handle, settings, "fastapi", project)
 
     assert result.is_ok()
@@ -109,12 +103,6 @@ def test_up_workspace_starts_existing_stopped_container(
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
-    monkeypatch.setattr(
-        workspace_module,
-        "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
-    )
-
     result = up_workspace(handle, settings, "fastapi", project)
 
     assert result.is_ok()
@@ -127,12 +115,6 @@ def test_up_workspace_noop_when_already_running(project, handle, settings, monke
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
-    monkeypatch.setattr(
-        workspace_module,
-        "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
-    )
-
     result = up_workspace(handle, settings, "fastapi", project)
 
     assert result.is_ok()
@@ -151,11 +133,6 @@ def test_up_workspace_resumes_existing_even_without_devcontainer_json(
     existing.status = "exited"
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
-    )
-    monkeypatch.setattr(
-        workspace_module,
-        "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
     )
 
     def _fail_load_config(config_file):

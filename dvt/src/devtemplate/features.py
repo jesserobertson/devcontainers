@@ -86,10 +86,17 @@ def _get_token(
         return Err(exc)
 
 
-def _first_layer_digest(manifest: dict[str, Any], ref: str) -> Result[str, Exception]:
+def _first_layer_digest(manifest: Any, ref: str) -> Result[str, Exception]:
     """Pull the first layer's digest out of a manifest, treating any malformed
-    shape (no layers, a non-dict layer entry, a missing/non-string digest) as a
-    Result error rather than letting KeyError/TypeError escape to the caller."""
+    shape (a non-dict manifest, no layers, a non-dict layer entry, a
+    missing/non-string digest) as a Result error rather than letting
+    AttributeError/KeyError/TypeError escape to the caller."""
+    if not isinstance(manifest, dict):
+        return Err(
+            ValueError(
+                f"Feature manifest for {ref!r} is not a JSON object: {manifest!r}"
+            )
+        )
     layers = manifest.get("layers", [])
     if not layers:
         return Err(ValueError(f"Feature manifest for {ref!r} has no layers"))
@@ -106,7 +113,10 @@ def _first_layer_digest(manifest: dict[str, Any], ref: str) -> Result[str, Excep
 
 def _fetch_manifest(
     client: httpx.Client, registry: str, repository: str, tag: str, token: str
-) -> Result[dict[str, Any], Exception]:
+) -> Result[Any, Exception]:
+    """Returns whatever JSON value the registry responded with - not
+    necessarily a dict. _first_layer_digest is responsible for rejecting a
+    non-dict manifest as a Result error rather than trusting this shape."""
     try:
         response = client.get(
             f"https://{registry}/v2/{repository}/manifests/{tag}",

@@ -1,6 +1,6 @@
 # dvt (devtemplate)
 
-Dev-style named devcontainer templates on top of [DevPod](https://devpod.sh).
+Dev-style named devcontainer templates, built and run directly via Docker or Podman.
 
 Templates are fetched from [jesserobertson/devcontainers](https://github.com/jesserobertson/devcontainers)'s `templates/` directory.
 

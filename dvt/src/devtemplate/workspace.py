@@ -20,7 +20,6 @@ from devtemplate.container import (
 )
 from devtemplate.features import pull_feature
 from devtemplate.runtime import RuntimeHandle
-from devtemplate.ssh import write_ssh_config_entry
 
 
 def _feature_id(ref: str) -> str:
@@ -43,31 +42,17 @@ def _load_config(config_file: Path) -> Result[dict[str, Any], Exception]:
         return Err(exc)
 
 
-def _refresh_ssh_config(name: str) -> Result[None, Exception]:
-    """Write/replace this workspace's SSH config block. Wraps Path.home() too -
-    it can raise RuntimeError if no home directory can be resolved - not just the
-    write itself, so no bare exception can escape this call site."""
-    try:
-        ssh_config_path = Path.home() / ".ssh" / "config"
-    except Exception as exc:
-        return Err(exc)
-    return write_ssh_config_entry(name, ssh_config_path)
-
-
-def _resume_existing(existing: Container, name: str) -> Result[Container, Exception]:
+def _resume_existing(existing: Container) -> Result[Container, Exception]:
     """Handle the re-`up` case where a container already carries this
-    workspace's label: start it if it isn't running, then (re)write its SSH
-    config entry. Every fallible operation on `existing` - status access and
-    start(), both of which can raise docker-py's APIError - is wrapped, so
-    nothing escapes as a bare exception."""
+    workspace's label: start it if it isn't running. Every fallible operation
+    on `existing` - status access and start(), both of which can raise
+    docker-py's APIError - is wrapped, so nothing escapes as a bare exception.
+    """
     try:
         if existing.status != "running":
             existing.start()
     except Exception as exc:
         return Err(exc)
-    ssh_result = _refresh_ssh_config(name)
-    if ssh_result.is_err():
-        return Err(ssh_result.unwrap_err())
     return Ok(existing)
 
 
@@ -75,21 +60,20 @@ def up_workspace(
     handle: RuntimeHandle, settings: Settings, name: str, project_path: Path
 ) -> Result[Container, Exception]:
     """Full `dvt up` sequence: validate -> pull Features -> build -> run ->
-    lifecycle commands -> SSH config. Returns the running Container.
+    lifecycle commands. Returns the running Container.
 
     Handles the re-`up` case (a workspace with this name already exists): if its
     container is stopped, starts it rather than rebuilding; if already running,
-    just ensures the SSH config entry is current and returns it. Only builds+runs
-    from scratch when no container with this `dvt.workspace` label exists yet -
-    no in-place devcontainer.json changes are picked up on re-`up` in v1; delete
-    and re-`up` for that.
+    just returns it as-is. Only builds+runs from scratch when no container with
+    this `dvt.workspace` label exists yet - no in-place devcontainer.json changes
+    are picked up on re-`up` in v1; delete and re-`up` for that.
     """
     try:
         existing = find_workspace_container(handle.client, name)
     except Exception as exc:
         return Err(exc)
     if existing is not None:
-        return _resume_existing(existing, name)
+        return _resume_existing(existing)
 
     config_file = project_path / ".devcontainer" / "devcontainer.json"
     config_result = _load_config(config_file)
@@ -162,9 +146,5 @@ def up_workspace(
     lifecycle_result = run_lifecycle_commands(container, config)
     if lifecycle_result.is_err():
         return Err(lifecycle_result.unwrap_err())
-
-    ssh_result = _refresh_ssh_config(name)
-    if ssh_result.is_err():
-        return Err(ssh_result.unwrap_err())
 
     return Ok(container)

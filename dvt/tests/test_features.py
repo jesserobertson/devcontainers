@@ -204,6 +204,38 @@ def test_pull_feature_returns_err_on_probe_network_failure(tmp_path):
     assert result.is_err()
 
 
+def test_pull_feature_returns_err_on_non_dict_manifest(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if (
+            path.endswith("/manifests/latest")
+            and "authorization" not in request.headers
+        ):
+            return httpx.Response(
+                401,
+                headers={
+                    "www-authenticate": (
+                        'Bearer realm="https://ghcr.io/token",'
+                        'service="ghcr.io",'
+                        'scope="repository:jesserobertson/devcontainers/fastapi:pull"'
+                    )
+                },
+            )
+        if path == "/token":
+            return httpx.Response(200, json={"token": "fake-token"})
+        if path.endswith("/manifests/latest"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = pull_feature(
+        client, "ghcr.io/jesserobertson/devcontainers/fastapi:latest", tmp_path
+    )
+
+    assert result.is_err()
+
+
 def test_get_token_returns_err_on_malformed_www_authenticate_header(tmp_path):
     def handler(request: httpx.Request) -> httpx.Response:
         if "authorization" not in request.headers and request.url.path.endswith(

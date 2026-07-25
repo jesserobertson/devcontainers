@@ -1,5 +1,5 @@
 site_name: dvt (devtemplate)
-site_description: Dev-style named devcontainer templates on top of DevPod
+site_description: Dev-style named devcontainer templates, built and run directly via Docker or Podman
 repo_name: jesserobertson/devcontainers
 repo_url: https://github.com/jesserobertson/devcontainers
 
