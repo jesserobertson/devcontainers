@@ -1,112 +1,103 @@
 from __future__ import annotations
 
-import shutil
-import subprocess
+from pathlib import Path
 
 import logerr
 import typer
-from logerr import Err, Ok, Result
-from logerr.utilities import execute
+from docker.client import DockerClient
+from docker.models.containers import Container
+
+# Err/Ok are re-exported here for tests to monkeypatch fakes via
+# `cli_module.Ok(...)`/`cli_module.Err(...)` without importing logerr directly.
+from logerr import Err, Ok  # noqa: F401
 from loguru import logger
 from rich.console import Console
 from rich.markup import escape
 
+from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.commands import project, template
+from devtemplate.config import load_settings
+from devtemplate.container import find_workspace_container
+from devtemplate.runtime import get_client
+from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
+from devtemplate.workspace import up_workspace
 
 app = typer.Typer(help="dvt: dev-style named devcontainer templates on top of DevPod.")
 app.add_typer(template.app, name="template")
 app.add_typer(project.app, name="project")
 console = Console()
 
-
-def _run_devpod(
-    subcommand: str, name: str, extra_args: list[str]
-) -> Result[int, Exception]:
-    """Run a devpod subcommand, forwarding its exit code.
-
-    Deliberately not retried: unlike the GitHub API calls in github.py, a devpod
-    subcommand's exit code is meaningful output to forward to the user (e.g.
-    `dvt ssh proj -- pytest` should return pytest's real exit code, not something
-    dvt silently retries past), not a transient failure. Only a genuine launch
-    failure (devpod missing from PATH, etc.) is an Err here.
-
-    Resolves the executable via shutil.which() rather than passing the bare name
-    "devpod" to subprocess.run: on Windows, devpod installs as devpod.CMD (plus an
-    extensionless POSIX-shell variant) — Win32 CreateProcess (what subprocess.run
-    uses without shell=True) cannot resolve a bare command name to a .CMD file the
-    way a shell's own PATH/PATHEXT search does, so the un-resolved bare name fails
-    with WinError 2 even though devpod is genuinely on PATH. shutil.which() applies
-    the same PATHEXT-aware resolution a shell would, cross-platform.
-    """
-    devpod_executable = shutil.which("devpod")
-    if devpod_executable is None:
-        return Err(
-            FileNotFoundError(
-                "devpod not found on PATH. Install it from https://devpod.sh"
-            )
-        )
-    return execute(
-        lambda: (
-            subprocess.run(
-                [devpod_executable, subcommand, name, *extra_args]
-            ).returncode
-        )
-    )
-
-
-def _devpod_passthrough(subcommand: str, name: str, extra_args: list[str]) -> None:
-    match _run_devpod(subcommand, name, extra_args):
-        case Ok(returncode):
-            raise typer.Exit(code=returncode)
-        case Err(error):
-            console.print(
-                f"[red]Failed to run devpod {escape(subcommand)}: {escape(str(error))}[/red]"
-            )
-            raise typer.Exit(code=1)
+_SSH_CONFIG_PATH = Path.home() / ".ssh" / "config"
 
 
 @app.command()
-def up(
-    name: str,
-    extra_args: list[str] = typer.Argument(  # noqa: B008
-        None, help="Extra args forwarded to devpod up."
-    ),
-) -> None:
-    """Passthrough to `devpod up`."""
-    _devpod_passthrough("up", name, extra_args or [])
+def up(name: str) -> None:
+    """Build and run a workspace from ./.devcontainer/devcontainer.json."""
+    settings = unwrap_or_exit(load_settings(), console)
+    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    unwrap_or_exit(up_workspace(handle, settings, name, Path.cwd()), console)
+    console.print(f"[green]Workspace '{name}' is up.[/green] ssh in with: ssh {name}")
 
 
 @app.command()
 def ssh(
     name: str,
-    extra_args: list[str] = typer.Argument(  # noqa: B008
-        None, help="Extra args forwarded to devpod ssh."
+    stdio: bool = typer.Option(  # noqa: B008
+        False,
+        "--stdio",
+        help="Non-interactive pipe mode for ProxyCommand use.",
+        hidden=True,
     ),
 ) -> None:
-    """Passthrough to `devpod ssh`."""
-    _devpod_passthrough("ssh", name, extra_args or [])
+    """ssh into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
+    settings = unwrap_or_exit(load_settings(), console)
+    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    result = (
+        stdio_proxy(handle.cli_binary, handle.client, name)
+        if stdio
+        else exec_interactive(handle.cli_binary, handle.client, name)
+    )
+    exit_code = unwrap_or_exit(result, console)
+    raise typer.Exit(code=exit_code)
+
+
+def _find_or_exit(client: DockerClient, name: str) -> Container:
+    container = find_workspace_container(client, name)
+    if container is None:
+        console.print(f"[red]No workspace named '{escape(name)}' found.[/red]")
+        raise typer.Exit(code=1)
+    return container
 
 
 @app.command()
-def stop(
-    name: str,
-    extra_args: list[str] = typer.Argument(  # noqa: B008
-        None, help="Extra args forwarded to devpod stop."
-    ),
-) -> None:
-    """Passthrough to `devpod stop`."""
-    _devpod_passthrough("stop", name, extra_args or [])
+def stop(name: str) -> None:
+    """Stop a running workspace."""
+    settings = unwrap_or_exit(load_settings(), console)
+    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    container = _find_or_exit(handle.client, name)
+    try:
+        container.stop()
+    except Exception as exc:
+        console.print(f"[red]Failed to stop '{escape(name)}': {escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Stopped '{name}'.")
 
 
 @app.command()
-def delete(
-    name: str,
-    extra_args: list[str] = typer.Argument(  # noqa: B008
-        None, help="Extra args forwarded to devpod delete."
-    ),
-) -> None:
-    """Passthrough to `devpod delete`."""
-    _devpod_passthrough("delete", name, extra_args or [])
+def delete(name: str) -> None:
+    """Delete a workspace's container (the built image is left cached)."""
+    settings = unwrap_or_exit(load_settings(), console)
+    handle = unwrap_or_exit(get_client(settings.runtime), console)
+    container = _find_or_exit(handle.client, name)
+    try:
+        container.remove(force=True)
+    except Exception as exc:
+        console.print(
+            f"[red]Failed to delete '{escape(name)}': {escape(str(exc))}[/red]"
+        )
+        raise typer.Exit(code=1) from exc
+    unwrap_or_exit(remove_ssh_config_entry(name, _SSH_CONFIG_PATH), console)
+    console.print(f"Deleted '{name}'.")
 
 
 def main() -> None:

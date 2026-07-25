@@ -43,11 +43,11 @@ def unit(
 def integration(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ) -> None:
-    """Run integration tests (real devpod/network calls).
+    """Run integration tests (real container runtime/network calls).
 
-    Opt-in only: creates real containers via a real devpod, skipped automatically if
-    devpod isn't installed. Not run by `unit`, `fast`, `all`, or plain `pytest` — this
-    is the only command that runs them.
+    Opt-in only: creates real containers via a real Docker/Podman runtime, skipped
+    automatically if no runtime is reachable. Not run by `unit`, `fast`, `all`, or
+    plain `pytest` — this is the only command that runs them.
     """
     console.print(Panel.fit("Running Integration Tests", style="blue"))
     cmd = ["pytest", "tests/", "-m", "integration"]
@@ -65,7 +65,7 @@ def all(
     """Run the entire hermetic test suite (everything except integration).
 
     Integration tests are opt-in only, via `pixi run test integration` — never run
-    here, since they create real containers via a real devpod.
+    here, since they create real containers via a real container runtime.
     """
     console.print(Panel.fit("Running All Tests", style="blue"))
     cmd = ["pytest", "tests/", "-m", "not integration"]
