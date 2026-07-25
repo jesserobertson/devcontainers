@@ -53,10 +53,13 @@ def _get_token(
     parse the resulting 401's WWW-Authenticate challenge, fetch a token from its
     realm. Registry-agnostic - not hardcoded to ghcr.io's own /token endpoint, since
     the realm/service/scope come from whatever registry actually answered."""
-    probe = client.get(
-        f"https://{registry}/v2/{repository}/manifests/{tag}",
-        headers={"Accept": _MANIFEST_ACCEPT},
-    )
+    try:
+        probe = client.get(
+            f"https://{registry}/v2/{repository}/manifests/{tag}",
+            headers={"Accept": _MANIFEST_ACCEPT},
+        )
+    except Exception as exc:
+        return Err(exc)
     if probe.status_code != 401:
         return Err(
             ValueError(

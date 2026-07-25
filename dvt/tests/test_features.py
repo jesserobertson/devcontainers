@@ -191,6 +191,19 @@ def test_pull_feature_does_not_poison_cache_on_corrupt_tar_blob(tmp_path):
     assert not dest_dir.exists()
 
 
+def test_pull_feature_returns_err_on_probe_network_failure(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = pull_feature(
+        client, "ghcr.io/jesserobertson/devcontainers/fastapi:latest", tmp_path
+    )
+
+    assert result.is_err()
+
+
 def test_get_token_returns_err_on_malformed_www_authenticate_header(tmp_path):
     def handler(request: httpx.Request) -> httpx.Response:
         if "authorization" not in request.headers and request.url.path.endswith(
