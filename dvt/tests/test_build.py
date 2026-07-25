@@ -69,3 +69,48 @@ def test_build_image_returns_err_on_build_failure(tmp_path):
     )
 
     assert result.is_err()
+
+
+def test_build_image_returns_err_when_copytree_destination_exists(tmp_path):
+    feature_dir = tmp_path / "extracted"
+    feature_dir.mkdir()
+    (feature_dir / "install.sh").write_text("#!/bin/bash\n")
+    scratch_dir = tmp_path / "scratch"
+
+    fake_client = MagicMock()
+    fake_client.images.build.return_value = (MagicMock(), iter([]))
+
+    features = [("fastapi", feature_dir, {})]
+
+    first_result = build_image(
+        fake_client, "base:latest", features, "dvt/my-project:latest", scratch_dir
+    )
+    assert first_result.is_ok()
+
+    # Reusing the same scratch_dir means shutil.copytree's destination already
+    # exists, which raises FileExistsError (dirs_exist_ok defaults to False).
+    second_result = build_image(
+        fake_client, "base:latest", features, "dvt/my-project:latest", scratch_dir
+    )
+
+    assert second_result.is_err()
+    assert isinstance(second_result.unwrap_err(), FileExistsError)
+
+
+def test_build_image_returns_err_when_extracted_dir_missing(tmp_path):
+    missing_feature_dir = tmp_path / "does-not-exist"
+    scratch_dir = tmp_path / "scratch"
+
+    fake_client = MagicMock()
+
+    result = build_image(
+        fake_client,
+        "base:latest",
+        [("fastapi", missing_feature_dir, {})],
+        "dvt/my-project:latest",
+        scratch_dir,
+    )
+
+    assert result.is_err()
+    assert isinstance(result.unwrap_err(), FileNotFoundError)
+    fake_client.images.build.assert_not_called()
