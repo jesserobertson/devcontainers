@@ -5,8 +5,11 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 from devtemplate.podman_machine import (
+    check_gpu_cdi_ready,
+    ensure_gpu_support,
     ensure_machine_ready,
     inspect_machine,
+    install_nvidia_toolkit,
     list_machines,
     start_machine,
 )
@@ -176,6 +179,66 @@ def test_ensure_machine_ready_no_machines_auto_init_without_auto_start_does_not_
     assert result.is_err()
     assert any(c[1:3] == ["machine", "init"] for c in calls)
     assert not any(c[1:3] == ["machine", "start"] for c in calls)
+
+
+def test_check_gpu_cdi_ready_true_when_exists():
+    with patch(
+        "devtemplate.podman_machine.subprocess.run",
+        return_value=_fake_run(0, stdout="exists\n"),
+    ):
+        result = check_gpu_cdi_ready("podman", "devpod-machine")
+    assert result.is_ok()
+    assert result.unwrap() is True
+
+
+def test_check_gpu_cdi_ready_false_when_missing():
+    with patch(
+        "devtemplate.podman_machine.subprocess.run",
+        return_value=_fake_run(0, stdout="missing\n"),
+    ):
+        result = check_gpu_cdi_ready("podman", "devpod-machine")
+    assert result.is_ok()
+    assert result.unwrap() is False
+
+
+def test_ensure_gpu_support_skips_install_when_already_ready():
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return _fake_run(0, stdout="exists\n")
+
+    with patch("devtemplate.podman_machine.subprocess.run", side_effect=fake_run):
+        result = ensure_gpu_support("podman", "devpod-machine")
+
+    assert result.is_ok()
+    assert len(calls) == 1  # only the check, no install
+
+
+def test_ensure_gpu_support_installs_when_missing():
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if "test -f /etc/cdi/nvidia.yaml" in args[-1]:
+            return _fake_run(0, stdout="missing\n")
+        return _fake_run(0)
+
+    with patch("devtemplate.podman_machine.subprocess.run", side_effect=fake_run):
+        result = ensure_gpu_support("podman", "devpod-machine")
+
+    assert result.is_ok()
+    assert len(calls) == 2
+    assert "nvidia-ctk cdi generate" in calls[1][-1]
+
+
+def test_install_nvidia_toolkit_returns_err_on_failure():
+    with patch(
+        "devtemplate.podman_machine.subprocess.run",
+        return_value=_fake_run(1, stderr="ssh failed"),
+    ):
+        result = install_nvidia_toolkit("podman", "devpod-machine")
+    assert result.is_err()
 
 
 def test_start_machine_returns_err_on_timeout():

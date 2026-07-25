@@ -145,3 +145,94 @@ def test_up_workspace_resumes_existing_even_without_devcontainer_json(
     assert result.is_ok()
     assert result.unwrap() is existing
     existing.start.assert_called_once()
+
+
+def test_up_workspace_ensures_gpu_support_on_podman_windows(
+    project, settings, monkeypatch
+):
+    handle = RuntimeHandle(
+        client=MagicMock(),
+        engine="podman",
+        cli_binary="/usr/bin/podman",
+        machine_name="devpod-machine",
+    )
+    (project / ".devcontainer" / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "jax",
+                "image": "ghcr.io/jesserobertson/base-cuda:latest",
+                "runArgs": ["--gpus", "all"],
+            }
+        )
+    )
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: None
+    )
+    calls = []
+    monkeypatch.setattr(
+        workspace_module.podman_machine,
+        "ensure_gpu_support",
+        lambda cli_binary, machine_name: (
+            calls.append(machine_name) or workspace_module.Ok(None)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "build_image",
+        lambda *a, **k: workspace_module.Ok("dvt/jax:latest"),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "run_container",
+        lambda *a, **k: workspace_module.Ok(MagicMock()),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "run_lifecycle_commands",
+        lambda *a, **k: workspace_module.Ok(None),
+    )
+
+    result = up_workspace(handle, settings, "jax", project)
+
+    assert result.is_ok()
+    assert calls == ["devpod-machine"]
+
+
+def test_up_workspace_skips_gpu_check_on_docker(project, settings, monkeypatch):
+    handle = RuntimeHandle(
+        client=MagicMock(), engine="docker", cli_binary="/usr/bin/docker"
+    )
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: None
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: workspace_module.Ok(Path("/x")),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "build_image",
+        lambda *a, **k: workspace_module.Ok("dvt/fastapi:latest"),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "run_container",
+        lambda *a, **k: workspace_module.Ok(MagicMock()),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "run_lifecycle_commands",
+        lambda *a, **k: workspace_module.Ok(None),
+    )
+    ensure_gpu_calls = []
+    monkeypatch.setattr(
+        workspace_module.podman_machine,
+        "ensure_gpu_support",
+        lambda *a, **k: ensure_gpu_calls.append(1) or workspace_module.Ok(None),
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project)
+
+    assert result.is_ok()
+    assert ensure_gpu_calls == []

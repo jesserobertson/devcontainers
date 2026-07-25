@@ -10,6 +10,7 @@ from docker.models.containers import Container
 from logerr import Err, Ok, Result
 from logerr.itertools import traverse_result
 
+from devtemplate import podman_machine
 from devtemplate.build import build_image
 from devtemplate.config import Settings
 from devtemplate.container import (
@@ -121,6 +122,13 @@ def up_workspace(
         ]
     except Exception as exc:
         return Err(exc)
+
+    if handle.machine_name is not None and "--gpus" in config.get("runArgs", []):
+        gpu_result = podman_machine.ensure_gpu_support(
+            handle.cli_binary, handle.machine_name
+        )
+        if gpu_result.is_err():
+            return Err(gpu_result.unwrap_err())
 
     try:
         with tempfile.TemporaryDirectory() as scratch:

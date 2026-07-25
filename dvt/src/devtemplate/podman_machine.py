@@ -187,6 +187,79 @@ def _start_and_connect(
         return Err(exc)
 
 
+_NVIDIA_TOOLKIT_INSTALL_COMMAND = (
+    "sudo curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/"
+    "nvidia-container-toolkit.repo -o /etc/yum.repos.d/nvidia-container-toolkit.repo "
+    "&& sudo dnf install -y nvidia-container-toolkit "
+    "&& sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml"
+)
+
+
+def check_gpu_cdi_ready(cli_binary: str, machine_name: str) -> Result[bool, Exception]:
+    try:
+        result = subprocess.run(
+            [
+                cli_binary,
+                "machine",
+                "ssh",
+                machine_name,
+                "test -f /etc/cdi/nvidia.yaml && echo exists || echo missing",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return Err(
+                RuntimeError(
+                    f"Failed to check CDI status on {machine_name!r}: {result.stderr.strip()}"
+                )
+            )
+        return Ok("exists" in result.stdout)
+    except Exception as exc:
+        return Err(exc)
+
+
+def install_nvidia_toolkit(
+    cli_binary: str, machine_name: str
+) -> Result[None, Exception]:
+    try:
+        result = subprocess.run(
+            [
+                cli_binary,
+                "machine",
+                "ssh",
+                machine_name,
+                _NVIDIA_TOOLKIT_INSTALL_COMMAND,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            return Err(
+                RuntimeError(
+                    f"Failed to install NVIDIA Container Toolkit on {machine_name!r}: "
+                    f"{result.stderr.strip()}"
+                )
+            )
+        return Ok(None)
+    except Exception as exc:
+        return Err(exc)
+
+
+def ensure_gpu_support(cli_binary: str, machine_name: str) -> Result[None, Exception]:
+    try:
+        ready_result = check_gpu_cdi_ready(cli_binary, machine_name)
+        if ready_result.is_err():
+            return Err(ready_result.unwrap_err())
+        if ready_result.unwrap():
+            return Ok(None)
+        return install_nvidia_toolkit(cli_binary, machine_name)
+    except Exception as exc:
+        return Err(exc)
+
+
 def ensure_machine_ready(
     cli_binary: str, *, auto_start: bool, auto_init: bool
 ) -> Result[tuple[str, str], Exception]:
