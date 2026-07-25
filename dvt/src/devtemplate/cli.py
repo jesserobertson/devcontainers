@@ -6,6 +6,7 @@ import subprocess
 import logerr
 import typer
 from logerr import Err, Ok, Result
+from logerr.utilities import execute
 from loguru import logger
 from rich.console import Console
 from rich.markup import escape
@@ -44,11 +45,13 @@ def _run_devpod(
                 "devpod not found on PATH. Install it from https://devpod.sh"
             )
         )
-    try:
-        result = subprocess.run([devpod_executable, subcommand, name, *extra_args])
-        return Ok(result.returncode)
-    except Exception as exc:
-        return Err(exc)
+    return execute(
+        lambda: (
+            subprocess.run(
+                [devpod_executable, subcommand, name, *extra_args]
+            ).returncode
+        )
+    )
 
 
 def _devpod_passthrough(subcommand: str, name: str, extra_args: list[str]) -> None:

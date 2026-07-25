@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
 
 import httpx
 import jsonschema
 import typer
-from logerr import Err, Ok
 from rich.console import Console
 from rich.markup import escape
 
+from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import load_settings
 from devtemplate.merge import merge_layer
 from devtemplate.schema import validate_devcontainer_config
@@ -40,30 +39,14 @@ def init(
         False, help="Sync templates from GitHub before scaffolding."
     ),
 ) -> None:
-    match load_settings():
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(settings):
-            pass
+    settings = unwrap_or_exit(load_settings(), console)
 
     if refresh or not list_cached_templates(settings):
         with httpx.Client() as client:
             sync_result = sync_templates(settings, client)
-        if sync_result.is_err():
-            # cast: logerr's Result[T, E] stub doesn't declare unwrap_err() on the
-            # abstract base, only on the concrete Ok/Err subclasses, so mypy can't
-            # see it here even though we've just confirmed .is_err().
-            error = cast(Err[Any, Any], sync_result).unwrap_err()
-            console.print(f"[red]Sync failed: {escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
+        unwrap_or_exit(sync_result, console, prefix="Sync failed: ")
 
-    match load_cached_template(settings, template):
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(config):
-            pass
+    config = unwrap_or_exit(load_cached_template(settings, template), console)
 
     config["name"] = path.resolve().name
 
@@ -91,12 +74,7 @@ def init(
 
 @app.command("add-feature")
 def add_feature(name: str) -> None:
-    match load_settings():
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(settings):
-            pass
+    settings = unwrap_or_exit(load_settings(), console)
 
     target = Path(".devcontainer") / "devcontainer.json"
     if not target.exists():
@@ -115,12 +93,7 @@ def add_feature(name: str) -> None:
         )
         raise typer.Exit(code=1) from exc
 
-    match load_cached_template(settings, name):
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(template):
-            pass
+    template = unwrap_or_exit(load_cached_template(settings, name), console)
 
     overlay = {
         key: value for key, value in template.items() if key not in IDENTITY_FIELDS

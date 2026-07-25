@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from typing import Any, cast
+from typing import Any
 
 import httpx
 from logerr import Err, Ok, Result
+from logerr.itertools import traverse_result
 
 from devtemplate.config import Settings
 from devtemplate.github import fetch_template, list_template_names
@@ -15,14 +16,18 @@ MANIFEST_KEY = "managed_templates"
 TEMPLATE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
-def _validate_template_name(name: str) -> Result[str, ValueError]:
-    if not TEMPLATE_NAME_PATTERN.fullmatch(name):
-        return Err(
-            ValueError(
-                f"Invalid template name {name!r}: must match {TEMPLATE_NAME_PATTERN.pattern!r}"
-            )
-        )
-    return Ok(name)
+def _validate_template_name(name: str) -> Result[str, Exception]:
+    # error is typed as Exception (not the more specific ValueError) so
+    # Result.from_predicate infers E=Exception here, matching every caller's
+    # Result[..., Exception] - lets callers propagate .unwrap_err() straight
+    # through without a cast, now that Result.unwrap_err() is declared on
+    # the abstract base class.
+    error: Exception = ValueError(
+        f"Invalid template name {name!r}: must match {TEMPLATE_NAME_PATTERN.pattern!r}"
+    )
+    return Result.from_predicate(
+        name, lambda n: bool(TEMPLATE_NAME_PATTERN.fullmatch(n)), error
+    )
 
 
 def read_manifest(settings: Settings) -> Result[list[str], Exception]:
@@ -73,14 +78,9 @@ def sync_templates(
         return names_result
     names = names_result.unwrap()
 
-    for name in names:
-        validation = _validate_template_name(name)
-        if validation.is_err():
-            # cast: logerr's Result[T, E] stub doesn't declare unwrap_err() on the
-            # abstract base, only on the concrete Ok/Err subclasses, so mypy can't
-            # see it here even though we've just confirmed .is_err(). Same cast()
-            # idiom this codebase already used pre-retrofit for stub gaps.
-            return Err(cast(Err[Any, Any], validation).unwrap_err())
+    validated_names = traverse_result(names, _validate_template_name)
+    if validated_names.is_err():
+        return Err(validated_names.unwrap_err())
 
     previous_result = read_manifest(settings)
     previous_names = previous_result.unwrap() if previous_result.is_ok() else []
@@ -91,7 +91,7 @@ def sync_templates(
             client, settings.github_repo, settings.github_branch, name
         )
         if template_result.is_err():
-            return Err(cast(Err[Any, Any], template_result).unwrap_err())
+            return Err(template_result.unwrap_err())
         template_dir = settings.templates_dir / name
         template_dir.mkdir(parents=True, exist_ok=True)
         (template_dir / "devcontainer.json").write_text(
@@ -108,7 +108,7 @@ def sync_templates(
 
     manifest_result = write_manifest(settings, names)
     if manifest_result.is_err():
-        return Err(cast(Err[Any, Any], manifest_result).unwrap_err())
+        return Err(manifest_result.unwrap_err())
     return Ok(names)
 
 
@@ -125,7 +125,7 @@ def load_cached_template(
 ) -> Result[dict[str, Any], Exception]:
     validation = _validate_template_name(name)
     if validation.is_err():
-        return Err(cast(Err[Any, Any], validation).unwrap_err())
+        return Err(validation.unwrap_err())
     path = settings.templates_dir / name / "devcontainer.json"
     if not path.exists():
         return Err(

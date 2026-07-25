@@ -25,7 +25,7 @@ def list_template_names(
         entries = response.json()
         return sorted(entry["name"] for entry in entries if entry["type"] == "dir")
 
-    return cast(Result[list[str], Exception], execute(_fetch))
+    return execute(_fetch)
 
 
 @on_err(
@@ -42,4 +42,4 @@ def fetch_template(
         response.raise_for_status()
         return cast(dict[str, Any], json.loads(response.text))
 
-    return cast(Result[dict[str, Any], Exception], execute(_fetch))
+    return execute(_fetch)

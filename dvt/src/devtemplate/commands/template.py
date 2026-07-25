@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import load_settings
 from devtemplate.store import (
     list_cached_templates,
@@ -22,12 +23,7 @@ console = Console()
 
 @app.command("list")
 def list_templates() -> None:
-    match load_settings():
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(settings):
-            pass
+    settings = unwrap_or_exit(load_settings(), console)
 
     names = list_cached_templates(settings)
     if not names:
@@ -51,35 +47,17 @@ def list_templates() -> None:
 
 @app.command("show")
 def show_template(name: str) -> None:
-    match load_settings():
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(settings):
-            pass
+    settings = unwrap_or_exit(load_settings(), console)
 
-    match load_cached_template(settings, name):
-        case Ok(template):
-            console.print_json(json.dumps(template))
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
+    template = unwrap_or_exit(load_cached_template(settings, name), console)
+    console.print_json(json.dumps(template))
 
 
 @app.command("sync")
 def sync() -> None:
-    match load_settings():
-        case Err(error):
-            console.print(f"[red]{escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
-        case Ok(settings):
-            pass
+    settings = unwrap_or_exit(load_settings(), console)
 
     with httpx.Client() as client:
         result = sync_templates(settings, client)
-    match result:
-        case Ok(names):
-            console.print(f"Synced {len(names)} templates: {', '.join(names)}")
-        case Err(error):
-            console.print(f"[red]Sync failed: {escape(str(error))}[/red]")
-            raise typer.Exit(code=1)
+    names = unwrap_or_exit(result, console, prefix="Sync failed: ")
+    console.print(f"Synced {len(names)} templates: {', '.join(names)}")
