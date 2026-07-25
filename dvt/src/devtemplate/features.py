@@ -17,18 +17,30 @@ _MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
 
 
 def _parse_feature_ref(ref: str) -> Result[tuple[str, str, str], Exception]:
-    """Split 'registry/repository/path:tag' into (registry, repository_path, tag).
-
-    E.g. 'ghcr.io/jesserobertson/devcontainers/fastapi:latest' ->
-    ('ghcr.io', 'jesserobertson/devcontainers/fastapi', 'latest').
+    """Split 'registry/repository/path:tag' or 'registry/repository/path@sha256:hex'
+    into (registry, repository_path, reference), where reference is either a tag
+    or a digest - OCI registries accept either directly in the manifest URL's
+    final path segment, so no other code in this module needs to distinguish
+    them. Digest form is checked first: 'sha256:hex' itself contains a colon,
+    so checking for '@sha256:' before falling through to the tag-splitting
+    rpartition avoids misparsing a digest ref as a malformed tag ref.
     """
     if "/" not in ref:
         return Err(
             ValueError(f"Invalid feature ref {ref!r}: expected registry/repository:tag")
         )
     registry, _, rest = ref.partition("/")
+    if "@sha256:" in rest:
+        repository, _, digest = rest.partition("@")
+        if not repository or not digest:
+            return Err(
+                ValueError(f"Invalid feature ref {ref!r}: missing repository or digest")
+            )
+        return Ok((registry, repository, digest))
     if ":" not in rest:
-        return Err(ValueError(f"Invalid feature ref {ref!r}: missing :tag"))
+        return Err(
+            ValueError(f"Invalid feature ref {ref!r}: missing :tag or @sha256:digest")
+        )
     repository, _, tag = rest.rpartition(":")
     if not repository or not tag:
         return Err(

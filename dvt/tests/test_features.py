@@ -254,3 +254,66 @@ def test_get_token_returns_err_on_malformed_www_authenticate_header(tmp_path):
     )
 
     assert result.is_err()
+
+
+def test_parse_feature_ref_accepts_digest_form():
+    result = _parse_feature_ref(
+        "ghcr.io/jesserobertson/devcontainers/fastapi@sha256:"
+        "f26cbb9c85b8211fa150e50200d48033d82d6678b6c871e8c2db015a1d81ffff"
+    )
+    assert result.is_ok()
+    registry, repository, reference = result.unwrap()
+    assert registry == "ghcr.io"
+    assert repository == "jesserobertson/devcontainers/fastapi"
+    assert reference == (
+        "sha256:f26cbb9c85b8211fa150e50200d48033d82d6678b6c871e8c2db015a1d81ffff"
+    )
+
+
+def test_parse_feature_ref_rejects_digest_form_missing_repository():
+    result = _parse_feature_ref("ghcr.io/@sha256:abc")
+    assert result.is_err()
+
+
+def test_pull_feature_works_with_digest_ref(tmp_path):
+    blob = _make_feature_tar()
+    digest = "sha256:deadbeef"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith(f"/manifests/{digest}") and "authorization" not in request.headers:
+            return httpx.Response(
+                401,
+                headers={
+                    "www-authenticate": (
+                        'Bearer realm="https://ghcr.io/token",service="ghcr.io",'
+                        'scope="repository:jesserobertson/devcontainers/fastapi:pull"'
+                    )
+                },
+            )
+        if path == "/token":
+            return httpx.Response(200, json={"token": "fake-token"})
+        if path.endswith(f"/manifests/{digest}"):
+            return httpx.Response(
+                200,
+                json={
+                    "layers": [
+                        {
+                            "mediaType": "application/vnd.devcontainers.layer.v1+tar",
+                            "digest": "sha256:layerdigest",
+                            "size": len(blob),
+                        }
+                    ]
+                },
+            )
+        if path.endswith("/blobs/sha256:layerdigest"):
+            return httpx.Response(200, content=blob)
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = pull_feature(
+        client, f"ghcr.io/jesserobertson/devcontainers/fastapi@{digest}", tmp_path
+    )
+
+    assert result.is_ok()
+    assert (result.unwrap() / "devcontainer-feature.json").exists()
