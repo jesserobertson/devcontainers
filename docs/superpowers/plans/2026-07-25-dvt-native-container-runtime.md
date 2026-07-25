@@ -1193,8 +1193,10 @@ git commit -m "feat(dvt): container run/label/lifecycle logic, refuse out-of-sco
 - Produces (all from `devtemplate.ssh`):
   - `write_ssh_config_entry(name: str, ssh_config_path: Path) -> Result[None, Exception]`
   - `remove_ssh_config_entry(name: str, ssh_config_path: Path) -> Result[None, Exception]`
-  - `stdio_proxy(cli_binary: str, client: DockerClient, name: str) -> int`
-  - `exec_interactive(cli_binary: str, client: DockerClient, name: str) -> int`
+  - `stdio_proxy(cli_binary: str, client: DockerClient, name: str) -> Result[int, Exception]`
+  - `exec_interactive(cli_binary: str, client: DockerClient, name: str) -> Result[int, Exception]`
+
+**Amended after Task 5's review round:** the plan originally specified these two as returning a bare `int`, in tension with this plan's own Global Constraint that every fallible function returns `Result[T, Exception]`. Confirmed with the human: switch to `Result[int, Exception]` (`Err` on a `find_workspace_container` lookup failure or a `subprocess.run` launch failure; `Ok(returncode)` is the process's own exit code either way, matching the original `_run_devpod`'s design this replaces). Task 7's `cli.py` wiring below is written for the ORIGINAL bare-`int` signature — when implementing Task 7, unwrap these via `unwrap_or_exit()` like every other `Result`-returning call in `cli.py`, not by calling them directly as `int`.
 - Consumes: `find_workspace_container` from `devtemplate.container` (Task 4); `RuntimeHandle.cli_binary` (Task 1) as the `cli_binary` argument.
 
 No sshd is ever installed into any image, and no port is ever published. `stdio_proxy`/`exec_interactive` deliberately shell out to the bundled `docker`/`podman` CLI (already present alongside any Docker/Podman install, unlike the removed `devpod` binary) rather than proxying raw stdio through `docker-py`'s own exec/attach socket API, since inheriting the parent process's file descriptors directly via `subprocess.run` is simpler and more robust than manually pumping bytes between a raw socket and this process's stdin/stdout, especially cross-platform on Windows.
