@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shutil
 import tarfile
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -81,6 +83,24 @@ def _get_token(
         return Err(exc)
 
 
+def _first_layer_digest(manifest: dict[str, Any], ref: str) -> Result[str, Exception]:
+    """Pull the first layer's digest out of a manifest, treating any malformed
+    shape (no layers, a non-dict layer entry, a missing/non-string digest) as a
+    Result error rather than letting KeyError/TypeError escape to the caller."""
+    layers = manifest.get("layers", [])
+    if not layers:
+        return Err(ValueError(f"Feature manifest for {ref!r} has no layers"))
+    layer = layers[0]
+    if not isinstance(layer, dict) or not isinstance(layer.get("digest"), str):
+        return Err(
+            ValueError(
+                f"Feature manifest for {ref!r} has a malformed first layer "
+                f"(missing or non-string digest): {layer!r}"
+            )
+        )
+    return Ok(layer["digest"])
+
+
 def _fetch_manifest(
     client: httpx.Client, registry: str, repository: str, tag: str, token: str
 ) -> Result[dict[str, Any], Exception]:
@@ -106,7 +126,15 @@ def _fetch_and_extract_layer(
     """Fetch a Feature's tar layer blob and extract it. Follows redirects - GHCR
     (and most registries) 307-redirects blob downloads to a CDN URL, unlike
     manifest/token requests which respond directly. The blob is a plain POSIX tar
-    despite the OCI annotation's *.tgz filename - not gzip-compressed."""
+    despite the OCI annotation's *.tgz filename - not gzip-compressed.
+
+    Extracts into a temporary sibling directory first and only renames it into
+    place at dest_dir once extraction fully succeeds. This way a partial or
+    corrupt extraction (bad tar, or extractall's filter="data" safety check
+    rejecting a hostile archive) never leaves anything at dest_dir - so a later
+    call for the same ref can't mistake a poisoned partial extraction for a
+    valid cache hit.
+    """
     try:
         response = client.get(
             f"https://{registry}/v2/{repository}/blobs/{digest}",
@@ -114,9 +142,15 @@ def _fetch_and_extract_layer(
             follow_redirects=True,
         )
         response.raise_for_status()
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(fileobj=BytesIO(response.content), mode="r:") as tar:
-            tar.extractall(dest_dir, filter="data")
+        dest_dir.parent.mkdir(parents=True, exist_ok=True)
+        tmp_dir = Path(tempfile.mkdtemp(dir=dest_dir.parent))
+        try:
+            with tarfile.open(fileobj=BytesIO(response.content), mode="r:") as tar:
+                tar.extractall(tmp_dir, filter="data")
+        except Exception:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
+        tmp_dir.rename(dest_dir)
         return Ok(dest_dir)
     except Exception as exc:
         return Err(exc)
@@ -151,10 +185,11 @@ def pull_feature(
         return Err(manifest_result.unwrap_err())
     manifest = manifest_result.unwrap()
 
-    layers = manifest.get("layers", [])
-    if not layers:
-        return Err(ValueError(f"Feature manifest for {ref!r} has no layers"))
+    digest_result = _first_layer_digest(manifest, ref)
+    if digest_result.is_err():
+        return Err(digest_result.unwrap_err())
+    digest = digest_result.unwrap()
 
     return _fetch_and_extract_layer(
-        client, registry, repository, layers[0]["digest"], token, dest_dir
+        client, registry, repository, digest, token, dest_dir
     )

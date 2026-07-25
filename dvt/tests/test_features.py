@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import tarfile
 
@@ -132,6 +133,79 @@ def test_pull_feature_returns_err_on_manifest_404(tmp_path):
     client = httpx.Client(transport=httpx.MockTransport(handler))
     result = pull_feature(
         client, "ghcr.io/jesserobertson/devcontainers/missing:latest", tmp_path
+    )
+
+    assert result.is_err()
+
+
+def test_pull_feature_returns_err_on_manifest_layer_missing_digest(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if (
+            path.endswith("/manifests/latest")
+            and "authorization" not in request.headers
+        ):
+            return httpx.Response(
+                401,
+                headers={
+                    "www-authenticate": (
+                        'Bearer realm="https://ghcr.io/token",'
+                        'service="ghcr.io",'
+                        'scope="repository:jesserobertson/devcontainers/fastapi:pull"'
+                    )
+                },
+            )
+        if path == "/token":
+            return httpx.Response(200, json={"token": "fake-token"})
+        if path.endswith("/manifests/latest"):
+            return httpx.Response(
+                200,
+                json={
+                    "schemaVersion": 2,
+                    "layers": [
+                        {"mediaType": "application/vnd.devcontainers.layer.v1+tar"}
+                    ],
+                },
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = pull_feature(
+        client, "ghcr.io/jesserobertson/devcontainers/fastapi:latest", tmp_path
+    )
+
+    assert result.is_err()
+
+
+def test_pull_feature_does_not_poison_cache_on_corrupt_tar_blob(tmp_path):
+    corrupt_blob = b"this is not a valid tar archive at all"
+    handler = _registry_handler("sha256:corrupt", corrupt_blob)
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    ref = "ghcr.io/jesserobertson/devcontainers/fastapi:latest"
+
+    result = pull_feature(client, ref, tmp_path)
+
+    assert result.is_err()
+    dest_dir = tmp_path / hashlib.sha256(ref.encode()).hexdigest()
+    assert not dest_dir.exists()
+
+
+def test_get_token_returns_err_on_malformed_www_authenticate_header(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "authorization" not in request.headers and request.url.path.endswith(
+            "/manifests/latest"
+        ):
+            return httpx.Response(
+                401,
+                headers={"www-authenticate": 'Bearer error="insufficient_scope"'},
+            )
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = pull_feature(
+        client, "ghcr.io/jesserobertson/devcontainers/fastapi:latest", tmp_path
     )
 
     assert result.is_err()
