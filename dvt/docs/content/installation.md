@@ -4,9 +4,8 @@
 
 - Python 3.12 or 3.13 (`pyproject.toml` currently caps at `<3.15`)
 - [`pipx`](https://pipx.pypa.io/) (recommended) or `pip`
-- [DevPod](https://devpod.sh) and a container runtime (Docker Desktop, Podman, etc.) — only
-  needed for the `up`/`ssh`/`stop`/`delete` commands. `template`/`project` commands work
-  without either.
+- [Docker](https://www.docker.com/) or [Podman](https://podman.io/) — only needed for the
+  `up`/`ssh`/`stop`/`delete` commands. `template`/`project` commands work without either.
 
 ## Install
 

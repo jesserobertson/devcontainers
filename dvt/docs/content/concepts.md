@@ -37,3 +37,28 @@ schema](https://github.com/devcontainers/spec/blob/main/schemas/devContainer.bas
 If validation fails, nothing is written — the target file is left exactly as it was. This
 matters because `DVT_GITHUB_REPO` is user-overridable: a malicious or just-broken fork's
 templates get caught before they ever touch your project.
+
+## Compatibility with other devcontainer tooling
+
+Containers `dvt up` runs carry the same labels other devcontainer-aware tooling
+looks for — `devcontainer.metadata` (base64-encoded JSON of the merged config),
+`devcontainer.local_folder`, and `devcontainer.config_file` — plus `dvt.workspace`,
+the label `ssh`/`stop`/`delete` filter on. This means VS Code's own "Attach to
+Running Container" command (part of the Dev Containers extension, no `devpod`
+needed) recognizes and can introspect a workspace `dvt` built, and the images `dvt`
+builds are normal, standalone images usable by anything with a Docker or Podman
+client — not `dvt`-specific artifacts.
+
+This is compatibility, not full spec parity. `dvt` does not implement:
+
+- **docker-compose devcontainers** (`dockerComposeFile`) — image-only devcontainer.json
+- **Feature dependency ordering** (`installsAfter`/`dependsOn`) — one Feature per
+  devcontainer.json is assumed
+- **`build.dockerfile`-based devcontainer.json** — use `image` instead
+- **`onCreateCommand`/`updateContentCommand`/`initializeCommand`/`postAttachCommand`**
+  — only `postCreateCommand` and `postStartCommand` run. `initializeCommand` in
+  particular runs on the *host* in the real spec, before the container exists; `dvt`
+  refuses it outright rather than running it in the wrong place.
+
+A `devcontainer.json` using any of these is refused at `up` time — nothing is built
+or run — rather than silently doing something different from what it asks for.

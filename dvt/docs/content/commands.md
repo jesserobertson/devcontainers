@@ -39,23 +39,27 @@ left byte-for-byte unchanged) if:
 - the feature name isn't cached (run `dvt template sync` first)
 - the merge result would fail validation against the official devcontainer.json schema
 
-## Lifecycle passthroughs
+## Workspace lifecycle
 
-`dvt up`, `dvt ssh`, `dvt stop`, `dvt delete` all forward directly to the equivalent `devpod`
-command, passing through any extra arguments and the real exit code unmodified — `dvt ssh
-my-project -- pytest` returns `pytest`'s actual exit code, not something `dvt` interprets.
-These require `devpod` on `PATH` and a working container runtime; if `devpod` can't be found,
-`dvt` reports a clean error rather than a raw traceback (this failure mode is NOT retried —
-unlike `template sync`'s GitHub calls, a devpod exit code is meaningful output to forward,
-not a transient error).
+`dvt up <name>` builds an image from cwd's `.devcontainer/devcontainer.json` — pulling
+each referenced Feature as a real OCI artifact and baking it into a generated
+multi-stage Dockerfile, exactly the way `@devcontainers/cli`/`devpod` themselves
+build Features — then runs the container. `<name>` is the tag given to the
+resulting workspace, not a path; run `up` from inside the project directory. If a
+workspace with that name already exists, `up` starts it (if stopped) or leaves it
+running (if already running) rather than rebuilding — delete and re-`up` to pick up
+devcontainer.json changes.
 
-Any extra arguments that look like flags (start with `-`) need a `--` separator before them,
-so Typer forwards them instead of trying to parse them as `dvt`'s own options — e.g.
-`dvt up my-project -- --id my-project --ide none`, not `dvt up my-project --id ...`.
+`dvt ssh <name>` execs into the running container. Under the hood this is a
+`ProxyCommand` shim over `docker exec`/`podman exec` — no SSH server is ever
+installed into any image, no port is ever published. `dvt up` writes a
+`~/.ssh/config` `Host <name>` entry the first time, so plain `ssh <name>`, VS Code
+Remote-SSH, and JetBrains Gateway all work the same way `dvt ssh <name>` does.
 
-```bash
-dvt up <path-or-workspace-name> [-- extra devpod args]
-dvt ssh <workspace-name> [-- command]
-dvt stop <workspace-name>
-dvt delete <workspace-name>
-```
+`dvt stop <name>` / `dvt delete <name>` find the workspace via its `dvt.workspace`
+container label — not a `dvt`-side registry — so they work from any directory.
+`delete` also removes the workspace's `~/.ssh/config` entry, but leaves the built
+image cached for a faster `up` next time.
+
+These commands require a reachable Docker or Podman engine (see
+[Installation](installation.md)); `template`/`project` commands don't.

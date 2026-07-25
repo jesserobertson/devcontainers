@@ -43,7 +43,7 @@ def unit(
 def integration(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ) -> None:
-    """Run integration tests (real container runtime/network calls).
+    """Run integration tests (real Docker/Podman/network calls).
 
     Opt-in only: creates real containers via a real Docker/Podman runtime, skipped
     automatically if no runtime is reachable. Not run by `unit`, `fast`, `all`, or
