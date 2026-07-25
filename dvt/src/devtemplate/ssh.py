@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 from docker.client import DockerClient
@@ -62,25 +61,33 @@ def remove_ssh_config_entry(
         return Err(exc)
 
 
-def stdio_proxy(cli_binary: str, client: DockerClient, name: str) -> int:
+def stdio_proxy(
+    cli_binary: str, client: DockerClient, name: str
+) -> Result[int, Exception]:
     """The non-interactive pipe mode `dvt ssh --stdio <name>` runs: finds the
     container labeled dvt.workspace=name and execs `docker exec -i` (inheriting
     this process's stdin/stdout directly), returning its exit code. This is what
     the ProxyCommand entry written by write_ssh_config_entry invokes."""
     container = find_workspace_container(client, name)
     if container is None or container.name is None:
-        print(f"No workspace named {name!r} is running.", file=sys.stderr)
-        return 1
-    result = subprocess.run([cli_binary, "exec", "-i", container.name, "sh"])
-    return result.returncode
+        return Err(ValueError(f"No workspace named {name!r} is running."))
+    try:
+        result = subprocess.run([cli_binary, "exec", "-i", container.name, "sh"])
+        return Ok(result.returncode)
+    except Exception as exc:
+        return Err(exc)
 
 
-def exec_interactive(cli_binary: str, client: DockerClient, name: str) -> int:
+def exec_interactive(
+    cli_binary: str, client: DockerClient, name: str
+) -> Result[int, Exception]:
     """`dvt ssh <name>` typed directly at a terminal - same as stdio_proxy but
     with a real TTY (-it instead of -i)."""
     container = find_workspace_container(client, name)
     if container is None or container.name is None:
-        print(f"No workspace named {name!r} is running.", file=sys.stderr)
-        return 1
-    result = subprocess.run([cli_binary, "exec", "-it", container.name, "sh"])
-    return result.returncode
+        return Err(ValueError(f"No workspace named {name!r} is running."))
+    try:
+        result = subprocess.run([cli_binary, "exec", "-it", container.name, "sh"])
+        return Ok(result.returncode)
+    except Exception as exc:
+        return Err(exc)

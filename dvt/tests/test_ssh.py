@@ -75,9 +75,10 @@ def test_stdio_proxy_execs_docker_exec(monkeypatch):
 
     monkeypatch.setattr(ssh_module.subprocess, "run", fake_run)
 
-    exit_code = stdio_proxy("/usr/bin/docker", fake_client, "my-project")
+    exit_code_result = stdio_proxy("/usr/bin/docker", fake_client, "my-project")
 
-    assert exit_code == 0
+    assert exit_code_result.is_ok()
+    assert exit_code_result.unwrap() == 0
     assert captured["args"] == ["/usr/bin/docker", "exec", "-i", "dvt-my-project", "sh"]
 
 
@@ -85,9 +86,25 @@ def test_stdio_proxy_returns_1_when_no_container_found(monkeypatch):
     fake_client = MagicMock()
     fake_client.containers.list.return_value = []
 
-    exit_code = stdio_proxy("/usr/bin/docker", fake_client, "missing")
+    exit_code_result = stdio_proxy("/usr/bin/docker", fake_client, "missing")
 
-    assert exit_code == 1
+    assert exit_code_result.is_err()
+
+
+def test_stdio_proxy_returns_err_when_subprocess_run_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.name = "dvt-my-project"
+    fake_client.containers.list.return_value = [fake_container]
+
+    def fake_run(args):
+        raise FileNotFoundError("docker binary not found")
+
+    monkeypatch.setattr(ssh_module.subprocess, "run", fake_run)
+
+    exit_code_result = stdio_proxy("/usr/bin/docker", fake_client, "my-project")
+
+    assert exit_code_result.is_err()
 
 
 def test_exec_interactive_uses_tty_flags(monkeypatch):
@@ -104,8 +121,10 @@ def test_exec_interactive_uses_tty_flags(monkeypatch):
 
     monkeypatch.setattr(ssh_module.subprocess, "run", fake_run)
 
-    exec_interactive("/usr/bin/docker", fake_client, "my-project")
+    exit_code_result = exec_interactive("/usr/bin/docker", fake_client, "my-project")
 
+    assert exit_code_result.is_ok()
+    assert exit_code_result.unwrap() == 0
     assert captured["args"] == [
         "/usr/bin/docker",
         "exec",
