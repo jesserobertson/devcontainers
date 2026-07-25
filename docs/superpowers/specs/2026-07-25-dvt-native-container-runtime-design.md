@@ -1,5 +1,18 @@
 # dvt Native Container Runtime — Design
 
+**Amended after implementation and final review:** the SSH section below describes
+a `ProxyCommand`-over-`docker exec` shim that turned out to be fundamentally broken
+— `ProxyCommand` only replaces the transport a real `ssh` client uses; the client
+still performs actual SSH protocol negotiation over that pipe, which a bare shell
+can't participate in. This was incorrectly believed to mirror `devpod`'s own
+approach; `devpod` actually works because it runs its own SSH-speaking agent inside
+the container, which this design's explicit "no sshd" choice never provides. The
+`~/.ssh/config` integration was removed entirely as a result — `dvt ssh <name>`
+(direct `docker`/`podman exec -it`, no real SSH protocol involved) is the only
+supported terminal-access path. See the implementation plan's own amendment note
+for the full account. The SSH section below is kept as a historical record of the
+(incorrect) original design, not as current guidance.
+
 ## Purpose
 
 `dvt` currently implements `up`/`ssh`/`stop`/`delete` as a thin passthrough to the

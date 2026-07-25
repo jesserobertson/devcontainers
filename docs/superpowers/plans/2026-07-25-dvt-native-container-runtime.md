@@ -10,13 +10,17 @@
 
 Full design background: `docs/superpowers/specs/2026-07-25-dvt-native-container-runtime-design.md`.
 
+**Amended after the final whole-branch review (all 8 tasks below already implemented and merged at that point):** the `ProxyCommand`-shim SSH design described throughout this plan and the design spec is broken and was removed. `ProxyCommand` only replaces the network transport a real `ssh` client uses — the client still performs actual SSH protocol negotiation (version banner, key exchange) over that pipe, which a bare `docker exec ... sh` cannot participate in. This was incorrectly believed to mirror `devpod`'s own approach; in fact `devpod` works because it runs its own lightweight SSH-speaking agent inside the container, which this design deliberately never has (the "no sshd" choice). Net effect: plain `ssh <name>`, VS Code Remote-SSH, and JetBrains Gateway can never work through the `~/.ssh/config` entry this design wrote, no matter how the shim code itself is fixed.
+
+**Resolution (human decision):** drop the `~/.ssh/config` integration entirely. `dvt ssh <name>` (direct `docker`/`podman exec -it`, no real SSH protocol involved) remains the only supported terminal-access path — this already worked correctly and needs no change. Removed as dead/misleading: `write_ssh_config_entry`, `remove_ssh_config_entry`, `stdio_proxy`, the `ssh --stdio` CLI flag, and every doc/message claiming real-`ssh`/Remote-SSH/Gateway compatibility. Everywhere below that still describes or tests the `ProxyCommand`/`--stdio`/`write_ssh_config_entry` mechanism is superseded by this note, not authoritative — it's kept in place as a historical record of what was actually built and reviewed task-by-task, not as a spec to implement or re-implement.
+
 ## Global Constraints
 
 - New dependency: `docker>=7.0`, added to `[project.dependencies]` in `dvt/pyproject.toml` exactly like every other runtime dependency there (not `[tool.pixi.dependencies]` — see how `httpx`/`typer`/etc. are already declared).
 - New `Settings` field: `runtime: Literal["auto", "docker", "podman"] = "auto"`, env var `DVT_RUNTIME` (via the existing `env_prefix="DVT_"`).
 - Every fallible function returns `Result[T, Exception]` — no bare exceptions escaping to callers, no `on_err`/retry decorators on anything in this plan (retries stay reserved for `github.py`'s GitHub API calls, per its own existing docstring rationale — a container build/run/exec failure is not a transient error to retry past).
 - `devpod` is removed entirely by the end of this plan: no references in `src/`, `tests/`, or `docs/content/`.
-- SSH is a `ProxyCommand` shim over `docker exec` — no sshd is ever installed into any image, no port is ever published for SSH.
+- ~~SSH is a `ProxyCommand` shim over `docker exec` — no sshd is ever installed into any image, no port is ever published for SSH.~~ **Superseded, see amendment above:** `dvt ssh <name>` (direct `docker`/`podman exec -it`) is the only supported terminal-access path; no `~/.ssh/config` integration, no `--stdio` mode.
 - Workspace lookup is always via the `dvt.workspace=<name>` container label (`docker ps --filter`) — never a `dvt`-side state file.
 - A `devcontainer.json` using any out-of-scope spec field (`dockerComposeFile`, `build`, `onCreateCommand`/`updateContentCommand`/`initializeCommand`/`postAttachCommand`, per-Feature `installsAfter`/`dependsOn`) is refused before anything is built or run — never silently ignored.
 - `requires-python = ">=3.12,<3.15"` is unchanged; `tarfile.extractall(..., filter="data")` (PEP 706, available since 3.12) is used explicitly for the Feature-artifact extraction rather than relying on the 3.12/3.13 default (which is still "fully trusted" unless a filter is passed).
