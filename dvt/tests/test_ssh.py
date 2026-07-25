@@ -107,6 +107,24 @@ def test_stdio_proxy_returns_err_when_subprocess_run_raises(monkeypatch):
     assert exit_code_result.is_err()
 
 
+def test_stdio_proxy_returns_err_when_container_lookup_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.containers.list.side_effect = RuntimeError("daemon unreachable")
+
+    exit_code_result = stdio_proxy("/usr/bin/docker", fake_client, "my-project")
+
+    assert exit_code_result.is_err()
+
+
+def test_exec_interactive_returns_err_when_container_lookup_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.containers.list.side_effect = RuntimeError("daemon unreachable")
+
+    exit_code_result = exec_interactive("/usr/bin/docker", fake_client, "my-project")
+
+    assert exit_code_result.is_err()
+
+
 def test_exec_interactive_uses_tty_flags(monkeypatch):
     fake_client = MagicMock()
     fake_container = MagicMock()

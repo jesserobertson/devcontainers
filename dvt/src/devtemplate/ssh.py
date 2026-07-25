@@ -68,10 +68,10 @@ def stdio_proxy(
     container labeled dvt.workspace=name and execs `docker exec -i` (inheriting
     this process's stdin/stdout directly), returning its exit code. This is what
     the ProxyCommand entry written by write_ssh_config_entry invokes."""
-    container = find_workspace_container(client, name)
-    if container is None or container.name is None:
-        return Err(ValueError(f"No workspace named {name!r} is running."))
     try:
+        container = find_workspace_container(client, name)
+        if container is None or container.name is None:
+            return Err(ValueError(f"No workspace named {name!r} is running."))
         result = subprocess.run([cli_binary, "exec", "-i", container.name, "sh"])
         return Ok(result.returncode)
     except Exception as exc:
@@ -83,10 +83,10 @@ def exec_interactive(
 ) -> Result[int, Exception]:
     """`dvt ssh <name>` typed directly at a terminal - same as stdio_proxy but
     with a real TTY (-it instead of -i)."""
-    container = find_workspace_container(client, name)
-    if container is None or container.name is None:
-        return Err(ValueError(f"No workspace named {name!r} is running."))
     try:
+        container = find_workspace_container(client, name)
+        if container is None or container.name is None:
+            return Err(ValueError(f"No workspace named {name!r} is running."))
         result = subprocess.run([cli_binary, "exec", "-it", container.name, "sh"])
         return Ok(result.returncode)
     except Exception as exc:
