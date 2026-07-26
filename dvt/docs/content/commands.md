@@ -56,16 +56,43 @@ into any image. `dvt up` writes (and `dvt delete` removes) a `Host <name>` block
 in `~/.ssh/config` whose `ProxyCommand` runs `dvt ssh --stdio <name>`: a real
 `asyncssh`-based SSH server that this process runs against its own stdin/stdout,
 bridging the resulting session to `docker`/`podman exec -i` in that container.
-That entry is enough for plain `ssh <name>`, VS Code Remote-SSH, and JetBrains
-Gateway to connect through `dvt` as well as `dvt ssh <name>` itself. (VS Code's
-own "Attach to Running Container", part of the Dev Containers extension, still
-works independently since it doesn't go through SSH at all — it uses the
-container's labels directly; see [Concepts](concepts.md)'s compatibility
-section.)
 
 `dvt stop <name>` / `dvt delete <name>` find the workspace via its `dvt.workspace`
 container label — not a `dvt`-side registry — so they work from any directory.
 `delete` leaves the built image cached for a faster `up` next time.
+
+### SSH access: what's verified
+
+`ssh <name>` from a real `ssh` client, against a real running workspace
+container, works for both shapes a client can ask for:
+
+- an interactive shell session (`ssh <name>`)
+- a single exec command (`ssh <name> "echo hi"`), including its exit code
+
+VS Code's own "Attach to Running Container", part of the Dev Containers
+extension, also works — but independently of any of this, since it doesn't go
+through SSH at all; it uses the container's labels directly. See
+[Concepts](concepts.md)'s compatibility section.
+
+### SSH access: not verified yet
+
+- **VS Code Remote-SSH** — not attempted. It may well work through the
+  `ProxyCommand` entry; nobody has checked.
+- **JetBrains Gateway** — deliberately deferred, pending manual verification.
+  It drives a remote host with a long sequence of exec commands and generally
+  wants SFTP, so the missing subsystem below is the likeliest sticking point.
+
+### SSH access: known v1 gaps
+
+- **No PTY is allocated on the container side.** The bridged session runs
+  `docker`/`podman exec -i`, not `-it`, so there is no tty to interpret control
+  characters: **Ctrl-C does nothing** in an interactive `ssh <name>` session,
+  and there's no job control. `dvt ssh <name>` (no `ssh` client involved) uses
+  `exec -it` and is unaffected. Full-screen programs may also misbehave for the
+  same reason.
+- **No SFTP subsystem.** Anything that transfers files over the connection —
+  `sftp`, `scp` in its modern SFTP mode, and IDE remote-development backends
+  that upload themselves — will not work through the `ProxyCommand` entry.
 
 These commands require a reachable Docker or Podman engine (see
 [Installation](installation.md)); `template`/`project` commands don't.

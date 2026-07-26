@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+# `ssh.py` imports ssh_server lazily, inside stdio_proxy's body, to keep
+# asyncssh/cryptography off every `dvt` invocation's import path - so the module
+# object itself is what these tests patch, not an attribute of `devtemplate.ssh`.
+# The lazy import re-resolves it from sys.modules per call, so this still lands.
 from devtemplate import ssh as ssh_module
+from devtemplate import ssh_server as ssh_server_module
 from devtemplate.ssh import (
     exec_interactive,
     remove_ssh_config_entry,
@@ -117,7 +122,7 @@ def test_stdio_proxy_runs_real_ssh_server(monkeypatch):
     fake_client.containers.list.return_value = [fake_container]
     captured = {}
     monkeypatch.setattr(
-        ssh_module.ssh_server,
+        ssh_server_module,
         "run_stdio_server",
         # dict.setdefault(k, v) returns v itself, which would short-circuit `or`
         # and make this lambda return the captured tuple instead of 0 - use
@@ -149,7 +154,7 @@ def test_stdio_proxy_returns_err_when_server_raises(monkeypatch):
     fake_container.name = "dvt-my-project"
     fake_client.containers.list.return_value = [fake_container]
     monkeypatch.setattr(
-        ssh_module.ssh_server,
+        ssh_server_module,
         "run_stdio_server",
         lambda cli_binary, container_name: (_ for _ in ()).throw(RuntimeError("boom")),
     )

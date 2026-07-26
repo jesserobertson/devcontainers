@@ -6,7 +6,6 @@ from pathlib import Path
 from docker.client import DockerClient
 from logerr import Err, Ok, Result
 
-from devtemplate import ssh_server
 from devtemplate.container import find_workspace_container
 
 _BEGIN_MARKER = "# BEGIN dvt {name}"
@@ -72,6 +71,13 @@ def stdio_proxy(
     bridged to `docker/podman exec -i` in that container. This is what the
     ProxyCommand entry written by write_ssh_config_entry invokes."""
     try:
+        # Imported here, not at module scope, and inside the try like every
+        # other fallible statement in this codebase: ssh_server pulls in
+        # asyncssh and transitively cryptography, ~25% of
+        # `import devtemplate.cli`'s startup cost, and this is the only code
+        # path in the whole CLI that ever needs it.
+        from devtemplate import ssh_server
+
         container = find_workspace_container(client, name)
         if container is None or container.name is None:
             return Err(ValueError(f"No workspace named {name!r} is running."))

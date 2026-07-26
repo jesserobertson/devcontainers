@@ -16,6 +16,7 @@ threads), and forwards each session it accepts to `docker`/`podman exec -i
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
 import os
 import socket
@@ -101,12 +102,22 @@ async def _handle_process(
         *shell_argv,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        # Kept *separate* from stdout, and pumped onto SSH's own extended-data
+        # stderr channel below. Merging the two (stderr=STDOUT) looks like
+        # harmless `2>&1` fidelity until you remember what is actually being
+        # spawned: the docker/podman CLI wrapper, which emits its own warnings
+        # (podman's `WARN[0000]...` lines are routine) on stderr. Merged, those
+        # land inside the *command's* stdout - silently corrupting it for any
+        # tool that parses an exec'd command's output, which is exactly how
+        # VS Code Remote-SSH and JetBrains Gateway drive a remote host.
+        stderr=asyncio.subprocess.PIPE,
     )
     proc_stdin = proc.stdin
     proc_stdout = proc.stdout
+    proc_stderr = proc.stderr
     assert proc_stdin is not None
     assert proc_stdout is not None
+    assert proc_stderr is not None
 
     async def pump_client_to_process() -> None:
         # Only two things genuinely end this direction: the container's shell
@@ -129,25 +140,50 @@ async def _handle_process(
         with contextlib.suppress(OSError):
             proc_stdin.close()
 
-    async def pump_process_to_client() -> None:
+    async def pump_process_to_client(
+        source: asyncio.StreamReader, sink: asyncssh.SSHWriter[str]
+    ) -> None:
         # Same reasoning in the other direction: once the channel is gone there
         # is nowhere to put the container's output, which ends this pump but
         # still leaves a real exit code for `proc.wait()` to report. No
         # _CHANNEL_EVENTS here - those come from reading the *client* stream,
         # and this pump reads the subprocess.
+        #
+        # The decoder is incremental, and deliberately created *per call* so
+        # the stdout and stderr pumps never share one: `chunk.decode()` on each
+        # raw read destroys any multi-byte UTF-8 character straddling a read
+        # boundary (a 3-byte character split 1/2 across two reads becomes two
+        # replacement characters), which output longer than one `_CHUNK` hits
+        # routinely - accented text, box drawing, non-ASCII filenames. An
+        # incremental decoder holds the partial sequence over to the next read
+        # and reassembles it. Feeding one decoder from two interleaved streams
+        # would splice their partial sequences together instead.
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         with contextlib.suppress(asyncssh.Error, OSError):
             while True:
-                chunk = await proc_stdout.read(_CHUNK)
+                chunk = await source.read(_CHUNK)
                 if not chunk:
                     break
-                process.stdout.write(chunk.decode(errors="replace"))
+                text = decoder.decode(chunk)
+                if text:
+                    sink.write(text)
+            # Flush whatever a truncated final sequence left pending, so a
+            # stream ending mid-character still terminates deterministically.
+            tail = decoder.decode(b"", final=True)
+            if tail:
+                sink.write(tail)
 
     # The client half is a background task rather than a `gather` partner: a
     # client is under no obligation to ever send EOF, so waiting on it would
-    # hang every session whose shell exits on its own.
+    # hang every session whose shell exits on its own. The two output pumps
+    # *are* gathered: both must drain fully before the exit status is reported,
+    # or the tail of either stream races the channel closing.
     client_pump = asyncio.create_task(pump_client_to_process())
     try:
-        await pump_process_to_client()
+        await asyncio.gather(
+            pump_process_to_client(proc_stdout, process.stdout),
+            pump_process_to_client(proc_stderr, process.stderr),
+        )
         exit_code = await proc.wait()
     finally:
         # Belt and braces: the pump suppresses its own I/O failures, but this

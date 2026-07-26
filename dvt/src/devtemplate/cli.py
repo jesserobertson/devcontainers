@@ -57,21 +57,31 @@ def ssh(
     ),
 ) -> None:
     """ssh into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
-    settings = unwrap_or_exit(load_settings(), console)
+    # In --stdio mode this process's stdout *is* the SSH byte stream the client
+    # is speaking the protocol over (see ssh_server.py), so every diagnostic has
+    # to go to stderr instead - printing one on stdout injects garbage into the
+    # handshake and the user sees `kex_exchange_identification: Connection
+    # closed by remote host` rather than dvt's actual message. Reachable on a
+    # perfectly ordinary state: the ~/.ssh/config entry survives `dvt stop`
+    # (only `dvt delete` removes it), so `ssh <name>` on a stopped workspace
+    # takes exactly this path. The interactive branch below keeps the shared
+    # stdout console - there, stdout is the user's terminal, not a byte stream.
+    errors = Console(stderr=True) if stdio else console
+    settings = unwrap_or_exit(load_settings(), errors)
     handle = unwrap_or_exit(
         get_client(
             settings.runtime,
             podman_machine_auto_init=settings.podman_machine_auto_init,
             podman_machine_auto_start=settings.podman_machine_auto_start,
         ),
-        console,
+        errors,
     )
     result = (
         stdio_proxy(handle.cli_binary, handle.client, name)
         if stdio
         else exec_interactive(handle.cli_binary, handle.client, name)
     )
-    exit_code = unwrap_or_exit(result, console)
+    exit_code = unwrap_or_exit(result, errors)
     raise typer.Exit(code=exit_code)
 
 

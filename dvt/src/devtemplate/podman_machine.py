@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -13,6 +14,32 @@ _DEFAULT_CPUS = 2
 _DEFAULT_MEMORY_MB = 4096
 _DEFAULT_DISK_GB = 100
 _NAMED_PIPE_PATTERN = re.compile(r"\\\\\.\\pipe\\(.+)$")
+
+_INIT_TIMEOUT_SECONDS = 600
+"""`podman machine init` downloads and unpacks a WSL VM image on first run.
+300s was a plausible-sounding round number that a genuinely slow link can
+exceed, and exceeding it leaves a half-created machine behind plus an opaque
+`TimeoutExpired` - the worst of both outcomes. 600s is a more realistic floor
+for a cold image pull; it is still a bound, just one a working setup won't
+trip."""
+
+
+def _announce(message: str) -> None:
+    """Tell the user a multi-minute blocking operation has started.
+
+    On stderr, and via plain `print` rather than a `rich` Console: this module
+    is otherwise pure Result-returning side-effect-isolated logic with no UI
+    dependency at all, and nothing else outside `cli.py`/`commands/` in this
+    codebase constructs a Console (`ssh_server.py` sets the same precedent for
+    a non-CLI module needing to say something). stderr keeps it clear of any
+    stdout a caller may be treating as data.
+
+    Without this, composed operations - `dvt up` on a first GPU run does
+    init, then start, then the NVIDIA toolkit install - are up to ten minutes
+    of complete silence, indistinguishable from a hang, because every one of
+    these subprocess calls captures its output.
+    """
+    print(message, file=sys.stderr, flush=True)
 
 
 def _run_podman_json(cli_binary: str, args: list[str]) -> Result[Any, Exception]:
@@ -59,6 +86,7 @@ def inspect_machine(cli_binary: str, name: str) -> Result[dict[str, Any], Except
 
 def start_machine(cli_binary: str, name: str) -> Result[None, Exception]:
     try:
+        _announce(f"Starting Podman machine {name!r} (this can take a minute)...")
         result = subprocess.run(
             [cli_binary, "machine", "start", name],
             capture_output=True,
@@ -78,6 +106,10 @@ def start_machine(cli_binary: str, name: str) -> Result[None, Exception]:
 
 def init_machine(cli_binary: str, name: str) -> Result[None, Exception]:
     try:
+        _announce(
+            f"Initializing Podman machine {name!r} - this downloads a VM image "
+            "and may take several minutes on first run..."
+        )
         result = subprocess.run(
             [
                 cli_binary,
@@ -93,7 +125,7 @@ def init_machine(cli_binary: str, name: str) -> Result[None, Exception]:
             ],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=_INIT_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             return Err(
@@ -224,6 +256,10 @@ def install_nvidia_toolkit(
     cli_binary: str, machine_name: str
 ) -> Result[None, Exception]:
     try:
+        _announce(
+            "Installing the NVIDIA Container Toolkit in Podman machine "
+            f"{machine_name!r} - this may take several minutes..."
+        )
         result = subprocess.run(
             [
                 cli_binary,

@@ -50,6 +50,35 @@ _FAKE_ECHO_SHELL = (
     "    sys.stdout.buffer.flush()\n"
 )
 
+# Writes to *both* of its own streams, with text that can't be confused for the
+# other one. Stands in for the real thing this protects: the spawned process is
+# the docker/podman CLI wrapper, which emits its own warnings on stderr while
+# the container's actual command output goes to stdout.
+_FAKE_BOTH_STREAMS_SHELL = (
+    "import sys;"
+    "sys.stderr.buffer.write(b'STDERR-ONLY-marker\\n');"
+    "sys.stderr.buffer.flush();"
+    "sys.stdout.buffer.write(b'STDOUT-ONLY-marker\\n');"
+    "sys.stdout.buffer.flush();"
+    "sys.exit(0)"
+)
+
+# Emits ASCII padding chosen so the *first* 4096-byte read lands one byte into a
+# 3-byte character, then a long run of the same character so essentially every
+# subsequent read boundary splits one too (4096 is not a multiple of 3). A
+# per-chunk `bytes.decode()` mangles every one of those into replacement
+# characters; an incremental decoder carries the partial sequence over.
+_UTF8_PAD_LENGTH = 4095
+_UTF8_REPEATS = 10000
+_FAKE_UTF8_SHELL = (
+    "import sys;"
+    f"payload = ('A' * {_UTF8_PAD_LENGTH} + '\\u65e5' * {_UTF8_REPEATS})"
+    ".encode('utf-8');"
+    "sys.stdout.buffer.write(payload);"
+    "sys.stdout.buffer.flush();"
+    "sys.exit(0)"
+)
+
 # Outlives the client: still running when the connection is aborted, so the
 # server-side pumps are mid-flight when the channel dies.
 _FAKE_SLOW_SHELL = (
@@ -93,6 +122,18 @@ def _patch_exec_to_fake_sh_c(monkeypatch) -> list[tuple[str, ...]]:
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
     return spawned
+
+
+def _patch_exec_to_source(monkeypatch, source: str) -> None:
+    """Redirect the docker/podman spawn to a stand-in running `source`. Same
+    contract as `_patch_exec_to_fake_shell`: only the argv changes, the
+    subprocess and its OS pipes are real."""
+    real_create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def fake_create_subprocess_exec(*cmd: str, **kwargs: object):
+        return await real_create_subprocess_exec(sys.executable, "-c", source, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
 
 def _patch_stdio_to_pipe_bridge(monkeypatch, peer_sock: socket.socket) -> None:
@@ -463,3 +504,88 @@ async def test_run_stdio_server_reports_a_failed_session_as_non_zero(
     assert returned == [255], "a failed session must not report success"
     # And it must say why, on stderr - stdout carries the SSH stream.
     assert missing in capsys.readouterr().err
+
+
+@pytest.mark.asyncio
+async def test_container_stderr_arrives_on_the_clients_stderr_not_its_stdout(
+    monkeypatch,
+):
+    """The bridged process's stderr must reach the client on SSH's own
+    extended-data stderr channel, kept distinct from stdout.
+
+    The process being spawned is the `docker`/`podman` CLI wrapper, and it
+    writes its own diagnostics to stderr - podman's `WARN[0000]...` lines are
+    routine. Merging the two (the previous `stderr=asyncio.subprocess.STDOUT`)
+    silently injects those into the *command's* stdout, which is exactly what
+    VS Code Remote-SSH and JetBrains Gateway parse to drive a remote host.
+
+    Real client, real server, real subprocess writing to two real OS pipes;
+    only the docker/podman argv is redirected.
+    """
+    _patch_exec_to_source(monkeypatch, _FAKE_BOTH_STREAMS_SHELL)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        await _handle_process(process, "docker", "myws")
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_sock, known_hosts=None, username="anyone"
+        ) as conn:
+            process = await conn.create_process()
+            process.stdin.write_eof()
+            result = await process.wait()
+
+    # Each stream carries its own output and *only* its own output. Pre-fix the
+    # stderr marker turned up inside result.stdout and result.stderr was empty.
+    assert result.stdout == "STDOUT-ONLY-marker\n"
+    assert result.stderr == "STDERR-ONLY-marker\n"
+    (await server_task).close()
+
+
+@pytest.mark.asyncio
+async def test_multibyte_utf8_split_across_read_boundaries_survives(monkeypatch):
+    """A multi-byte UTF-8 character straddling a read boundary must arrive
+    intact.
+
+    The client-bound pump reads the subprocess in fixed 4096-byte chunks. The
+    previous per-chunk `chunk.decode(errors="replace")` had no memory across
+    reads, so any character whose bytes spanned a boundary was destroyed into
+    replacement characters - ordinary damage for accented text, box drawing or
+    non-ASCII filenames as soon as output exceeds one chunk.
+
+    The stand-in emits 4095 ASCII bytes and then a long run of a 3-byte
+    character, so the first read ends one byte into a character and (4096 not
+    being a multiple of 3) essentially every later read does too. Real client,
+    real server, real subprocess; only the docker/podman argv is redirected.
+    """
+    _patch_exec_to_source(monkeypatch, _FAKE_UTF8_SHELL)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        await _handle_process(process, "docker", "myws")
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_sock, known_hosts=None, username="anyone"
+        ) as conn:
+            process = await conn.create_process()
+            process.stdin.write_eof()
+            result = await process.wait()
+
+    # Escapes rather than literals throughout, so this file stays pure ASCII
+    # and can't be broken by an editor or checkout re-encoding it.
+    expected = "A" * _UTF8_PAD_LENGTH + "\u65e5" * _UTF8_REPEATS
+    # Checked first and named: pre-fix this failed with thousands of U+FFFD, and
+    # a bare equality assertion over 34k characters is unreadable when it fails.
+    assert "\ufffd" not in result.stdout, "a chunk boundary corrupted a character"
+    assert result.stdout == expected
+    (await server_task).close()
