@@ -37,6 +37,18 @@ _FAKE_SH_C = (
     "sys.exit(3)"
 )
 
+# Line-oriented echo, so the test can keep a session open across several
+# exchanges rather than reading once until EOF.
+_FAKE_ECHO_SHELL = (
+    "import sys\n"
+    "while True:\n"
+    "    line = sys.stdin.buffer.readline()\n"
+    "    if not line:\n"
+    "        break\n"
+    "    sys.stdout.buffer.write(b'echo:' + line)\n"
+    "    sys.stdout.buffer.flush()\n"
+)
+
 # Outlives the client: still running when the connection is aborted, so the
 # server-side pumps are mid-flight when the channel dies.
 _FAKE_SLOW_SHELL = (
@@ -207,6 +219,60 @@ async def test_non_interactive_exec_request_runs_the_requested_command(monkeypat
     assert result.stdout == "hello-from-real-ssh\n"
     assert result.exit_status == 3
     assert returned == [3]
+    (await server_task).close()
+
+
+@pytest.mark.asyncio
+async def test_input_still_reaches_the_container_after_a_terminal_resize(monkeypatch):
+    """A terminal resize must not break the session. OpenSSH sends a
+    `window-change` request on every resize, and asyncssh delivers it by
+    *raising* `TerminalSizeChanged` out of `process.stdin.read()` - so handling
+    it as though it were end-of-input silently kills the user's keystrokes for
+    the rest of the session (in practice it closed the container's stdin, which
+    ended the shell and tore the whole session down).
+
+    Real client, real server, real subprocess, and a real `window-change` sent
+    via asyncssh's own `change_terminal_size`.
+    """
+    real_create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def fake_create_subprocess_exec(*cmd: str, **kwargs: object):
+        return await real_create_subprocess_exec(
+            sys.executable, "-c", _FAKE_ECHO_SHELL, **kwargs
+        )
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        await _handle_process(process, "docker", "myws")
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_sock, known_hosts=None, username="anyone"
+        ) as conn:
+            process = await conn.create_process()
+            process.stdin.write("one\n")
+            assert await process.stdout.readline() == "echo:one\n"
+
+            # The event under test - a genuine window-change request.
+            process.change_terminal_size(100, 40)
+            await asyncio.sleep(0.2)
+
+            # Pre-fix this raised BrokenPipeError("Channel not open for
+            # sending"): the resize had already torn the session down.
+            process.stdin.write("two\n")
+            assert await process.stdout.readline() == "echo:two\n"
+
+            # Close the session down cleanly so the echo subprocess exits and
+            # is reaped while the loop is still running.
+            process.stdin.write_eof()
+            await process.wait()
+
     (await server_task).close()
 
 

@@ -43,13 +43,20 @@ _CHANNEL_EVENTS = (
     asyncssh.misc.TerminalSizeChanged,
     asyncssh.misc.BreakReceived,
     asyncssh.misc.SignalReceived,
-    asyncssh.misc.SoftEOFReceived,
 )
-"""Out-of-band channel events asyncssh delivers by *raising* from a stream read
-rather than returning data. None of them are meaningful for a pipe-bridged
-session with no PTY, so each just ends the affected pump. Note these derive
-from `Exception` directly, not from `asyncssh.Error`, so they need listing
-separately from the genuine protocol failures."""
+"""Out-of-band channel events asyncssh delivers by *raising* them out of a
+stream read (see `stream.py`'s `exception_received`) instead of returning data.
+
+Each means "nothing to forward this time, keep reading" - emphatically *not*
+"this stream is finished". asyncssh accepts pty requests by default, and
+OpenSSH sends a `window-change` on every terminal resize, so treating one of
+these as end-of-input would kill the user's keystrokes for the rest of an
+ordinary interactive session the first time they resized their window.
+
+`SoftEOFReceived` is deliberately absent: asyncssh converts it into a normal
+empty read internally and never raises it here. All of these derive from
+`Exception` directly rather than `asyncssh.Error`, so they need listing
+separately from genuine protocol failures."""
 
 
 class _NoAuthServer(asyncssh.SSHServer):
@@ -101,15 +108,19 @@ async def _handle_process(
     assert proc_stdout is not None
 
     async def pump_client_to_process() -> None:
-        # Every one of these means "this direction is over", not "something is
-        # wrong with dvt": channel events (above), the container's shell having
-        # exited (OSError/BrokenPipeError), or the client vanishing mid-session
-        # (asyncssh.ConnectionLost and friends, all under asyncssh.Error). This
-        # must not escape - it runs as a task the session teardown awaits, and
-        # an exception here would skip reporting the session's exit status.
-        with contextlib.suppress(*_CHANNEL_EVENTS, asyncssh.Error, OSError):
+        # Only two things genuinely end this direction: the container's shell
+        # exiting (OSError/BrokenPipeError) or the client vanishing mid-session
+        # (asyncssh.ConnectionLost and friends, under asyncssh.Error). Neither
+        # may escape - this runs as a task the session teardown awaits, and an
+        # exception here would skip reporting the session's exit status.
+        with contextlib.suppress(asyncssh.Error, OSError):
             while True:
-                data = await process.stdin.read(_CHUNK)
+                try:
+                    data = await process.stdin.read(_CHUNK)
+                except _CHANNEL_EVENTS:
+                    # Handled per-read, not around the loop: these are events,
+                    # not end-of-input, and must not stop us forwarding.
+                    continue
                 if not data:
                     break
                 proc_stdin.write(data.encode() if isinstance(data, str) else data)
@@ -120,8 +131,10 @@ async def _handle_process(
     async def pump_process_to_client() -> None:
         # Same reasoning in the other direction: once the channel is gone there
         # is nowhere to put the container's output, which ends this pump but
-        # still leaves a real exit code for `proc.wait()` to report.
-        with contextlib.suppress(*_CHANNEL_EVENTS, asyncssh.Error, OSError):
+        # still leaves a real exit code for `proc.wait()` to report. No
+        # _CHANNEL_EVENTS here - those come from reading the *client* stream,
+        # and this pump reads the subprocess.
+        with contextlib.suppress(asyncssh.Error, OSError):
             while True:
                 chunk = await proc_stdout.read(_CHUNK)
                 if not chunk:
@@ -262,5 +275,3 @@ def run_stdio_server(cli_binary: str, container_name: str) -> int:
 
     # No session ever opened (client connected and hung up) - not an error.
     return exit_codes[-1] if exit_codes else 0
-
-    return asyncio.run(main())
