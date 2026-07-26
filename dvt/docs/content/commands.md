@@ -63,11 +63,13 @@ container label — not a `dvt`-side registry — so they work from any director
 
 ### SSH access: what's verified
 
-`ssh <name>` from a real `ssh` client, against a real running workspace
-container, works for both shapes a client can ask for:
-
-- an interactive shell session (`ssh <name>`)
-- a single exec command (`ssh <name> "echo hi"`), including its exit code
+- **A single exec command** (`ssh <name> "echo hi"`), including its exit
+  code — from a real `ssh` client, against a real running workspace
+  container.
+- **An interactive shell session** (`ssh <name>`) — bridged and exercised
+  end-to-end with a real `asyncssh` client against a real subprocess; not yet
+  additionally confirmed with an actual `ssh` binary in an interactive
+  terminal against a live container.
 
 VS Code's own "Attach to Running Container", part of the Dev Containers
 extension, also works — but independently of any of this, since it doesn't go
