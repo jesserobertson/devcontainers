@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import socket
 import sys
 import threading
@@ -164,12 +165,26 @@ def _pump_stdio_to_socket(sock: socket.socket) -> None:
     """Bridge this process's real stdin/stdout to the socketpair end asyncssh
     isn't using. Runs in dedicated threads since it's blocking I/O on real
     file descriptors, alongside the asyncio event loop driving the server on
-    the other end of the pair. Blocks until the server side closes."""
+    the other end of the pair. Blocks until the server side closes.
+
+    Reads/writes the raw file descriptors via `os.read`/`os.write` rather than
+    `sys.stdin.buffer`/`sys.stdout.buffer` - discovered the hard way, driving
+    this from a real `ssh` client's `ProxyCommand` on Windows: when the parent
+    is Git for Windows' (MSYS/Cygwin) `ssh.exe`, this process's stdio is a
+    Cygwin-flavoured pipe, and Python's buffered-IO layer over it misbehaves
+    in both directions - `sys.stdin.buffer.read()` returns a spurious empty
+    read (indistinguishable from EOF) mid-handshake, before the client has
+    actually finished sending, and `sys.stdout.buffer.write()` raises
+    `OSError: [Errno 22] Invalid argument` on an otherwise-healthy write. Both
+    silently kill the SSH session during key exchange. Reading/writing the
+    fds directly sidesteps whatever the buffered wrapper is doing and has been
+    verified end to end against a real `ssh` client through this exact path."""
 
     def stdin_to_sock() -> None:
+        stdin_fd = sys.stdin.fileno()
         try:
             while True:
-                data = sys.stdin.buffer.read(_CHUNK)
+                data = os.read(stdin_fd, _CHUNK)
                 if not data:
                     break
                 sock.sendall(data)
@@ -178,13 +193,13 @@ def _pump_stdio_to_socket(sock: socket.socket) -> None:
             pass  # Server closed the socket first; nothing more to forward.
 
     def sock_to_stdout() -> None:
+        stdout_fd = sys.stdout.fileno()
         try:
             while True:
                 data = sock.recv(_CHUNK)
                 if not data:
                     break
-                sys.stdout.buffer.write(data)
-                sys.stdout.buffer.flush()
+                os.write(stdout_fd, data)
         except OSError:
             pass
 

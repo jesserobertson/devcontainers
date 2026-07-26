@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import socket
 import sys
 import threading
@@ -92,6 +93,57 @@ def _patch_exec_to_fake_sh_c(monkeypatch) -> list[tuple[str, ...]]:
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
     return spawned
+
+
+def _patch_stdio_to_pipe_bridge(monkeypatch, peer_sock: socket.socket) -> None:
+    """Monkeypatch `sys.stdin`/`sys.stdout` to real OS pipes bridged to
+    `peer_sock` by background threads, instead of a bare socket standing in
+    for them directly. `peer_sock` is the near-side socket of the pair
+    connected to the fake SSH client (i.e. what a real ProxyCommand's stdin/
+    stdout pipes would be relaying to/from).
+
+    `_pump_stdio_to_socket` reads/writes stdio via raw fd-level `os.read`/
+    `os.write` on `sys.stdin.fileno()`/`sys.stdout.fileno()` (see its
+    docstring: a real `ssh` client's `ProxyCommand` hands this process genuine
+    pipes, and Python's *buffered* io over those pipes turned out to misbehave
+    badly on Windows - a bug this exact fd-level approach was written to fix).
+    A bare socket's fileno() wouldn't exercise that fd-based path faithfully
+    (`os.read`/`os.write` on a raw Windows socket handle behave differently
+    from a real pipe), so this stands up genuine `os.pipe()` pairs and
+    shuttles bytes to/from `peer_sock` by hand - mirroring what a real
+    ProxyCommand's inherited stdio actually looks like.
+    """
+    stdin_read_fd, stdin_write_fd = os.pipe()
+    stdout_read_fd, stdout_write_fd = os.pipe()
+
+    def peer_to_stdin() -> None:
+        try:
+            while True:
+                data = peer_sock.recv(4096)
+                if not data:
+                    break
+                os.write(stdin_write_fd, data)
+        except OSError:
+            pass
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(stdin_write_fd)
+
+    def stdout_to_peer() -> None:
+        try:
+            while True:
+                data = os.read(stdout_read_fd, 4096)
+                if not data:
+                    break
+                peer_sock.sendall(data)
+        except OSError:
+            pass
+
+    threading.Thread(target=peer_to_stdin, daemon=True).start()
+    threading.Thread(target=stdout_to_peer, daemon=True).start()
+
+    monkeypatch.setattr(sys, "stdin", SimpleNamespace(fileno=lambda: stdin_read_fd))
+    monkeypatch.setattr(sys, "stdout", SimpleNamespace(fileno=lambda: stdout_write_fd))
 
 
 async def _serve(sock, host_key, process_factory) -> asyncssh.SSHServerConnection:
@@ -342,12 +394,7 @@ async def test_run_stdio_server_bridges_stdin_stdout_to_a_real_ssh_session(monke
     _patch_exec_to_fake_shell(monkeypatch, ("podman", "exec", "-i", "proj", "sh"))
 
     stdio_end, client_end = socket.socketpair()
-    monkeypatch.setattr(
-        sys, "stdin", SimpleNamespace(buffer=stdio_end.makefile("rb", buffering=0))
-    )
-    monkeypatch.setattr(
-        sys, "stdout", SimpleNamespace(buffer=stdio_end.makefile("wb", buffering=0))
-    )
+    _patch_stdio_to_pipe_bridge(monkeypatch, stdio_end)
 
     returned: list[int] = []
     server_thread = threading.Thread(
@@ -388,12 +435,7 @@ async def test_run_stdio_server_reports_a_failed_session_as_non_zero(
     does fail because the binary genuinely does not exist.
     """
     stdio_end, client_end = socket.socketpair()
-    monkeypatch.setattr(
-        sys, "stdin", SimpleNamespace(buffer=stdio_end.makefile("rb", buffering=0))
-    )
-    monkeypatch.setattr(
-        sys, "stdout", SimpleNamespace(buffer=stdio_end.makefile("wb", buffering=0))
-    )
+    _patch_stdio_to_pipe_bridge(monkeypatch, stdio_end)
 
     returned: list[int] = []
     missing = "dvt-no-such-container-cli"

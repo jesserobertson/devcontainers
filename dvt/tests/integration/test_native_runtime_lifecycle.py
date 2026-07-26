@@ -8,14 +8,21 @@ Builds a real image (no Features, to keep the test fast and independent of
 ghcr.io availability) from a minimal public base image, runs it, then stops and
 deletes it - exercising the full native runtime path with no mocking.
 
-`dvt ssh <name>` isn't exercised here: it execs `docker`/`podman exec -it`, which
-requires a real TTY on the invoking process's stdin - something a CliRunner
-invocation can't provide, so it isn't a fit for this non-interactive test.
+Also drives a real `ssh` client binary (not `dvt ssh`, not asyncssh in-process)
+through the actual `~/.ssh/config` entry `dvt up` writes, proving the
+`ProxyCommand dvt ssh --stdio <name>` bridge (ssh_server.py) genuinely works
+end to end against a live container - not just the in-process asyncssh
+client/server tests. `dvt ssh <name>` (direct, without `ProxyCommand`) still
+isn't exercised here: it execs `docker`/`podman exec -it`, which requires a
+real TTY on the invoking process's stdin - something a CliRunner invocation
+can't provide, so it isn't a fit for this non-interactive test.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -50,6 +57,30 @@ def test_up_stop_delete_lifecycle(real_project: Path, monkeypatch) -> None:
     try:
         up_result = runner.invoke(app, ["up", workspace_name])
         assert up_result.exit_code == 0, up_result.output
+
+        # Drive a real `ssh` client binary (not `dvt ssh`, not asyncssh
+        # in-process) through the actual `~/.ssh/config` entry `up` just
+        # wrote, proving the `ProxyCommand dvt ssh --stdio <name>` bridge
+        # (ssh_server.py) genuinely works end to end against a live
+        # container. Skipped gracefully (not a test failure) if `ssh` isn't
+        # on PATH - most CI runners and dev machines have it, but the whole
+        # lifecycle test shouldn't depend on it.
+        ssh_binary = shutil.which("ssh")
+        if ssh_binary is not None:
+            ssh_result = subprocess.run(
+                [
+                    ssh_binary,
+                    "-F",
+                    str(Path.home() / ".ssh" / "config"),
+                    workspace_name,
+                    "echo hello-from-real-ssh",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert ssh_result.returncode == 0, ssh_result.stderr
+            assert "hello-from-real-ssh" in ssh_result.stdout
 
         stop_result = runner.invoke(app, ["stop", workspace_name])
         assert stop_result.exit_code == 0, stop_result.output
