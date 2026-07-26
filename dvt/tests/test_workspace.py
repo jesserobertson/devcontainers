@@ -72,6 +72,11 @@ def test_up_workspace_full_build_and_run_sequence(
         "run_lifecycle_commands",
         lambda *a, **k: workspace_module.Ok(None),
     )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
+    )
     result = up_workspace(handle, settings, "fastapi", project)
 
     assert result.is_ok()
@@ -103,6 +108,11 @@ def test_up_workspace_starts_existing_stopped_container(
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
+    )
     result = up_workspace(handle, settings, "fastapi", project)
 
     assert result.is_ok()
@@ -114,6 +124,11 @@ def test_up_workspace_noop_when_already_running(project, handle, settings, monke
     existing.status = "running"
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
     )
     result = up_workspace(handle, settings, "fastapi", project)
 
@@ -133,6 +148,11 @@ def test_up_workspace_resumes_existing_even_without_devcontainer_json(
     existing.status = "exited"
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
     )
 
     def _fail_load_config(config_file):
@@ -191,6 +211,11 @@ def test_up_workspace_ensures_gpu_support_on_podman_windows(
         "run_lifecycle_commands",
         lambda *a, **k: workspace_module.Ok(None),
     )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
+    )
 
     result = up_workspace(handle, settings, "jax", project)
 
@@ -230,6 +255,11 @@ def test_up_workspace_skips_gpu_check_on_docker(project, settings, monkeypatch):
         workspace_module.podman_machine,
         "ensure_gpu_support",
         lambda *a, **k: ensure_gpu_calls.append(1) or workspace_module.Ok(None),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
     )
 
     result = up_workspace(handle, settings, "fastapi", project)
@@ -287,6 +317,11 @@ def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
         workspace_module.podman_machine,
         "ensure_gpu_support",
         lambda *a, **k: ensure_gpu_calls.append(1) or workspace_module.Ok(None),
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "write_ssh_config_entry",
+        lambda *a, **k: workspace_module.Ok(None),
     )
 
     result = up_workspace(handle, settings, "python", project)

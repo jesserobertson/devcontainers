@@ -19,7 +19,7 @@ from devtemplate.commands import project, template
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client
-from devtemplate.ssh import exec_interactive
+from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
 from devtemplate.workspace import up_workspace
 
 app = typer.Typer(
@@ -43,14 +43,20 @@ def up(name: str) -> None:
         console,
     )
     unwrap_or_exit(up_workspace(handle, settings, name, Path.cwd()), console)
-    console.print(
-        f"[green]Workspace '{name}' is up.[/green] ssh in with: dvt ssh {name}"
-    )
+    console.print(f"[green]Workspace '{name}' is up.[/green] ssh in with: ssh {name}")
 
 
 @app.command()
-def ssh(name: str) -> None:
-    """ssh into a running workspace."""
+def ssh(
+    name: str,
+    stdio: bool = typer.Option(  # noqa: B008
+        False,
+        "--stdio",
+        help="Non-interactive pipe mode for ProxyCommand use.",
+        hidden=True,
+    ),
+) -> None:
+    """ssh into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
     settings = unwrap_or_exit(load_settings(), console)
     handle = unwrap_or_exit(
         get_client(
@@ -60,7 +66,11 @@ def ssh(name: str) -> None:
         ),
         console,
     )
-    result = exec_interactive(handle.cli_binary, handle.client, name)
+    result = (
+        stdio_proxy(handle.cli_binary, handle.client, name)
+        if stdio
+        else exec_interactive(handle.cli_binary, handle.client, name)
+    )
     exit_code = unwrap_or_exit(result, console)
     raise typer.Exit(code=exit_code)
 
@@ -120,6 +130,9 @@ def delete(name: str) -> None:
             f"[red]Failed to delete '{escape(name)}': {escape(str(exc))}[/red]"
         )
         raise typer.Exit(code=1) from exc
+    unwrap_or_exit(
+        remove_ssh_config_entry(name, Path.home() / ".ssh" / "config"), console
+    )
     console.print(f"Deleted '{name}'.")
 
 

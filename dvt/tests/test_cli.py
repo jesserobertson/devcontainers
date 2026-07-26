@@ -120,6 +120,32 @@ def test_ssh_interactive_execs_into_container(monkeypatch):
     assert result.exit_code == 0
 
 
+def test_ssh_stdio_uses_stdio_proxy(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "stdio_proxy",
+        # dict.setdefault(k, True) returns True itself, which would short-circuit
+        # `or` and make this lambda return the bare bool instead of Ok(0) - use
+        # update() (which returns None) so the Result is what's actually returned.
+        lambda cli_binary, client, name: (
+            captured.update(called=True) or cli_module.Ok(0)
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["ssh", "--stdio", "my-project"])
+
+    assert result.exit_code == 0
+    assert captured.get("called") is True
+
+
 def test_ssh_reports_clean_error_on_exec_failure(monkeypatch):
     import devtemplate.cli as cli_module
 
@@ -195,7 +221,7 @@ def test_stop_reports_clean_error_when_lookup_raises(monkeypatch):
     assert "daemon unreachable" in result.output
 
 
-def test_delete_removes_container(monkeypatch):
+def test_delete_removes_container_and_ssh_entry(monkeypatch):
     import devtemplate.cli as cli_module
 
     fake_container = type("C", (), {"remove": lambda self, force=True: None})()
@@ -206,6 +232,9 @@ def test_delete_removes_container(monkeypatch):
     )
     monkeypatch.setattr(
         cli_module, "find_workspace_container", lambda client, name: fake_container
+    )
+    monkeypatch.setattr(
+        cli_module, "remove_ssh_config_entry", lambda name, path: cli_module.Ok(None)
     )
 
     result = runner.invoke(cli_module.app, ["delete", "my-project"])

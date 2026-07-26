@@ -51,13 +51,16 @@ running (if already running) rather than rebuilding — delete and re-`up` to pi
 devcontainer.json changes.
 
 `dvt ssh <name>` execs directly into the running container via `docker exec -it`/
-`podman exec -it` — no SSH server is ever installed into any image, no port is
-ever published, and no real SSH protocol is involved. No `~/.ssh/config` entry is
-written, so plain `ssh <name>`, VS Code Remote-SSH, and JetBrains Gateway are not
-supported through `dvt`; `dvt ssh <name>` is the only supported terminal-access
-path. (VS Code's own "Attach to Running Container", part of the Dev Containers
-extension, still works independently since it doesn't go through SSH at all — it
-uses the container's labels directly; see [Concepts](concepts.md)'s compatibility
+`podman exec -it` — no port is ever published, and no `sshd` is ever installed
+into any image. `dvt up` writes (and `dvt delete` removes) a `Host <name>` block
+in `~/.ssh/config` whose `ProxyCommand` runs `dvt ssh --stdio <name>`: a real
+`asyncssh`-based SSH server that this process runs against its own stdin/stdout,
+bridging the resulting session to `docker`/`podman exec -i` in that container.
+That entry is enough for plain `ssh <name>`, VS Code Remote-SSH, and JetBrains
+Gateway to connect through `dvt` as well as `dvt ssh <name>` itself. (VS Code's
+own "Attach to Running Container", part of the Dev Containers extension, still
+works independently since it doesn't go through SSH at all — it uses the
+container's labels directly; see [Concepts](concepts.md)'s compatibility
 section.)
 
 `dvt stop <name>` / `dvt delete <name>` find the workspace via its `dvt.workspace`
