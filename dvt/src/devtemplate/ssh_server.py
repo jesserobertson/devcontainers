@@ -168,17 +168,30 @@ def _pump_stdio_to_socket(sock: socket.socket) -> None:
     the other end of the pair. Blocks until the server side closes.
 
     Reads/writes the raw file descriptors via `os.read`/`os.write` rather than
-    `sys.stdin.buffer`/`sys.stdout.buffer` - discovered the hard way, driving
-    this from a real `ssh` client's `ProxyCommand` on Windows: when the parent
-    is Git for Windows' (MSYS/Cygwin) `ssh.exe`, this process's stdio is a
-    Cygwin-flavoured pipe, and Python's buffered-IO layer over it misbehaves
-    in both directions - `sys.stdin.buffer.read()` returns a spurious empty
-    read (indistinguishable from EOF) mid-handshake, before the client has
-    actually finished sending, and `sys.stdout.buffer.write()` raises
-    `OSError: [Errno 22] Invalid argument` on an otherwise-healthy write. Both
-    silently kill the SSH session during key exchange. Reading/writing the
-    fds directly sidesteps whatever the buffered wrapper is doing and has been
-    verified end to end against a real `ssh` client through this exact path."""
+    `sys.stdin.buffer`/`sys.stdout.buffer` - discovered by driving this from a
+    real `ssh` client's `ProxyCommand`, where it deadlocked. The root cause is
+    portable, not platform-specific: `io.BufferedReader.read(n)` keeps issuing
+    raw reads until it has accumulated `n` bytes (or hit real EOF) rather than
+    returning as soon as *any* data is available - correct for reading a file,
+    wrong for pumping a live, sub-buffer-sized, latency-sensitive byte stream
+    like an SSH handshake. On every OS this can block forever waiting for
+    bytes the peer has already finished sending, because the peer is waiting
+    on a reply to what it just sent. On this Windows dev machine, with Git for
+    Windows' (Cygwin/MSYS) `ssh.exe` as the parent, the same wrong semantics
+    surfaced as a *false* empty read instead of a hang - Cygwin's pipe
+    implementation happened to turn "not enough buffered yet" into a
+    zero-length read partway through, which `sys.stdin.buffer.read()` cannot
+    tell apart from real EOF, so the bridge shut down the connection thinking
+    the client was done. `sys.stdout.buffer.write()` independently raised
+    `OSError: [Errno 22] Invalid argument` on the same Cygwin-piped stdout.
+    Both are symptoms of the same underlying mismatch, not two unrelated
+    Windows bugs - a POSIX `ssh` parent would very plausibly just hang instead
+    of erroring, which is *worse* (no diagnostic, indistinguishable from a
+    slow network) rather than better. Reading/writing the fds directly with
+    `os.read`/`os.write` returns on first-available data like a byte pump
+    needs, is correct on every platform, and has been verified end to end
+    against a real `ssh` client through this exact path. Do not reintroduce
+    the buffered wrapper, and do not guard this behind `sys.platform`."""
 
     def stdin_to_sock() -> None:
         stdin_fd = sys.stdin.fileno()
@@ -199,7 +212,12 @@ def _pump_stdio_to_socket(sock: socket.socket) -> None:
                 data = sock.recv(_CHUNK)
                 if not data:
                     break
-                os.write(stdout_fd, data)
+                # os.write() may write fewer bytes than given (e.g. a signal
+                # interrupting a partial transfer) - unlike BufferedWriter's
+                # all-or-raise `.write()`, so a single call here could
+                # silently truncate the SSH stream. Loop until it's all sent.
+                while data:
+                    data = data[os.write(stdout_fd, data) :]
         except OSError:
             pass
 

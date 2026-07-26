@@ -122,7 +122,10 @@ def _patch_stdio_to_pipe_bridge(monkeypatch, peer_sock: socket.socket) -> None:
                 data = peer_sock.recv(4096)
                 if not data:
                     break
-                os.write(stdin_write_fd, data)
+                # os.write() can write short; loop until it's all sent (see
+                # the matching comment in ssh_server._pump_stdio_to_socket).
+                while data:
+                    data = data[os.write(stdin_write_fd, data) :]
         except OSError:
             pass
         finally:
