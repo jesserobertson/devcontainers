@@ -28,8 +28,28 @@ _CHUNK = 4096
 terminal traffic, so throughput never matters, but latency does."""
 
 _BRIDGE_DRAIN_TIMEOUT = 5.0
-"""How long to wait for the stdio bridge threads to notice the server socket
-closed and flush the last of their output, before giving up and returning."""
+"""How long to wait, after the event loop has finished, for the stdio bridge
+threads to notice the server socket closed and flush the last of their output.
+The wait is a plain `Thread.join` outside the loop, and the threads are daemons,
+so exceeding it costs nothing beyond the lost tail of that output."""
+
+_EXIT_SESSION_FAILED = 255
+"""Exit code for a session that never got off the ground - `docker`/`podman`
+missing from PATH, container gone, transport died mid-handshake. 255 is ssh's
+own convention for "the connection itself failed", as distinct from any exit
+code the remote command could have produced."""
+
+_CHANNEL_EVENTS = (
+    asyncssh.misc.TerminalSizeChanged,
+    asyncssh.misc.BreakReceived,
+    asyncssh.misc.SignalReceived,
+    asyncssh.misc.SoftEOFReceived,
+)
+"""Out-of-band channel events asyncssh delivers by *raising* from a stream read
+rather than returning data. None of them are meaningful for a pipe-bridged
+session with no PTY, so each just ends the affected pump. Note these derive
+from `Exception` directly, not from `asyncssh.Error`, so they need listing
+separately from the genuine protocol failures."""
 
 
 class _NoAuthServer(asyncssh.SSHServer):
@@ -81,29 +101,32 @@ async def _handle_process(
     assert proc_stdout is not None
 
     async def pump_client_to_process() -> None:
-        try:
+        # Every one of these means "this direction is over", not "something is
+        # wrong with dvt": channel events (above), the container's shell having
+        # exited (OSError/BrokenPipeError), or the client vanishing mid-session
+        # (asyncssh.ConnectionLost and friends, all under asyncssh.Error). This
+        # must not escape - it runs as a task the session teardown awaits, and
+        # an exception here would skip reporting the session's exit status.
+        with contextlib.suppress(*_CHANNEL_EVENTS, asyncssh.Error, OSError):
             while True:
                 data = await process.stdin.read(_CHUNK)
                 if not data:
                     break
                 proc_stdin.write(data.encode() if isinstance(data, str) else data)
                 await proc_stdin.drain()
-        except (asyncssh.misc.TerminalSizeChanged, asyncssh.misc.BreakReceived):
-            # Out-of-band channel events surface as exceptions from read();
-            # neither is meaningful without a PTY, so just stop forwarding.
-            pass
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # The container's shell exited first - nothing left to feed.
-        finally:
-            with contextlib.suppress(BrokenPipeError, ConnectionResetError):
-                proc_stdin.close()
+        with contextlib.suppress(OSError):
+            proc_stdin.close()
 
     async def pump_process_to_client() -> None:
-        while True:
-            chunk = await proc_stdout.read(_CHUNK)
-            if not chunk:
-                break
-            process.stdout.write(chunk.decode(errors="replace"))
+        # Same reasoning in the other direction: once the channel is gone there
+        # is nowhere to put the container's output, which ends this pump but
+        # still leaves a real exit code for `proc.wait()` to report.
+        with contextlib.suppress(*_CHANNEL_EVENTS, asyncssh.Error, OSError):
+            while True:
+                chunk = await proc_stdout.read(_CHUNK)
+                if not chunk:
+                    break
+                process.stdout.write(chunk.decode(errors="replace"))
 
     # The client half is a background task rather than a `gather` partner: a
     # client is under no obligation to ever send EOF, so waiting on it would
@@ -113,8 +136,11 @@ async def _handle_process(
         await pump_process_to_client()
         exit_code = await proc.wait()
     finally:
+        # Belt and braces: the pump suppresses its own I/O failures, but this
+        # runs in a `finally`, so anything escaping here would replace the real
+        # outcome (including a failure being reported) with itself.
         client_pump.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(Exception, asyncio.CancelledError):
             await client_pump
 
     process.exit(exit_code)
@@ -174,15 +200,32 @@ def run_stdio_server(cli_binary: str, container_name: str) -> int:
     exit_codes: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        exit_codes.append(await _handle_process(process, cli_binary, container_name))
+        try:
+            exit_codes.append(
+                await _handle_process(process, cli_binary, container_name)
+            )
+        except Exception as exc:
+            # asyncssh logs a failing process_factory at debug level and force-
+            # closes the connection, so without this a session that never even
+            # spawned (`docker` not on PATH, container gone) would be
+            # indistinguishable from a clean one: exit code 0, no diagnostic.
+            # stderr is safe to write - only stdout carries the SSH stream.
+            # Name the binary and container: the most likely failure is a
+            # missing CLI, and OSError's own message on Windows is just "The
+            # system cannot find the file specified" with no hint which file.
+            print(
+                f"dvt ssh --stdio: session for container {container_name!r} "
+                f"via {cli_binary!r} failed: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            exit_codes.append(_EXIT_SESSION_FAILED)
+            # Best-effort: tell the client too, if the channel is still alive.
+            with contextlib.suppress(Exception):
+                process.exit(_EXIT_SESSION_FAILED)
 
-    async def main() -> int:
+    async def main(server_sock: socket.socket) -> None:
         host_key = asyncssh.generate_private_key("ssh-ed25519")
-        server_sock, stdio_sock = socket.socketpair()
-        bridge = asyncio.create_task(
-            asyncio.to_thread(_pump_stdio_to_socket, stdio_sock)
-        )
-
         conn = await asyncssh.run_server(
             server_sock,
             server_factory=_NoAuthServer,
@@ -196,11 +239,28 @@ def run_stdio_server(cli_binary: str, container_name: str) -> int:
         )
         await conn.wait_closed()
 
-        # Let the bridge flush whatever the server wrote just before closing.
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(bridge, _BRIDGE_DRAIN_TIMEOUT)
+    server_sock, stdio_sock = socket.socketpair()
+    # A plain daemon thread, not `asyncio.to_thread`: the latter runs on the
+    # loop's shared executor, which `asyncio.run` joins on shutdown with a
+    # 300s timeout of its own - so cancelling the future would not stop the
+    # thread, and a bridge still blocked in `recv` would hang the process for
+    # five minutes rather than the five seconds documented above.
+    bridge = threading.Thread(
+        target=_pump_stdio_to_socket, args=(stdio_sock,), daemon=True
+    )
+    bridge.start()
+    try:
+        asyncio.run(main(server_sock))
+    finally:
+        # Closing the server end is what gives the bridge its EOF, and asyncio
+        # has normally already done it by now; joining outside the loop lets
+        # the bridge flush its last output without blocking anything.
+        bridge.join(_BRIDGE_DRAIN_TIMEOUT)
+        for sock in (stdio_sock, server_sock):
+            with contextlib.suppress(OSError):
+                sock.close()
 
-        # No session ever opened (client connected and hung up) - not an error.
-        return exit_codes[-1] if exit_codes else 0
+    # No session ever opened (client connected and hung up) - not an error.
+    return exit_codes[-1] if exit_codes else 0
 
     return asyncio.run(main())

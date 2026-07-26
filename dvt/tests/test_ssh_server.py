@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 import sys
 import threading
@@ -34,6 +35,16 @@ _FAKE_SH_C = (
     "sys.stdout.buffer.write(cmd[len('echo '):].encode() + b'\\n');"
     "sys.stdout.buffer.flush();"
     "sys.exit(3)"
+)
+
+# Outlives the client: still running when the connection is aborted, so the
+# server-side pumps are mid-flight when the channel dies.
+_FAKE_SLOW_SHELL = (
+    "import sys, time;"
+    "time.sleep(0.6);"
+    "sys.stdout.buffer.write(b'done');"
+    "sys.stdout.buffer.flush();"
+    "sys.exit(5)"
 )
 
 
@@ -200,6 +211,58 @@ async def test_non_interactive_exec_request_runs_the_requested_command(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_client_vanishing_mid_session_still_yields_the_container_exit_code(
+    monkeypatch,
+):
+    """A client that disappears mid-session (network drop, Gateway killed)
+    surfaces on the server as `asyncssh.ConnectionLost` raised out of
+    `process.stdin.read()`. That must not escape `_handle_process`: it runs as
+    a task awaited during teardown, so an exception there skips the exit-status
+    reporting entirely and the session silently becomes a success.
+
+    Real client, real server, real subprocess; the disconnect is a real
+    `conn.abort()`, not a simulated one.
+    """
+    real_create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def fake_create_subprocess_exec(*cmd: str, **kwargs: object):
+        return await real_create_subprocess_exec(
+            sys.executable, "-c", _FAKE_SLOW_SHELL, **kwargs
+        )
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+    outcome: list[object] = []
+    finished = asyncio.Event()
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        try:
+            outcome.append(await _handle_process(process, "docker", "myws"))
+        except BaseException as exc:  # noqa: BLE001 - recording, not handling
+            outcome.append(f"raised {type(exc).__name__}")
+        finally:
+            finished.set()
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        conn = await asyncssh.connect(
+            sock=client_sock, known_hosts=None, username="anyone"
+        )
+        await conn.create_process()
+        await asyncio.sleep(0.1)  # let the session settle before pulling the rug
+        conn.abort()
+        await finished.wait()
+
+    # Pre-fix this was ["raised ConnectionLost"], which Finding 1's path then
+    # turned into a silent exit code 0.
+    assert outcome == [5], "a mid-session disconnect must still report the exit code"
+    (await server_task).close()
+
+
+@pytest.mark.asyncio
 async def test_run_stdio_server_bridges_stdin_stdout_to_a_real_ssh_session(monkeypatch):
     """Exercises `run_stdio_server` as a black box - it is called exactly as
     `dvt ssh --stdio` will call it, and driven only through `sys.stdin` /
@@ -242,3 +305,50 @@ async def test_run_stdio_server_bridges_stdin_stdout_to_a_real_ssh_session(monke
     server_thread.join(timeout=30)
     assert not server_thread.is_alive(), "run_stdio_server did not return"
     assert returned == [7], "run_stdio_server must return the container's exit code"
+
+
+@pytest.mark.asyncio
+async def test_run_stdio_server_reports_a_failed_session_as_non_zero(
+    monkeypatch, capsys
+):
+    """A session that never gets off the ground - here the most likely real
+    cause, a container CLI that isn't on PATH - must not look like a clean
+    exit. asyncssh only logs a failing process_factory at debug level and
+    force-closes the connection, so without explicit handling `run_stdio_server`
+    would return 0 and a totally broken ProxyCommand would be indistinguishable
+    from a working one.
+
+    Nothing is patched here at all: the SSH side is real, and the spawn really
+    does fail because the binary genuinely does not exist.
+    """
+    stdio_end, client_end = socket.socketpair()
+    monkeypatch.setattr(
+        sys, "stdin", SimpleNamespace(buffer=stdio_end.makefile("rb", buffering=0))
+    )
+    monkeypatch.setattr(
+        sys, "stdout", SimpleNamespace(buffer=stdio_end.makefile("wb", buffering=0))
+    )
+
+    returned: list[int] = []
+    missing = "dvt-no-such-container-cli"
+    server_thread = threading.Thread(
+        target=lambda: returned.append(run_stdio_server(missing, "proj")),
+        daemon=True,
+    )
+    server_thread.start()
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_end, known_hosts=None, username="anyone"
+        ) as conn:
+            with contextlib.suppress(asyncssh.Error):
+                # The session dies on the server side; the client sees either a
+                # 255 exit status or the channel/connection being torn down.
+                process = await conn.create_process()
+                await process.wait()
+
+    server_thread.join(timeout=30)
+    assert not server_thread.is_alive(), "run_stdio_server did not return"
+    assert returned == [255], "a failed session must not report success"
+    # And it must say why, on stderr - stdout carries the SSH stream.
+    assert missing in capsys.readouterr().err
