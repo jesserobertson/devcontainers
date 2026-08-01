@@ -39,6 +39,7 @@ def init(
         False, help="Sync templates from GitHub before scaffolding."
     ),
 ) -> None:
+    """Scaffold a new project's devcontainer.json from a cached template."""
     settings = unwrap_or_exit(load_settings(), console)
 
     if refresh or not list_cached_templates(settings):
@@ -73,7 +74,12 @@ def init(
 
 
 @app.command("add-feature")
-def add_feature(name: str) -> None:
+def add_feature(
+    name: str = typer.Argument(  # noqa: B008
+        ..., help="Cached template name to merge in."
+    ),
+) -> None:
+    """Layer a cached template's devcontainer.json fields onto the project's existing config."""
     settings = unwrap_or_exit(load_settings(), console)
 
     target = Path(".devcontainer") / "devcontainer.json"

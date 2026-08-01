@@ -31,7 +31,9 @@ console = Console()
 
 
 @app.command()
-def up(name: str) -> None:
+def up(
+    name: str = typer.Argument(..., help="Name for the new workspace."),  # noqa: B008
+) -> None:
     """Build and run a workspace from ./.devcontainer/devcontainer.json."""
     settings = unwrap_or_exit(load_settings(), console)
     handle = unwrap_or_exit(
@@ -48,7 +50,9 @@ def up(name: str) -> None:
 
 @app.command()
 def ssh(
-    name: str,
+    name: str = typer.Argument(  # noqa: B008
+        ..., help="Name of the workspace to connect to."
+    ),
     stdio: bool = typer.Option(  # noqa: B008
         False,
         "--stdio",
@@ -56,7 +60,7 @@ def ssh(
         hidden=True,
     ),
 ) -> None:
-    """ssh into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
+    """SSH into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
     # In --stdio mode this process's stdout *is* the SSH byte stream the client
     # is speaking the protocol over (see ssh_server.py), so every diagnostic has
     # to go to stderr instead - printing one on stdout injects garbage into the
@@ -100,7 +104,9 @@ def _find_or_exit(client: DockerClient, name: str) -> Container:
 
 
 @app.command()
-def stop(name: str) -> None:
+def stop(
+    name: str = typer.Argument(..., help="Name of the workspace to stop."),  # noqa: B008
+) -> None:
     """Stop a running workspace."""
     settings = unwrap_or_exit(load_settings(), console)
     handle = unwrap_or_exit(
@@ -121,7 +127,9 @@ def stop(name: str) -> None:
 
 
 @app.command()
-def delete(name: str) -> None:
+def delete(
+    name: str = typer.Argument(..., help="Name of the workspace to delete."),  # noqa: B008
+) -> None:
     """Delete a workspace's container (the built image is left cached)."""
     settings = unwrap_or_exit(load_settings(), console)
     handle = unwrap_or_exit(

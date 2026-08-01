@@ -23,6 +23,7 @@ console = Console()
 
 @app.command("list")
 def list_templates() -> None:
+    """List locally cached templates, with their image and features."""
     settings = unwrap_or_exit(load_settings(), console)
 
     names = list_cached_templates(settings)
@@ -46,7 +47,10 @@ def list_templates() -> None:
 
 
 @app.command("show")
-def show_template(name: str) -> None:
+def show_template(
+    name: str = typer.Argument(..., help="Cached template name to show."),  # noqa: B008
+) -> None:
+    """Print a cached template's devcontainer.json."""
     settings = unwrap_or_exit(load_settings(), console)
 
     template = unwrap_or_exit(load_cached_template(settings, name), console)
@@ -55,6 +59,7 @@ def show_template(name: str) -> None:
 
 @app.command("sync")
 def sync() -> None:
+    """Sync cached templates from GitHub."""
     settings = unwrap_or_exit(load_settings(), console)
 
     with httpx.Client() as client:
