@@ -25,6 +25,23 @@ def test_generate_dockerfile_single_feature():
     assert "FROM feature-0-fastapi AS final" in content
 
 
+def test_generate_dockerfile_installs_features_as_root():
+    """The devcontainer Features spec requires install.sh to run as root
+    regardless of the base image's own USER - a base image that ends on a
+    non-root USER (e.g. USER dev) must not leak into the feature install RUN
+    step, since install.sh commonly needs root (e.g. su-ing to _REMOTE_USER)."""
+    content = generate_dockerfile(
+        "ghcr.io/jesserobertson/base-ubuntu:latest",
+        [("fastapi", "features/0-fastapi", {})],
+    )
+    lines = content.splitlines()
+    copy_index = lines.index("COPY features/0-fastapi/ /tmp/dvt-feature/")
+    run_index = next(
+        i for i, line in enumerate(lines) if line.startswith("RUN chmod +x")
+    )
+    assert "USER root" in lines[copy_index + 1 : run_index]
+
+
 def test_generate_dockerfile_quotes_option_values_safely():
     content = generate_dockerfile(
         "base:latest",

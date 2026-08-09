@@ -17,9 +17,11 @@ def generate_dockerfile(
 ) -> str:
     """Generate a multi-stage Dockerfile: base image, then one stage per Feature
     that COPYs in its extracted directory (already placed under the build context
-    at the given context-relative dir by build_image) and runs install.sh with its
-    resolved options as env vars plus the spec's standard _REMOTE_USER/
-    _CONTAINER_USER vars.
+    at the given context-relative dir by build_image), switches to USER root -
+    the devcontainer Features spec requires install.sh to always run as root,
+    regardless of what USER the base image (or a prior Feature stage) left
+    active - and runs install.sh with its resolved options as env vars plus the
+    spec's standard _REMOTE_USER/_CONTAINER_USER vars.
 
     features: list of (feature_id, context_relative_dir, resolved_options), in the
     order they appear in devcontainer.json's "features" map.
@@ -30,6 +32,7 @@ def generate_dockerfile(
         stage_name = _dockerfile_stage_name(index, feature_id)
         lines.append(f"FROM {current_stage} AS {stage_name}")
         lines.append(f"COPY {context_dir}/ /tmp/dvt-feature/")
+        lines.append("USER root")
         env_assignments = " ".join(
             f"{key.upper()}={shlex.quote(value)}" for key, value in options.items()
         )
