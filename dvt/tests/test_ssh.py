@@ -58,6 +58,8 @@ def test_exec_interactive_uses_tty_flags(monkeypatch):
         "-it",
         "dvt-my-project",
         "sh",
+        "-c",
+        'exec "${SHELL:-sh}"',
     ]
 
 

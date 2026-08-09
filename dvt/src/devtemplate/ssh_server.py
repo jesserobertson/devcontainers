@@ -91,9 +91,18 @@ async def _handle_process(
     so the caller can use it as its own process exit code. `process.exit()`
     only sets the SSH channel's status; it hands nothing back to Python.
     """
-    # Passed as distinct argv entries, so the command reaches the container's
-    # `sh -c` exactly as the client wrote it - no shell runs on this side.
-    shell_argv = ["sh"] if process.command is None else ["sh", "-c", process.command]
+    # A bare shell request runs the container user's own configured shell
+    # (falling back to sh if $SHELL isn't set) rather than hardcoding sh -
+    # images that wire up shell-startup hooks (e.g. a pixi project's
+    # `pixi shell-hook` in .bashrc/fish's conf.d) only fire under that real
+    # shell. An exec request's command is passed as its own distinct argv
+    # entry, reaching the container's `sh -c` exactly as the client wrote it -
+    # no shell runs on this side.
+    shell_argv = (
+        ["sh", "-c", 'exec "${SHELL:-sh}"']
+        if process.command is None
+        else ["sh", "-c", process.command]
+    )
     proc = await asyncio.create_subprocess_exec(
         cli_binary,
         "exec",

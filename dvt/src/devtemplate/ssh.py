@@ -92,12 +92,28 @@ def exec_interactive(
     """`dvt ssh <name>` typed directly at a terminal: finds the container labeled
     dvt.workspace=name and execs `docker exec -it` (inheriting this process's
     stdin/stdout/tty directly), returning its exit code. Unaffected by this
-    plan - unlike stdio_proxy, this never involved SSH protocol at all."""
+    plan - unlike stdio_proxy, this never involved SSH protocol at all.
+
+    Runs the container user's own configured shell (falling back to sh if
+    $SHELL isn't set) rather than a hardcoded sh, so shell-startup hooks an
+    image wires up (e.g. a pixi project's `pixi shell-hook` in .bashrc/fish's
+    conf.d) actually fire - matching ssh_server.py's bare-shell-request path.
+    """
     try:
         container = find_workspace_container(client, name)
         if container is None or container.name is None:
             return Err(ValueError(f"No workspace named {name!r} is running."))
-        result = subprocess.run([cli_binary, "exec", "-it", container.name, "sh"])
+        result = subprocess.run(
+            [
+                cli_binary,
+                "exec",
+                "-it",
+                container.name,
+                "sh",
+                "-c",
+                'exec "${SHELL:-sh}"',
+            ]
+        )
         return Ok(result.returncode)
     except Exception as exc:
         return Err(exc)

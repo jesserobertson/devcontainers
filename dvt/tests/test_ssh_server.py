@@ -253,7 +253,9 @@ async def test_handle_process_bridges_a_real_subprocess_and_returns_its_exit_cod
     the byte flow and that `_handle_process` hands its subprocess's exit code
     back to its caller (the wiring `run_stdio_server` depends on).
     """
-    _patch_exec_to_fake_shell(monkeypatch, ("docker", "exec", "-i", "myws", "sh"))
+    _patch_exec_to_fake_shell(
+        monkeypatch, ("docker", "exec", "-i", "myws", "sh", "-c", 'exec "${SHELL:-sh}"')
+    )
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
     server_sock, client_sock = socket.socketpair()
@@ -435,7 +437,9 @@ async def test_run_stdio_server_bridges_stdin_stdout_to_a_real_ssh_session(monke
     asyncssh is mocked; only the docker/podman argv is redirected to a
     stand-in shell so no container runtime is required.
     """
-    _patch_exec_to_fake_shell(monkeypatch, ("podman", "exec", "-i", "proj", "sh"))
+    _patch_exec_to_fake_shell(
+        monkeypatch, ("podman", "exec", "-i", "proj", "sh", "-c", 'exec "${SHELL:-sh}"')
+    )
 
     stdio_end, client_end = socket.socketpair()
     _patch_stdio_to_pipe_bridge(monkeypatch, stdio_end)
