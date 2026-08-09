@@ -83,6 +83,20 @@ def compute_labels(
     }
 
 
+def _substitute_mount_variables(
+    mount_spec: str, project_path: Path, workspace_folder: str
+) -> str:
+    """Expand the devcontainer.json variables mount specs use in practice:
+    ${localWorkspaceFolder} (the project's own absolute path, as written by
+    this repo's own templates' workspaceMount) and ${containerWorkspaceFolder}
+    (the resolved workspaceFolder). Left unsubstituted, a mount source of
+    literally '${localWorkspaceFolder}' doesn't look like a host path to
+    Docker/Podman, so it's misread as a named-volume name and rejected."""
+    return mount_spec.replace(
+        "${localWorkspaceFolder}", str(project_path.resolve())
+    ).replace("${containerWorkspaceFolder}", workspace_folder)
+
+
 def _parse_mount(mount_spec: str) -> dict[str, dict[str, str]]:
     """Parse a devcontainer.json mount string ('source=...,target=...,type=...')
     into docker-py's {source: {"bind": target, "mode": "rw"}} volumes form."""
@@ -143,7 +157,10 @@ def run_container(
         workspace_folder, workspace_mount = resolve_workspace(config, project_path)
         volumes: dict[str, dict[str, str]] = {}
         for mount_spec in [workspace_mount, *config.get("mounts", [])]:
-            volumes.update(_parse_mount(mount_spec))
+            resolved_spec = _substitute_mount_variables(
+                mount_spec, project_path, workspace_folder
+            )
+            volumes.update(_parse_mount(resolved_spec))
 
         run_args_result = _translate_run_args(config.get("runArgs", []))
         if run_args_result.is_err():

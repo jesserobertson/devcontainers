@@ -87,6 +87,38 @@ def test_resolve_workspace_defaults_when_absent(tmp_path):
     assert "type=bind" in mount
 
 
+def test_run_container_substitutes_local_workspace_folder_variable(tmp_path):
+    """Templates (e.g. this repo's own cli/fastapi/agent templates) write
+    workspaceMount with the devcontainer.json standard ${localWorkspaceFolder}
+    variable rather than a literal path. Left unsubstituted, Docker/Podman
+    can't tell the mount source is meant to be a host path, so it tries to
+    create a named volume literally called '${localWorkspaceFolder}' - an
+    invalid volume name - and container creation fails."""
+    config = {
+        **FASTAPI_CONFIG,
+        "workspaceMount": (
+            "source=${localWorkspaceFolder},target=/workspace,"
+            "type=bind,consistency=cached"
+        ),
+    }
+    fake_client = MagicMock()
+    fake_client.containers.run.return_value = MagicMock()
+
+    result = run_container(
+        fake_client,
+        "dvt/fastapi:latest",
+        config,
+        "fastapi",
+        tmp_path,
+        tmp_path / "devcontainer.json",
+    )
+
+    assert result.is_ok()
+    _, kwargs = fake_client.containers.run.call_args
+    assert str(tmp_path.resolve()) in kwargs["volumes"]
+    assert "${localWorkspaceFolder}" not in kwargs["volumes"]
+
+
 def test_compute_labels_encodes_metadata(tmp_path):
     config_file = tmp_path / ".devcontainer" / "devcontainer.json"
     labels = compute_labels(FASTAPI_CONFIG, "my-project", tmp_path, config_file)
