@@ -25,6 +25,155 @@ def test_init_scaffolds_devcontainer_json(tmp_path, settings):
     assert json.loads(target.read_text())["name"] == "my-project"
 
 
+def test_init_scaffolds_pixi_toml_when_absent(tmp_path, settings):
+    """Templates' postCreateCommand is typically 'pixi install' (see cli/
+    fastapi/agent), which fails outright in a freshly-scaffolded directory
+    with no pixi.toml to install from. init should leave a minimal one so
+    the documented quickstart flow works end to end without a manual step."""
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    project_dir = tmp_path / "my-project"
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
+
+    assert result.exit_code == 0
+    pixi_toml = project_dir / "pixi.toml"
+    assert pixi_toml.exists()
+    content = pixi_toml.read_text()
+    assert 'name = "my-project"' in content
+    assert '"conda-forge"' in content
+    assert '"linux-64"' in content
+
+
+def test_init_does_not_overwrite_existing_pixi_toml(tmp_path, settings):
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    project_dir = tmp_path / "my-project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "pixi.toml").write_text('[project]\nname = "already-here"\n')
+
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
+
+    assert result.exit_code == 0
+    assert (project_dir / "pixi.toml").read_text() == '[project]\nname = "already-here"\n'
+
+
+def test_init_prepends_pixi_detached_environments_step(tmp_path, settings):
+    """A template's postCreateCommand ('pixi install') installs into
+    <project>/.pixi/envs by default - i.e. onto the workspaceMount bind
+    mount. On at least Podman's WSL2 machine on Windows, that bind mount
+    can't have file permissions/timestamps set on it, which is exactly what
+    pixi's package-linking step needs to do, so install fails outright.
+    Prepending a step that turns on pixi's 'detached-environments' config
+    moves the installed env into pixi's own cache dir instead (which these
+    templates already mount as a real volume for package caching)."""
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "fastapi",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "postCreateCommand": "pixi install",
+            }
+        )
+    )
+
+    project_dir = tmp_path / "my-project"
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
+
+    assert result.exit_code == 0
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    post_create = written["postCreateCommand"]
+    assert "detached-environments = true" in post_create
+    assert ".config/pixi/config.toml" in post_create
+    assert post_create.endswith("pixi install")
+    assert post_create.index("detached-environments") < post_create.index(
+        "pixi install"
+    )
+
+
+def test_init_leaves_non_pixi_postcreate_command_untouched(tmp_path, settings):
+    template_dir = settings.templates_dir / "node"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "node",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "postCreateCommand": "npm install",
+            }
+        )
+    )
+
+    project_dir = tmp_path / "my-project"
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "node"])
+
+    assert result.exit_code == 0
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["postCreateCommand"] == "npm install"
+
+
+def test_init_prepends_pixi_step_to_list_form_postcreate_command(tmp_path, settings):
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "fastapi",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "postCreateCommand": ["pixi install", "pixi run setup"],
+            }
+        )
+    )
+
+    project_dir = tmp_path / "my-project"
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
+
+    assert result.exit_code == 0
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    post_create = written["postCreateCommand"]
+    assert isinstance(post_create, list)
+    assert post_create[-2:] == ["pixi install", "pixi run setup"]
+    assert "detached-environments = true" in post_create[0]
+
+
+def test_init_does_not_write_pixi_toml_when_pyproject_toml_exists(tmp_path, settings):
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "fastapi", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    project_dir = tmp_path / "my-project"
+    project_dir.mkdir(parents=True)
+    (project_dir / "pyproject.toml").write_text("[tool.pixi.project]\nname = \"x\"\n")
+
+    result = runner.invoke(app, ["init", str(project_dir), "--template", "fastapi"])
+
+    assert result.exit_code == 0
+    assert not (project_dir / "pixi.toml").exists()
+
+
 def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path, settings):
     template_dir = settings.templates_dir / "fastapi"
     template_dir.mkdir(parents=True)
