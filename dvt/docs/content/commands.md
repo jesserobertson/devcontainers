@@ -50,6 +50,14 @@ workspace with that name already exists, `up` starts it (if stopped) or leaves i
 running (if already running) rather than rebuilding — delete and re-`up` to pick up
 devcontainer.json changes.
 
+Feature refs in the `features` map accept either a tag
+(`ghcr.io/jesserobertson/devcontainers/cli:latest`) or a digest
+(`ghcr.io/jesserobertson/devcontainers/cli@sha256:<digest>`) — both resolve and
+pull the same way.
+
+Each Feature's `install.sh` always runs as root, regardless of the base image's
+own `USER` — per the devcontainer Features spec, not configurable.
+
 `dvt ssh <name>` execs directly into the running container via `docker exec -it`/
 `podman exec -it` — no port is ever published, and no `sshd` is ever installed
 into any image. `dvt up` writes (and `dvt delete` removes) a `Host <name>` block
@@ -69,7 +77,19 @@ container label — not a `dvt`-side registry — so they work from any director
 - **An interactive shell session** (`ssh <name>`) — bridged and exercised
   end-to-end with a real `asyncssh` client against a real subprocess; not yet
   additionally confirmed with an actual `ssh` binary in an interactive
-  terminal against a live container.
+  terminal against a live container. A bare shell request runs the container
+  user's own configured shell (falling back to `sh` if `$SHELL` isn't set)
+  rather than a hardcoded `sh`, so an image's shell-startup hooks — e.g. this
+  repo's templates activating their project's `pixi` environment via
+  `pixi shell-hook` in `.bashrc`/fish's `conf.d` — fire the same way they
+  would over a normal interactive login.
+- **stdout/stderr stay separate** — the container's stderr arrives on the
+  SSH client's own stderr channel, never merged into stdout, so redirecting
+  the two separately (`> out.txt 2> err.txt`) works as expected.
+- **Multi-byte UTF-8 output survives read-boundary splits** — a run of
+  non-ASCII output large enough to land a multi-byte character across two
+  underlying reads still decodes correctly on the client side, instead of
+  emitting a `�` replacement character at the split.
 
 VS Code's own "Attach to Running Container", part of the Dev Containers
 extension, also works — but independently of any of this, since it doesn't go
