@@ -13,10 +13,11 @@ dependency not yet published to PyPI, pinned to a specific commit).
 
 ## Usage
 
-    dvt template sync
-    dvt template list
-    dvt project init --template fastapi ./my-project
-    dvt project add-feature agent      # run from inside a project with .devcontainer/devcontainer.json
+    dvt feature sync
+    dvt feature list
+    dvt init ./my-project
+    dvt feature add fastapi            # run from inside a project with .devcontainer/devcontainer.json
+    dvt feature add agent
     dvt up my-project
     dvt ssh my-project
 

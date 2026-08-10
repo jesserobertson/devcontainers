@@ -1,43 +1,59 @@
 # Command Reference
 
-## `dvt template`
+## `dvt init <path>`
 
-### `dvt template sync`
+Scaffolds `<path>/.devcontainer/devcontainer.json` with no features yet: a base image
+(`--image`, default `ghcr.io/jesserobertson/base-ubuntu:latest`), `workspaceFolder`/
+`workspaceMount`, `remoteUser: dev`, and a `postCreateCommand` that runs `pixi install`
+(prefixed with a step that turns on pixi's `detached-environments` config — see
+[Concepts](concepts.md)). The scaffolded file's `name` field is set to `<path>`'s own
+directory name. Refuses (exit 1, nothing written) if
+`<path>/.devcontainer/devcontainer.json` already exists. Also scaffolds a minimal
+`pixi.toml` if the target directory doesn't already manage its own dependencies (via
+`pixi.toml` or a `pyproject.toml` with a `[tool.pixi]` table) — every feature's
+`postCreateCommand` runs `pixi install`, which needs one to install from.
 
-Fetches every template from `templates/` in the configured GitHub repository (default
+## `dvt feature`
+
+### `dvt feature sync`
+
+Fetches every feature from `templates/` in the configured GitHub repository (default
 `jesserobertson/devcontainers`, branch `main` — override with the `DVT_GITHUB_REPO` /
 `DVT_GITHUB_BRANCH` environment variables) into the local cache. Prunes any previously-synced
-template that's been removed upstream; never touches a template directory you've added by
+feature that's been removed upstream; never touches a feature directory you've added by
 hand.
 
-### `dvt template list`
+### `dvt feature list`
 
-Lists cached templates with their base image and declared feature.
+Lists cached features with their description and base image. `--json` prints the same
+data (plus each feature's OCI Feature ref) as a JSON array instead of a table, for
+scripting.
 
-### `dvt template show <name>`
+### `dvt feature show <name>`
 
-Prints a cached template's `devcontainer.json`.
+Prints a cached feature's devcontainer.json overlay.
 
-## `dvt project`
+### `dvt feature add <name>`
 
-### `dvt project init <path> --template <name>`
+Merges a feature's overlay into `./.devcontainer/devcontainer.json` (always cwd-relative).
+Auto-syncs first if the local cache is empty. See [Concepts](concepts.md) for the merge
+semantics. Refuses to write (file left byte-for-byte unchanged) if:
 
-Scaffolds `<path>/.devcontainer/devcontainer.json` from a cached template. Auto-syncs first
-if the cache is empty, or always if `--refresh` is passed. The scaffolded file's `name` field
-is set to `<path>`'s own directory name, not the template's. Refuses (exit 1, nothing
-written) if `<path>/.devcontainer/devcontainer.json` already exists, or if the template
-itself doesn't pass schema validation.
-
-### `dvt project add-feature <name>`
-
-Merges another feature's template into `./.devcontainer/devcontainer.json` (always
-cwd-relative). See [Concepts](concepts.md) for the merge semantics. Refuses to write (file
-left byte-for-byte unchanged) if:
-
-- `.devcontainer/devcontainer.json` doesn't exist
+- `.devcontainer/devcontainer.json` doesn't exist — run `dvt init` first
 - it exists but isn't strict JSON (comments/trailing commas aren't supported)
-- the feature name isn't cached (run `dvt template sync` first)
+- the feature name isn't cached and syncing doesn't produce it
 - the merge result would fail validation against the official devcontainer.json schema
+
+Also records the feature in `.devcontainer/dvt-features.json`, a tracking sidecar that
+`dvt feature remove` uses to know what's safe to undo.
+
+### `dvt feature remove <name>`
+
+Un-layers a feature previously added with `dvt feature add`, restoring only the fields
+that feature's overlay touched — anything else in the file, including manual edits made
+since, is left untouched. Refuses (exit 1, nothing written) if `<name>` isn't tracked in
+`.devcontainer/dvt-features.json` (never added via `dvt feature add`, or the file predates
+it), or if the recomputed result would fail schema validation.
 
 ## Workspace lifecycle
 
@@ -117,4 +133,4 @@ through SSH at all; it uses the container's labels directly. See
   that upload themselves — will not work through the `ProxyCommand` entry.
 
 These commands require a reachable Docker or Podman engine (see
-[Installation](installation.md)); `template`/`project` commands don't.
+[Installation](installation.md)); `feature`/`init` commands don't.

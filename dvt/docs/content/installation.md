@@ -5,7 +5,7 @@
 - Python 3.12 or 3.13 (`pyproject.toml` currently caps at `<3.15`)
 - [`pipx`](https://pipx.pypa.io/) (recommended) or `pip`
 - [Docker](https://www.docker.com/) or [Podman](https://podman.io/) — only needed for the
-  `up`/`ssh`/`stop`/`delete` commands. `template`/`project` commands work without either.
+  `up`/`ssh`/`stop`/`delete` commands. `feature`/`init` commands work without either.
 
 ## Install
 
