@@ -32,3 +32,18 @@ verification aid rather than the real install path.
 
     pixi install
     pixi run pytest
+
+### Tasks
+
+Each task below is a `pixi run` wrapper script; the ones with sub-commands
+dispatch on the first extra argument (e.g. `pixi run test unit`), so `pixi
+run <task>` alone isn't a valid invocation for those. `pixi <task>` (without
+`run`) never works — `pixi` requires the `run` verb to invoke a task.
+
+| Task | Sub-commands | What it does |
+|---|---|---|
+| `pixi run quality` | `check`, `typecheck`, `lint`, `format [--check]`, `fix`, `coverage [--html]` | mypy + ruff lint/format, or auto-fix both with `fix` |
+| `pixi run test` | `unit`, `integration`, `all`, `fast`, `clean` | pytest by tier — `integration` needs a real Docker/Podman runtime and isn't included in `all`/`fast` |
+| `pixi run docs` | `serve [--port]`, `build [--strict]`, `status`, `clean` | mkdocs site under `docs/` — `serve` runs a local dev server at `localhost:8000` |
+| `pixi run check-all` | — | `test all` + `quality check`, for a full pre-push sanity check |
+| `pixi run clean` | — | `test clean` + `docs clean` |

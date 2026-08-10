@@ -5,7 +5,11 @@ see [Concepts](concepts.md#compatibility-with-other-devcontainer-tooling) for ho
 compatible those containers are with other devcontainer-aware tooling.
 
 See the [repository README](https://github.com/jesserobertson/devcontainers/tree/main/dvt)
-for installation and usage, and the [API Reference](api.md) for module-level documentation.
+for a quick command overview.
 
-This site is a minimal starting scaffold — richer guides (installation, usage walkthrough,
-examples) are planned but not yet written.
+- [Installation](installation.md) — requirements, `pipx install`, Podman-on-Windows setup
+- [Quickstart](quickstart.md) — scaffold a project, layer on features, start a container
+- [Command Reference](commands.md) — every command, its flags, and when it refuses to run
+- [Concepts](concepts.md) — the merge algorithm, feature-tracking sidecar, and how `dvt`'s
+  own feature templates relate to devcontainer spec Features
+- [API Reference](api.md) — module-level documentation, generated from docstrings

@@ -67,7 +67,10 @@ def up(
         console,
     )
     unwrap_or_exit(up_workspace(handle, settings, name, Path.cwd()), console)
-    console.print(f"[green]Workspace '{name}' is up.[/green] ssh in with: ssh {name}")
+    console.print(
+        f"[green]Workspace '{name}' is up.[/green] Connect with: dvt ssh {name} "
+        f"(plain 'ssh {name}' also works, via the ~/.ssh/config entry dvt just wrote)"
+    )
 
 
 @app.command()

@@ -1,5 +1,32 @@
 # Concepts
 
+## Two things called "feature"
+
+`dvt` and the devcontainer spec both use the word "feature," for two different things, and a
+single `dvt feature add <name>` often touches both at once:
+
+- **A dvt feature** is one of the curated overlays under this repo's `templates/` directory
+  (`fastapi`, `agent`, `pytorch`, ...), fetched by `dvt feature sync` and applied with `dvt
+  feature add <name>`. It's a devcontainer.json *fragment* — image, mounts,
+  `postCreateCommand`, and so on — merged into your project's `devcontainer.json` at add-time,
+  per the [merge algorithm](#the-merge-algorithm) below. Nothing is downloaded or built when
+  you run `add`; it's a JSON edit.
+- **A devcontainer spec Feature** (capital F, per the [spec](https://containers.dev/implementors/features/))
+  is an OCI artifact — an `install.sh` plus metadata — referenced by ref in devcontainer.json's
+  own `features` map, and installed into the image by `dvt up` (or `@devcontainers/cli`, or any
+  other spec-compliant tool) when the container is built.
+
+A dvt feature template usually references a matching spec Feature. `templates/fastapi/devcontainer.json`
+sets `postCreateCommand`, mounts a pixi cache volume, *and* adds
+`"ghcr.io/jesserobertson/devcontainers/fastapi:latest"` to `features` — so `dvt feature add
+fastapi` edits your `devcontainer.json` in one step (JSON merge, instant, no network beyond the
+sync), while the later `dvt up` is what actually pulls that OCI ref and bakes it into the image.
+
+The distinction matters for *when* things happen: `init`/`feature add`/`feature remove` only
+ever touch `devcontainer.json` and its tracking sidecar (see below) — no Docker/Podman is
+involved, and they work with no container runtime installed at all. `up` is the only command
+that talks to a runtime, and it's also the only one that resolves spec Features.
+
 ## The merge algorithm
 
 `dvt feature add` layers a new feature's template onto an existing project's
