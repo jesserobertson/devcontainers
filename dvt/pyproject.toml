@@ -1,6 +1,6 @@
 [project]
 name = "devtemplate"
-version = "0.1.0"
+version = "0.2.0"
 description = "Layered, dev-style named devcontainer templates, built and run directly via Docker or Podman"
 requires-python = ">=3.12,<3.15"
 dependencies = [
