@@ -1,4 +1,4 @@
-from devtemplate.merge import merge_layer
+from devtemplate.merge import merge_layer, merge_layer_keys, merge_layers
 from devtemplate.schema import validate_devcontainer_config
 
 
@@ -105,3 +105,33 @@ def test_add_agent_to_fastapi_scenario():
         "source=agent-pixi-cache,target=/home/dev/.cache/pixi,type=volume",
     ]
     validate_devcontainer_config(merged)
+
+
+def test_merge_layer_keys_only_recomputes_requested_keys():
+    layers = [
+        {"image": "base", "remoteUser": "dev"},
+        {"image": "override", "features": {"a": {}}},
+    ]
+    result = merge_layer_keys(layers, {"image"})
+    assert result == {"image": "override"}
+
+
+def test_merge_layer_keys_omits_key_no_layer_sets():
+    layers = [{"remoteUser": "dev"}, {"features": {"a": {}}}]
+    result = merge_layer_keys(layers, {"postStartCommand"})
+    assert result == {}
+
+
+def test_merge_layer_keys_respects_array_dedup_rule_scoped():
+    layers = [{"mounts": ["m1"]}, {"mounts": ["m1", "m2"]}]
+    result = merge_layer_keys(layers, {"mounts"})
+    assert result == {"mounts": ["m1", "m2"]}
+
+
+def test_merge_layer_keys_matches_merge_layers_for_full_key_set():
+    layers = [
+        {"image": "base", "features": {"a": {}}, "mounts": ["m1"]},
+        {"image": "override", "features": {"b": {}}, "runArgs": ["--x"]},
+    ]
+    all_keys = {"image", "features", "mounts", "runArgs"}
+    assert merge_layer_keys(layers, all_keys) == merge_layers(layers)

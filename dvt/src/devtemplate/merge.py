@@ -46,6 +46,21 @@ def merge_layers(layers: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def merge_layer_keys(layers: list[dict[str, Any]], keys: set[str]) -> dict[str, Any]:
+    """Replay merge_layer's field-type rules across `layers` (lowest priority
+    first), restricted to `keys`. Used by `feature remove` to recompute only
+    the fields a removed feature's overlay touched, without re-merging (and
+    so without risking a change to) anything else in the target file. A key
+    in `keys` that no layer ever sets is simply absent from the result - the
+    caller deletes it from the file rather than leaving an empty container.
+    """
+    result: dict[str, Any] = {}
+    for layer in layers:
+        filtered = {key: value for key, value in layer.items() if key in keys}
+        result = merge_layer(result, filtered)
+    return result
+
+
 def _merge_lifecycle_command(base_value: Any, overlay_value: Any) -> Any:
     if isinstance(overlay_value, dict) and isinstance(base_value, dict):
         merged = dict(base_value)
