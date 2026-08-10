@@ -35,7 +35,9 @@ def info() -> None:
         )
         raise typer.Exit(code=1) from exc
 
-    console.print(f"Project:  {escape(str(config.get('name', '?')))}  ({Path.cwd()})")
+    console.print(
+        f"Project:  {escape(str(config.get('name', '?')))}  ({escape(str(Path.cwd()))})"
+    )
     console.print(f"Image:    {escape(str(config.get('image', '?')))}")
 
     sidecar_result = load_sidecar(devcontainer_dir)
@@ -68,7 +70,17 @@ def info() -> None:
         return
     handle = client_result.unwrap()
 
-    containers = find_workspace_containers_by_folder(handle.client, Path.cwd())
+    try:
+        containers = [
+            c
+            for c in find_workspace_containers_by_folder(handle.client, Path.cwd())
+            if c.labels.get("dvt.workspace")
+        ]
+    except Exception as exc:
+        console.print(
+            f"[yellow]Could not check for a live workspace: {escape(str(exc))}[/yellow]"
+        )
+        return
     if not containers:
         console.print(
             "No workspace running for this project. Run 'dvt up' to start one."

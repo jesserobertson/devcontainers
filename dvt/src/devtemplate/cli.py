@@ -77,9 +77,9 @@ def up(
     )
     unwrap_or_exit(up_workspace(handle, settings, resolved_name, Path.cwd()), console)
     console.print(
-        f"[green]Workspace '{resolved_name}' is up.[/green] "
-        f"Connect with: dvt ssh {resolved_name} "
-        f"(plain 'ssh {resolved_name}' also works, via the ~/.ssh/config entry dvt just wrote)"
+        f"[green]Workspace '{escape(resolved_name)}' is up.[/green] "
+        f"Connect with: dvt ssh {escape(resolved_name)} "
+        f"(plain 'ssh {escape(resolved_name)}' also works, via the ~/.ssh/config entry dvt just wrote)"
     )
 
 
@@ -170,7 +170,7 @@ def stop(
             f"[red]Failed to stop '{escape(resolved_name)}': {escape(str(exc))}[/red]"
         )
         raise typer.Exit(code=1) from exc
-    console.print(f"Stopped '{resolved_name}'.")
+    console.print(f"Stopped '{escape(resolved_name)}'.")
 
 
 @app.command()
@@ -204,7 +204,7 @@ def delete(
     unwrap_or_exit(
         remove_ssh_config_entry(resolved_name, Path.home() / ".ssh" / "config"), console
     )
-    console.print(f"Deleted '{resolved_name}'.")
+    console.print(f"Deleted '{escape(resolved_name)}'.")
 
 
 def main() -> None:

@@ -5,7 +5,10 @@ from pathlib import Path
 from docker.client import DockerClient
 from logerr import Err, Ok, Result
 
-from devtemplate.container import find_workspace_containers_by_folder
+from devtemplate.container import (
+    find_workspace_container,
+    find_workspace_containers_by_folder,
+)
 
 
 def _names_by_folder(client: DockerClient, cwd: Path) -> list[str]:
@@ -42,9 +45,25 @@ def resolve_for_up(
         return Err(exc)
     if len(names) == 1:
         return Ok(names[0])
-    if not names:
-        return Ok(cwd.resolve().name)
-    return Err(_multiple_matches_error("up", names))
+    if names:
+        return Err(_multiple_matches_error("up", names))
+
+    fallback_name = cwd.resolve().name
+    try:
+        existing = find_workspace_container(client, fallback_name)
+    except Exception as exc:
+        return Err(exc)
+    if existing is not None:
+        existing_folder = existing.labels.get("devcontainer.local_folder")
+        if existing_folder != str(cwd.resolve()):
+            return Err(
+                ValueError(
+                    f"A workspace named '{fallback_name}' already exists for a "
+                    f"different folder ({existing_folder or 'unknown'}). "
+                    "Pass an explicit name for this one."
+                )
+            )
+    return Ok(fallback_name)
 
 
 def resolve_existing(

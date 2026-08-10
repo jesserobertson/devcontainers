@@ -176,6 +176,32 @@ def test_info_reports_no_workspace_running_when_zero_matches(tmp_path, monkeypat
     assert "dvt up" in result.output
 
 
+def test_info_ignores_non_dvt_containers_matching_the_folder(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    import devtemplate.commands.info as info_module
+
+    fake_handle = MagicMock(client=MagicMock())
+    non_dvt_container = MagicMock(
+        labels={"devcontainer.local_folder": str(tmp_path.resolve())}
+    )
+    monkeypatch.setattr(
+        info_module, "get_client", lambda *args, **kwargs: info_module.Ok(fake_handle)
+    )
+    monkeypatch.setattr(
+        info_module,
+        "find_workspace_containers_by_folder",
+        lambda client, folder: [non_dvt_container],
+    )
+
+    result = runner.invoke(app, ["info"])
+
+    assert result.exit_code == 0, result.output
+    assert "No workspace running for this project" in result.output
+
+
 def test_info_shows_live_status_for_single_matching_workspace(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_devcontainer_json(

@@ -39,6 +39,43 @@ def test_resolve_for_up_falls_back_to_directory_name_when_no_match(tmp_path):
     assert result.unwrap() == tmp_path.resolve().name
 
 
+def test_resolve_for_up_refuses_when_fallback_name_belongs_to_a_different_folder(
+    tmp_path, monkeypatch
+):
+    client = _fake_client_with_workspaces([])
+    other_container = MagicMock(
+        labels={"devcontainer.local_folder": "/some/other/folder"}
+    )
+    monkeypatch.setattr(
+        "devtemplate.workspace_lookup.find_workspace_container",
+        lambda client, name: other_container,
+    )
+
+    result = resolve_for_up(client, None, tmp_path)
+
+    assert result.is_err()
+    message = str(result.unwrap_err())
+    assert tmp_path.resolve().name in message
+    assert "different folder" in message
+
+
+def test_resolve_for_up_reuses_fallback_name_when_it_belongs_to_this_folder(
+    tmp_path, monkeypatch
+):
+    client = _fake_client_with_workspaces([])
+    own_container = MagicMock(
+        labels={"devcontainer.local_folder": str(tmp_path.resolve())}
+    )
+    monkeypatch.setattr(
+        "devtemplate.workspace_lookup.find_workspace_container",
+        lambda client, name: own_container,
+    )
+
+    result = resolve_for_up(client, None, tmp_path)
+
+    assert result.unwrap() == tmp_path.resolve().name
+
+
 def test_resolve_for_up_refuses_on_multiple_matches(tmp_path):
     client = _fake_client_with_workspaces(["bar", "foo"])
 

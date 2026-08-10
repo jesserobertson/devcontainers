@@ -8,6 +8,18 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 ## [Unreleased]
 
+### Added
+
+- `dvt info` — shows the current folder's devcontainer setup (image, applied features) and,
+  best-effort, any live workspace tied to it.
+
+### Changed
+
+- `dvt up`/`ssh`/`stop`/`delete`'s `<name>` argument is now optional. When omitted, dvt infers
+  it from a workspace already tied to the current folder (via its `devcontainer.local_folder`
+  container label) — falling back to the folder's own directory name for `up` if none exists
+  yet, or refusing for `ssh`/`stop`/`delete` if none exists.
+
 ## [0.2.0] - 2026-08-10
 
 ### Changed
