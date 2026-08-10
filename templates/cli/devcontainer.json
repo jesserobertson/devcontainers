@@ -8,7 +8,7 @@
     "ghcr.io/jesserobertson/devcontainers/cli:latest": {}
   },
   "mounts": [
-    "source=cli-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+    "source=pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
   "remoteUser": "dev"

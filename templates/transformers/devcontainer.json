@@ -9,7 +9,7 @@
   },
   "runArgs": ["--gpus", "all"],
   "mounts": [
-    "source=transformers-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+    "source=pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
   "remoteUser": "dev"

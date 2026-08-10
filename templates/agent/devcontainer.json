@@ -9,7 +9,7 @@
   },
   "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
   "mounts": [
-    "source=agent-pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+    "source=pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
   "postCreateCommand": "pixi install",
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
