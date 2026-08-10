@@ -14,7 +14,7 @@ from rich.table import Table
 
 from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import load_settings
-from devtemplate.merge import merge_layer
+from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
 from devtemplate.sidecar import load_sidecar, write_sidecar
 from devtemplate.store import (
@@ -154,3 +154,69 @@ def add(
     unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
 
     console.print(f"Added feature '{name}' to {target}.")
+
+
+@app.command("remove")
+def remove(
+    name: str = typer.Argument(..., help="Applied feature name to remove."),  # noqa: B008
+) -> None:
+    """Un-layer a feature previously added with 'dvt feature add'."""
+    devcontainer_dir = Path(".devcontainer")
+    target = devcontainer_dir / "devcontainer.json"
+    if not target.exists():
+        console.print(
+            f"[red]{escape(str(target))} not found.[/red] Run 'dvt init' first."
+        )
+        raise typer.Exit(code=1)
+
+    sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
+    applied = sidecar["applied"]
+    index = next(
+        (i for i in range(len(applied) - 1, -1, -1) if applied[i]["name"] == name),
+        None,
+    )
+    if index is None:
+        console.print(
+            f"[red]Feature '{escape(name)}' is not tracked for this project.[/red] "
+            "Only features added with 'dvt feature add' can be removed."
+        )
+        raise typer.Exit(code=1)
+
+    removed_entry = applied[index]
+    remaining = applied[:index] + applied[index + 1 :]
+    touched_keys = set(removed_entry["overlay"].keys())
+    layers = [sidecar["init"], *(entry["overlay"] for entry in remaining)]
+    recomputed = merge_layer_keys(layers, touched_keys)
+
+    try:
+        current = json.loads(target.read_text())
+    except json.JSONDecodeError as exc:
+        console.print(
+            f"[red]{escape(str(target))} is not strict JSON "
+            "(comments/trailing commas are not supported).[/red] "
+            "Remove this feature's fields by hand instead."
+        )
+        raise typer.Exit(code=1) from exc
+
+    updated = dict(current)
+    for key in touched_keys:
+        if key in recomputed:
+            updated[key] = recomputed[key]
+        else:
+            updated.pop(key, None)
+
+    try:
+        validate_devcontainer_config(updated)
+    except jsonschema.ValidationError as exc:
+        console.print(
+            f"[red]Removing '{escape(name)}' would produce an invalid "
+            f"devcontainer.json:[/red] {escape(exc.message)}"
+        )
+        raise typer.Exit(code=1) from exc
+
+    target.write_text(json.dumps(updated, indent=2) + "\n")
+
+    sidecar["applied"] = remaining
+    unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
+
+    console.print(f"Removed feature '{name}' from {target}.")

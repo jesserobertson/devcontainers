@@ -310,3 +310,162 @@ def test_add_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
 
     result = runner.invoke(app, ["add", "agent"])
     assert result.exit_code == 0, result.output
+
+
+def test_remove_reverts_solo_feature_to_pre_add_state(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                },
+                "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+                "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+                "waitFor": "postStartCommand",
+            }
+        )
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    add_result = runner.invoke(app, ["add", "agent"])
+    assert add_result.exit_code == 0, add_result.output
+
+    remove_result = runner.invoke(app, ["remove", "agent"])
+    assert remove_result.exit_code == 0, remove_result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert "features" not in final
+    assert "runArgs" not in final
+    assert "postStartCommand" not in final
+    assert "waitFor" not in final
+    assert final["name"] == "my-project"
+    assert final["image"] == "ghcr.io/jesserobertson/base-ubuntu:latest"
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert sidecar["applied"] == []
+
+
+def test_remove_leaves_hand_edited_field_untouched(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                },
+            }
+        )
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    runner.invoke(app, ["add", "agent"])
+
+    current = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    current["forwardPorts"] = [8000]
+    (devcontainer_dir / "devcontainer.json").write_text(json.dumps(current))
+
+    remove_result = runner.invoke(app, ["remove", "agent"])
+    assert remove_result.exit_code == 0, remove_result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert final["forwardPorts"] == [8000]
+
+
+def test_remove_earlier_feature_leaves_later_overlapping_field(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    for template_name, image in [
+        ("fastapi", "ghcr.io/x/base-ubuntu:latest"),
+        ("pytorch", "ghcr.io/x/base-cuda:latest"),
+    ]:
+        template_dir = settings.templates_dir / template_name
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps({"name": template_name, "image": image})
+        )
+
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps({"name": "my-project", "image": "ghcr.io/x/base-ubuntu:latest"})
+    )
+    runner.invoke(app, ["add", "fastapi"])
+    runner.invoke(app, ["add", "pytorch"])
+
+    remove_result = runner.invoke(app, ["remove", "fastapi"])
+    assert remove_result.exit_code == 0, remove_result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert final["image"] == "ghcr.io/x/base-cuda:latest"
+
+
+def test_remove_later_feature_restores_earlier_overlapping_field(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    for template_name, image in [
+        ("fastapi", "ghcr.io/x/base-ubuntu:latest"),
+        ("pytorch", "ghcr.io/x/base-cuda:latest"),
+    ]:
+        template_dir = settings.templates_dir / template_name
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps({"name": template_name, "image": image})
+        )
+
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps({"name": "my-project", "image": "ghcr.io/x/base-ubuntu:latest"})
+    )
+    runner.invoke(app, ["add", "fastapi"])
+    runner.invoke(app, ["add", "pytorch"])
+
+    remove_result = runner.invoke(app, ["remove", "pytorch"])
+    assert remove_result.exit_code == 0, remove_result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert final["image"] == "ghcr.io/x/base-ubuntu:latest"
+
+
+def test_remove_refuses_untracked_feature_name(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    original = json.dumps(
+        {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(original)
+
+    result = runner.invoke(app, ["remove", "never-added"])
+
+    assert result.exit_code == 1
+    assert (devcontainer_dir / "devcontainer.json").read_text() == original
+
+
+def test_remove_refuses_when_devcontainer_json_missing(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["remove", "agent"])
+    assert result.exit_code == 1
