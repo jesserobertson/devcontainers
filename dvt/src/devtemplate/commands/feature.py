@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import jsonschema
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -12,6 +14,9 @@ from rich.table import Table
 
 from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import load_settings
+from devtemplate.merge import merge_layer
+from devtemplate.schema import validate_devcontainer_config
+from devtemplate.sidecar import load_sidecar, write_sidecar
 from devtemplate.store import (
     list_cached_templates,
     load_cached_template,
@@ -91,3 +96,61 @@ def sync() -> None:
         result = sync_templates(settings, client)
     names = unwrap_or_exit(result, console, prefix="Sync failed: ")
     console.print(f"Synced {len(names)} features: {', '.join(names)}")
+
+
+IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount"}
+
+
+@app.command("add")
+def add(
+    name: str = typer.Argument(..., help="Cached feature name to add."),  # noqa: B008
+) -> None:
+    """Layer a feature onto ./.devcontainer/devcontainer.json."""
+    settings = unwrap_or_exit(load_settings(), console)
+
+    if not list_cached_templates(settings):
+        with httpx.Client() as client:
+            sync_result = sync_templates(settings, client)
+        unwrap_or_exit(sync_result, console, prefix="Sync failed: ")
+
+    devcontainer_dir = Path(".devcontainer")
+    target = devcontainer_dir / "devcontainer.json"
+    if not target.exists():
+        console.print(
+            f"[red]{escape(str(target))} not found.[/red] Run 'dvt init' first."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        base_config = json.loads(target.read_text())
+    except json.JSONDecodeError as exc:
+        console.print(
+            f"[red]{escape(str(target))} is not strict JSON "
+            "(comments/trailing commas are not supported).[/red] "
+            "Add this feature's devcontainer.json snippet by hand instead."
+        )
+        raise typer.Exit(code=1) from exc
+
+    template = unwrap_or_exit(load_cached_template(settings, name), console)
+
+    overlay = {
+        key: value for key, value in template.items() if key not in IDENTITY_FIELDS
+    }
+    merged = merge_layer(base_config, overlay)
+
+    try:
+        validate_devcontainer_config(merged)
+    except jsonschema.ValidationError as exc:
+        console.print(
+            f"[red]Adding '{escape(name)}' would produce an invalid "
+            f"devcontainer.json:[/red] {escape(exc.message)}"
+        )
+        raise typer.Exit(code=1) from exc
+
+    target.write_text(json.dumps(merged, indent=2) + "\n")
+
+    sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
+    sidecar["applied"].append({"name": name, "overlay": overlay})
+    unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
+
+    console.print(f"Added feature '{name}' to {target}.")

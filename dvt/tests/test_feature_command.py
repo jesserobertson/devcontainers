@@ -147,3 +147,166 @@ def test_sync_reports_synced_feature_names(settings, monkeypatch):
     assert result.exit_code == 0
     assert "fastapi" in result.stdout
     assert "agent" in result.stdout
+
+
+def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "my-project",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}
+                },
+                "remoteUser": "dev",
+            }
+        )
+    )
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "workspaceFolder": "/workspace",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                },
+                "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+                "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+                "waitFor": "postStartCommand",
+                "remoteUser": "dev",
+            }
+        )
+    )
+
+    result = runner.invoke(app, ["add", "agent"])
+    assert result.exit_code == 0, result.output
+
+    merged = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert merged["name"] == "my-project"
+    assert "workspaceFolder" not in merged
+    assert merged["features"] == {
+        "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {},
+        "ghcr.io/jesserobertson/devcontainers/agent:latest": {},
+    }
+    assert merged["runArgs"] == ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"]
+    assert merged["postStartCommand"] == "sudo /usr/local/bin/init-firewall.sh"
+    assert merged["waitFor"] == "postStartCommand"
+
+
+def test_add_records_applied_feature_in_sidecar(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                },
+            }
+        )
+    )
+
+    result = runner.invoke(app, ["add", "agent"])
+    assert result.exit_code == 0, result.output
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert sidecar["applied"] == [
+        {
+            "name": "agent",
+            "overlay": {
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                }
+            },
+        }
+    ]
+
+
+def test_add_refuses_when_devcontainer_json_missing(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["add", "agent"])
+    assert result.exit_code == 1
+
+
+def test_add_refuses_on_invalid_json(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    original = '{\n  // a comment\n  "name": "my-project"\n}'
+    (devcontainer_dir / "devcontainer.json").write_text(original)
+
+    result = runner.invoke(app, ["add", "agent"])
+
+    assert result.exit_code == 1
+    assert (devcontainer_dir / "devcontainer.json").read_text() == original
+
+
+def test_add_refuses_when_merge_result_is_schema_invalid(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    original = json.dumps(
+        {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(original)
+
+    template_dir = settings.templates_dir / "broken"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"remoteUser": 12345}))
+
+    result = runner.invoke(app, ["add", "broken"])
+
+    assert result.exit_code == 1
+    assert (devcontainer_dir / "devcontainer.json").read_text() == original
+
+
+def test_add_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
+    from logerr import Ok
+
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    def fake_sync(settings_arg, client):
+        template_dir = settings_arg.templates_dir / "agent"
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": "agent",
+                    "features": {
+                        "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                    },
+                }
+            )
+        )
+        return Ok(["agent"])
+
+    monkeypatch.setattr("devtemplate.commands.feature.sync_templates", fake_sync)
+
+    result = runner.invoke(app, ["add", "agent"])
+    assert result.exit_code == 0, result.output
