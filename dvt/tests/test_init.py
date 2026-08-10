@@ -52,7 +52,13 @@ def test_init_image_option_overrides_default(tmp_path):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(
-        app, ["init", str(project_dir), "--image", "ghcr.io/jesserobertson/base-cuda:latest"]
+        app,
+        [
+            "init",
+            str(project_dir),
+            "--image",
+            "ghcr.io/jesserobertson/base-cuda:latest",
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -73,9 +79,9 @@ def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path):
 
     assert result.exit_code == 1
     assert (
-        json.loads(
-            (project_dir / ".devcontainer" / "devcontainer.json").read_text()
-        )["name"]
+        json.loads((project_dir / ".devcontainer" / "devcontainer.json").read_text())[
+            "name"
+        ]
         == "existing"
     )
 

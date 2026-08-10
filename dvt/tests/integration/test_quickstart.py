@@ -96,9 +96,7 @@ def test_init_and_feature_add(settings, tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.skipif(runtime_unreachable, reason="no Docker/Podman runtime reachable")
-def test_quickstart_cli_feature_full_lifecycle(
-    settings, tmp_path, monkeypatch
-) -> None:
+def test_quickstart_cli_feature_full_lifecycle(settings, tmp_path, monkeypatch) -> None:
     """Quickstart steps 3-8 end to end against the real `cli` feature:
 
     - real GHCR Feature pull + image build (exercises build.py's USER root fix)

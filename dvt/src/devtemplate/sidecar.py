@@ -34,9 +34,7 @@ def write_sidecar(
 ) -> Result[None, Exception]:
     try:
         devcontainer_dir.mkdir(parents=True, exist_ok=True)
-        sidecar_path(devcontainer_dir).write_text(
-            json.dumps(sidecar, indent=2) + "\n"
-        )
+        sidecar_path(devcontainer_dir).write_text(json.dumps(sidecar, indent=2) + "\n")
         return Ok(None)
     except Exception as exc:
         return Err(exc)

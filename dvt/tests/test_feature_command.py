@@ -24,9 +24,7 @@ def test_list_shows_cached_feature_name_and_description(settings):
                 "name": "fastapi",
                 "description": "FastAPI web APIs.",
                 "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
             }
         )
     )
@@ -46,9 +44,7 @@ def test_list_json_output_includes_all_fields(settings):
                 "name": "fastapi",
                 "description": "FastAPI web APIs.",
                 "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
             }
         )
     )
@@ -158,9 +154,7 @@ def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypa
             {
                 "name": "my-project",
                 "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
                 "remoteUser": "dev",
             }
         )
@@ -174,9 +168,7 @@ def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypa
                 "name": "agent",
                 "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
                 "workspaceFolder": "/workspace",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}},
                 "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
                 "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
                 "waitFor": "postStartCommand",
@@ -226,9 +218,7 @@ def test_add_strips_description_field_from_template_before_merging(
             {
                 "name": "cli",
                 "description": "Typer, Rich and Pydantic for building Python CLIs.",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/cli:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/cli:latest": {}},
             }
         )
     )
@@ -256,9 +246,7 @@ def test_add_records_applied_feature_in_sidecar(tmp_path, settings, monkeypatch)
         json.dumps(
             {
                 "name": "agent",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}},
             }
         )
     )
@@ -271,9 +259,7 @@ def test_add_records_applied_feature_in_sidecar(tmp_path, settings, monkeypatch)
         {
             "name": "agent",
             "overlay": {
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
-                }
+                "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}}
             },
         }
     ]
@@ -363,9 +349,7 @@ def test_remove_reverts_solo_feature_to_pre_add_state(tmp_path, settings, monkey
         json.dumps(
             {
                 "name": "agent",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}},
                 "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
                 "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
                 "waitFor": "postStartCommand",
@@ -406,9 +390,7 @@ def test_remove_leaves_hand_edited_field_untouched(tmp_path, settings, monkeypat
         json.dumps(
             {
                 "name": "agent",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/agent:latest": {}},
             }
         )
     )
@@ -571,12 +553,8 @@ def test_remove_refuses_and_leaves_no_partial_write_on_schema_invalid_result(
     remove_result = runner.invoke(app, ["remove", "agent"])
     assert remove_result.exit_code == 1, remove_result.output
 
-    assert (
-        devcontainer_dir / "devcontainer.json"
-    ).read_text() == pre_remove_config
-    assert (
-        devcontainer_dir / "dvt-features.json"
-    ).read_text() == pre_remove_sidecar
+    assert (devcontainer_dir / "devcontainer.json").read_text() == pre_remove_config
+    assert (devcontainer_dir / "dvt-features.json").read_text() == pre_remove_sidecar
 
 
 def test_remove_refuses_untracked_feature_name(tmp_path, settings, monkeypatch):
@@ -607,9 +585,7 @@ def test_remove_refuses_untracked_feature_name_when_sidecar_exists_for_other_fea
         json.dumps(
             {
                 "name": "fastapi",
-                "features": {
-                    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}
-                },
+                "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
             }
         )
     )
@@ -627,12 +603,8 @@ def test_remove_refuses_untracked_feature_name_when_sidecar_exists_for_other_fea
     result = runner.invoke(app, ["remove", "never-added"])
 
     assert result.exit_code == 1
-    assert (
-        devcontainer_dir / "devcontainer.json"
-    ).read_text() == pre_remove_config
-    assert (
-        devcontainer_dir / "dvt-features.json"
-    ).read_text() == pre_remove_sidecar
+    assert (devcontainer_dir / "devcontainer.json").read_text() == pre_remove_config
+    assert (devcontainer_dir / "dvt-features.json").read_text() == pre_remove_sidecar
 
 
 def test_remove_refuses_when_devcontainer_json_missing(tmp_path, settings, monkeypatch):
