@@ -201,7 +201,15 @@ def remove(
     if index is None:
         console.print(
             f"[red]Feature '{escape(name)}' is not tracked for this project.[/red] "
-            "Only features added with 'dvt feature add' can be removed."
+            "dvt has no record of adding it - either "
+            f"{escape(str(devcontainer_dir / 'dvt-features.json'))} doesn't exist "
+            "yet, or this feature isn't in its list of applied features. Only "
+            "features added with 'dvt feature add' can be removed this way.\n\n"
+            "To remove it by hand instead, edit "
+            f"{escape(str(target))} directly. To rebuild tracking from scratch: "
+            f"back up {escape(str(target))}, delete it, run 'dvt init', then "
+            "'dvt feature add <name>' for each feature you want - this starts "
+            "fresh tracking, but any manual customization won't carry over."
         )
         raise typer.Exit(code=1)
 

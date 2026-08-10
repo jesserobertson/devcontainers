@@ -51,10 +51,11 @@ Reference](commands.md)), so there's nothing to validate.
 - `applied` — the ordered list of features currently layered on, each paired with the exact
   overlay (the feature's template, minus the identity/metadata fields above) that was merged
   in when it was added.
-- `init` — a snapshot of `devcontainer.json`'s contents from immediately before the *first*
-  feature was ever layered on, whether that's `dvt init`'s original boilerplate, a
-  hand-written file, or either of those plus hand-edits made before that first `dvt feature
-  add`.
+- `init` — a snapshot of `devcontainer.json`'s contents from immediately before the current
+  run of applied features began (re-captured whenever `applied` is empty — so also after
+  removing every feature back down to none), whether that's `dvt init`'s original
+  boilerplate, a hand-written file, or either of those plus hand-edits made before that
+  `dvt feature add`.
 
 `dvt feature remove <name>` uses this to replay a scoped per-field merge across `init` and
 every *other* still-applied feature's overlay, restricted to just the fields `<name>`'s own
@@ -68,6 +69,19 @@ overlays say it should be — so a hand-edit to a field a *later*-added feature 
 made *between* two separate `dvt feature add` calls, is not preserved if that later feature
 is removed. Only edits made before the *first* `add` (captured in `init`), or edits to
 fields no tracked feature ever touches, are guaranteed to survive a `remove`.
+
+### When `dvt feature remove` refuses because nothing is tracked
+
+`remove <name>` only works for features `dvt feature add` itself applied — it refuses if
+`.devcontainer/dvt-features.json` doesn't exist yet, or exists but doesn't list `<name>`
+(e.g. it was merged in by hand, or the sidecar was deleted or never committed). dvt doesn't
+guess at what an untracked feature's overlay might have been, since re-deriving it from the
+feature's *current* cached definition could silently differ from whatever was actually
+merged in originally. In that situation you have two options: edit `devcontainer.json` by
+hand to remove the feature's fields yourself, or rebuild tracking from a clean slate — back
+up `devcontainer.json`, delete it, run `dvt init`, then `dvt feature add <name>` for each
+feature you want (this restarts tracking correctly, but any manual customization on the old
+file won't carry over automatically).
 
 ## Compatibility with other devcontainer tooling
 
