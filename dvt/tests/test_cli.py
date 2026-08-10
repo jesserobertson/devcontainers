@@ -30,9 +30,8 @@ def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
     )
     monkeypatch.chdir(tmp_path)
 
-    fake_handle = object()
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(fake_handle)
+        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
     )
     monkeypatch.setattr(
         cli_module,
@@ -85,7 +84,7 @@ def test_up_reports_clean_error_on_failure(monkeypatch, tmp_path):
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(object())
+        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
     )
     monkeypatch.setattr(
         cli_module,
@@ -239,4 +238,172 @@ def test_delete_removes_container_and_ssh_entry(monkeypatch):
 
     result = runner.invoke(cli_module.app, ["delete", "my-project"])
 
+    assert result.exit_code == 0
+
+
+def test_up_infers_name_from_the_single_matching_workspace(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_for_up",
+        lambda client, name, cwd: cli_module.Ok("reused-name"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path: (
+            captured.update(name=name) or cli_module.Ok(object())
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["up"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["name"] == "reused-name"
+    assert "reused-name" in result.output
+
+
+def test_up_reports_clean_error_when_multiple_workspaces_match(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_for_up",
+        lambda client, name, cwd: cli_module.Err(
+            ValueError("Multiple workspaces match this folder: bar, foo.")
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["up"])
+
+    assert result.exit_code == 1
+    assert "bar" in result.output
+    assert "foo" in result.output
+
+
+def test_ssh_infers_name_from_the_single_matching_workspace(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_existing",
+        lambda client, name, cwd, command: cli_module.Ok("reused-name"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "exec_interactive",
+        lambda cli_binary, client, name: (
+            captured.update(name=name) or cli_module.Ok(0)
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["ssh"])
+
+    assert result.exit_code == 0
+    assert captured["name"] == "reused-name"
+
+
+def test_ssh_reports_clean_error_when_no_workspace_found(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_existing",
+        lambda client, name, cwd, command: cli_module.Err(
+            ValueError("No workspace found for this folder.")
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["ssh"])
+
+    assert result.exit_code == 1
+    assert "No workspace found" in result.output
+
+
+def test_stop_infers_name_from_the_single_matching_workspace(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    fake_container = type("C", (), {"stop": lambda self: None})()
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_existing",
+        lambda client, name, cwd, command: cli_module.Ok("reused-name"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "find_workspace_container",
+        lambda client, name: (captured.update(name=name) or fake_container),
+    )
+
+    result = runner.invoke(cli_module.app, ["stop"])
+
+    assert result.exit_code == 0
+    assert captured["name"] == "reused-name"
+
+
+def test_delete_infers_name_from_the_single_matching_workspace(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    fake_container = type("C", (), {"remove": lambda self, force=True: None})()
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_existing",
+        lambda client, name, cwd, command: cli_module.Ok("reused-name"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "find_workspace_container",
+        lambda client, name: (captured.update(name=name) or fake_container),
+    )
+    monkeypatch.setattr(
+        cli_module, "remove_ssh_config_entry", lambda name, path: cli_module.Ok(None)
+    )
+
+    result = runner.invoke(cli_module.app, ["delete"])
+
+    assert result.exit_code == 0
+    assert captured["name"] == "reused-name"
+
+
+def test_info_is_registered_as_a_top_level_command():
+    result = runner.invoke(app, ["info", "--help"])
     assert result.exit_code == 0

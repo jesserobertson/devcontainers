@@ -17,18 +17,21 @@ from rich.markup import escape
 from devtemplate import __version__
 from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.commands import feature
+from devtemplate.commands.info import info as info_command
 from devtemplate.commands.init import init as init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client
 from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
 from devtemplate.workspace import up_workspace
+from devtemplate.workspace_lookup import resolve_existing, resolve_for_up
 
 app = typer.Typer(
     help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."
 )
 app.add_typer(feature.app, name="feature")
 app.command("init")(init_command)
+app.command("info")(info_command)
 console = Console()
 
 
@@ -54,7 +57,10 @@ def _root_callback(
 
 @app.command()
 def up(
-    name: str = typer.Argument(..., help="Name for the new workspace."),  # noqa: B008
+    name: str | None = typer.Argument(  # noqa: B008
+        None,
+        help="Name for the new workspace (default: inferred from the current folder).",
+    ),
 ) -> None:
     """Build and run a workspace from ./.devcontainer/devcontainer.json."""
     settings = unwrap_or_exit(load_settings(), console)
@@ -66,17 +72,22 @@ def up(
         ),
         console,
     )
-    unwrap_or_exit(up_workspace(handle, settings, name, Path.cwd()), console)
+    resolved_name = unwrap_or_exit(
+        resolve_for_up(handle.client, name, Path.cwd()), console
+    )
+    unwrap_or_exit(up_workspace(handle, settings, resolved_name, Path.cwd()), console)
     console.print(
-        f"[green]Workspace '{name}' is up.[/green] Connect with: dvt ssh {name} "
-        f"(plain 'ssh {name}' also works, via the ~/.ssh/config entry dvt just wrote)"
+        f"[green]Workspace '{resolved_name}' is up.[/green] "
+        f"Connect with: dvt ssh {resolved_name} "
+        f"(plain 'ssh {resolved_name}' also works, via the ~/.ssh/config entry dvt just wrote)"
     )
 
 
 @app.command()
 def ssh(
-    name: str = typer.Argument(  # noqa: B008
-        ..., help="Name of the workspace to connect to."
+    name: str | None = typer.Argument(  # noqa: B008
+        None,
+        help="Name of the workspace to connect to (default: inferred from the current folder).",
     ),
     stdio: bool = typer.Option(  # noqa: B008
         False,
@@ -105,10 +116,13 @@ def ssh(
         ),
         errors,
     )
+    resolved_name = unwrap_or_exit(
+        resolve_existing(handle.client, name, Path.cwd(), "ssh"), errors
+    )
     result = (
-        stdio_proxy(handle.cli_binary, handle.client, name)
+        stdio_proxy(handle.cli_binary, handle.client, resolved_name)
         if stdio
-        else exec_interactive(handle.cli_binary, handle.client, name)
+        else exec_interactive(handle.cli_binary, handle.client, resolved_name)
     )
     exit_code = unwrap_or_exit(result, errors)
     raise typer.Exit(code=exit_code)
@@ -130,7 +144,10 @@ def _find_or_exit(client: DockerClient, name: str) -> Container:
 
 @app.command()
 def stop(
-    name: str = typer.Argument(..., help="Name of the workspace to stop."),  # noqa: B008
+    name: str | None = typer.Argument(  # noqa: B008
+        None,
+        help="Name of the workspace to stop (default: inferred from the current folder).",
+    ),
 ) -> None:
     """Stop a running workspace."""
     settings = unwrap_or_exit(load_settings(), console)
@@ -142,18 +159,26 @@ def stop(
         ),
         console,
     )
-    container = _find_or_exit(handle.client, name)
+    resolved_name = unwrap_or_exit(
+        resolve_existing(handle.client, name, Path.cwd(), "stop"), console
+    )
+    container = _find_or_exit(handle.client, resolved_name)
     try:
         container.stop()
     except Exception as exc:
-        console.print(f"[red]Failed to stop '{escape(name)}': {escape(str(exc))}[/red]")
+        console.print(
+            f"[red]Failed to stop '{escape(resolved_name)}': {escape(str(exc))}[/red]"
+        )
         raise typer.Exit(code=1) from exc
-    console.print(f"Stopped '{name}'.")
+    console.print(f"Stopped '{resolved_name}'.")
 
 
 @app.command()
 def delete(
-    name: str = typer.Argument(..., help="Name of the workspace to delete."),  # noqa: B008
+    name: str | None = typer.Argument(  # noqa: B008
+        None,
+        help="Name of the workspace to delete (default: inferred from the current folder).",
+    ),
 ) -> None:
     """Delete a workspace's container (the built image is left cached)."""
     settings = unwrap_or_exit(load_settings(), console)
@@ -165,18 +190,21 @@ def delete(
         ),
         console,
     )
-    container = _find_or_exit(handle.client, name)
+    resolved_name = unwrap_or_exit(
+        resolve_existing(handle.client, name, Path.cwd(), "delete"), console
+    )
+    container = _find_or_exit(handle.client, resolved_name)
     try:
         container.remove(force=True)
     except Exception as exc:
         console.print(
-            f"[red]Failed to delete '{escape(name)}': {escape(str(exc))}[/red]"
+            f"[red]Failed to delete '{escape(resolved_name)}': {escape(str(exc))}[/red]"
         )
         raise typer.Exit(code=1) from exc
     unwrap_or_exit(
-        remove_ssh_config_entry(name, Path.home() / ".ssh" / "config"), console
+        remove_ssh_config_entry(resolved_name, Path.home() / ".ssh" / "config"), console
     )
-    console.print(f"Deleted '{name}'.")
+    console.print(f"Deleted '{resolved_name}'.")
 
 
 def main() -> None:
