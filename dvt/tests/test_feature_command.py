@@ -200,6 +200,46 @@ def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypa
     assert merged["waitFor"] == "postStartCommand"
 
 
+def test_add_strips_description_field_from_template_before_merging(
+    tmp_path, settings, monkeypatch
+):
+    # Regression test: templates/*/devcontainer.json files carry a
+    # "description" field used by 'dvt feature list'/'show' for
+    # registry metadata. It is not part of the devcontainer.json spec, so it
+    # must never be merged into a consuming project's devcontainer.json - if
+    # it leaked through, the merge result would fail schema validation
+    # ("Unevaluated properties are not allowed ('description' was
+    # unexpected)") since the schema is closed to unknown top-level keys.
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    template_dir = settings.templates_dir / "cli"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "cli",
+                "description": "Typer, Rich and Pydantic for building Python CLIs.",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/cli:latest": {}
+                },
+            }
+        )
+    )
+
+    result = runner.invoke(app, ["add", "cli"])
+    assert result.exit_code == 0, result.output
+
+    merged = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert "description" not in merged
+
+
 def test_add_records_applied_feature_in_sidecar(tmp_path, settings, monkeypatch):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"

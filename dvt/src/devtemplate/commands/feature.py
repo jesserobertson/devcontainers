@@ -98,7 +98,7 @@ def sync() -> None:
     console.print(f"Synced {len(names)} features: {', '.join(names)}")
 
 
-IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount"}
+IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount", "description"}
 
 
 @app.command("add")
