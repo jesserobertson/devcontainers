@@ -36,7 +36,7 @@ def _feature_id(ref: str) -> str:
 def _load_config(config_file: Path) -> Result[dict[str, Any], Exception]:
     if not config_file.exists():
         return Err(
-            FileNotFoundError(f"{config_file} not found. Run 'dvt project init' first.")
+            FileNotFoundError(f"{config_file} not found. Run 'dvt init' first.")
         )
     try:
         return Ok(json.loads(config_file.read_text()))

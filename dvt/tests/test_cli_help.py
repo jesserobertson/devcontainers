@@ -42,3 +42,11 @@ def test_every_argument_and_option_has_help_text():
             if not (getattr(param, "help", None) or "").strip():
                 missing.append(f"{path} {param.name!r}")
     assert not missing, f"Arguments/options missing help text: {missing}"
+
+
+def test_top_level_command_names_have_no_project_or_template_subgroups():
+    names = set(root.commands.keys())
+    assert "project" not in names
+    assert "template" not in names
+    assert "init" in names
+    assert "feature" in names

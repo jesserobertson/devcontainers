@@ -14,8 +14,10 @@ from loguru import logger
 from rich.console import Console
 from rich.markup import escape
 
+from devtemplate import __version__
 from devtemplate.cli_support import unwrap_or_exit
-from devtemplate.commands import project, template
+from devtemplate.commands import feature
+from devtemplate.commands.init import init as init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client
@@ -25,9 +27,29 @@ from devtemplate.workspace import up_workspace
 app = typer.Typer(
     help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."
 )
-app.add_typer(template.app, name="template")
-app.add_typer(project.app, name="project")
+app.add_typer(feature.app, name="feature")
+app.command("init")(init_command)
 console = Console()
+
+
+def _version_callback(value: bool) -> None:
+    if not value:
+        return
+    console.print(f"dvt {__version__}")
+    raise typer.Exit()
+
+
+@app.callback()
+def _root_callback(
+    version: bool = typer.Option(  # noqa: B008
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show dvt's version and exit.",
+    ),
+) -> None:
+    return
 
 
 @app.command()

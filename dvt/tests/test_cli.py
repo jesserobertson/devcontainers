@@ -240,17 +240,3 @@ def test_delete_removes_container_and_ssh_entry(monkeypatch):
     result = runner.invoke(cli_module.app, ["delete", "my-project"])
 
     assert result.exit_code == 0
-
-
-def test_template_subcommand_is_registered():
-    from devtemplate.cli import app
-
-    result = runner.invoke(app, ["template", "--help"])
-    assert result.exit_code == 0
-
-
-def test_project_subcommand_is_registered():
-    from devtemplate.cli import app
-
-    result = runner.invoke(app, ["project", "--help"])
-    assert result.exit_code == 0
