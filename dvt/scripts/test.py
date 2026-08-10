@@ -29,7 +29,7 @@ def unit(
 ) -> None:
     """Run unit tests (everything not marked integration/slow/network)."""
     console.print(Panel.fit("Running Unit Tests", style="blue"))
-    cmd = ["pytest", "tests/", "-m", "unit"]
+    cmd = ["pytest", "tests/", "src/devtemplate/", "-m", "unit"]
     if verbose:
         cmd.append("-v")
     if fail_fast:
@@ -68,7 +68,7 @@ def all(
     here, since they create real containers via a real container runtime.
     """
     console.print(Panel.fit("Running All Tests", style="blue"))
-    cmd = ["pytest", "tests/", "-m", "not integration"]
+    cmd = ["pytest", "tests/", "src/devtemplate/", "-m", "not integration"]
     if verbose:
         cmd.append("-v")
     with Status("Running all tests...", console=console, spinner="dots"):
@@ -82,7 +82,7 @@ def fast(
 ) -> None:
     """Run tests excluding anything marked slow or integration."""
     console.print(Panel.fit("Running Fast Tests", style="blue"))
-    cmd = ["pytest", "tests/", "-m", "not slow and not integration"]
+    cmd = ["pytest", "tests/", "src/devtemplate/", "-m", "not slow and not integration"]
     if verbose:
         cmd.append("-v")
     with Status("Running fast tests...", console=console, spinner="dots"):

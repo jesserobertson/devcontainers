@@ -23,7 +23,15 @@ def refuse_unsupported(config: dict[str, Any]) -> Result[None, Exception]:
     """Refuse (Err, nothing built) if config uses spec surface this runtime
     doesn't implement: docker-compose, build.dockerfile, lifecycle commands other
     than postCreateCommand/postStartCommand, or per-Feature installsAfter/
-    dependsOn. See the design spec's Non-Goals for why each is out for v1."""
+    dependsOn. See the design spec's Non-Goals for why each is out for v1.
+
+    Examples:
+        >>> refuse_unsupported({"image": "python:3.12"}).is_ok()
+        True
+
+        >>> refuse_unsupported({"dockerComposeFile": "docker-compose.yml"}).is_err()
+        True
+    """
     try:
         if "dockerComposeFile" in config:
             return Err(ValueError("dockerComposeFile devcontainers are not supported"))

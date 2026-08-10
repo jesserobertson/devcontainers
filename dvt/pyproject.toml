@@ -38,8 +38,9 @@ packages = ["src/devtemplate"]
 allow-direct-references = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "--cov=devtemplate --cov-report=term-missing -m \"not integration\""
+testpaths = ["tests", "src/devtemplate"]
+addopts = "--cov=devtemplate --cov-report=term-missing --doctest-modules -m \"not integration\""
+doctest_optionflags = ["ELLIPSIS", "NORMALIZE_WHITESPACE"]
 asyncio_mode = "auto"
 markers = [
     "unit: fast, fully mocked tests (auto-applied by default, see conftest.py)",

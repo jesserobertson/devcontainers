@@ -18,5 +18,14 @@ def validate_devcontainer_config(data: dict[str, Any]) -> None:
 
     Raises jsonschema.ValidationError if data doesn't conform. Vendored schema
     source: https://github.com/devcontainers/spec/blob/main/schemas/devContainer.base.schema.json
+
+    Examples:
+        >>> validate_devcontainer_config({"image": "python:3.12"})
+
+        >>> try:
+        ...     validate_devcontainer_config({"notARealField": True})
+        ... except jsonschema.ValidationError as exc:
+        ...     print(exc.message)
+        Unevaluated properties are not allowed ('notARealField' was unexpected)
     """
     jsonschema.validate(instance=data, schema=_SCHEMA)

@@ -43,6 +43,7 @@ plugins:
             docstring_style: google
             show_source: true
             show_root_heading: true
+            show_submodules: true
 
 markdown_extensions:
   - pymdownx.highlight:

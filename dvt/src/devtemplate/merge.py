@@ -18,7 +18,15 @@ FEATURE_FIELDS = {"features"}
 
 
 def merge_layer(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-    """Merge overlay onto base using field-type rules. Overlay is the higher-priority layer."""
+    """Merge overlay onto base using field-type rules. Overlay is the higher-priority layer.
+
+    Examples:
+        >>> merge_layer({"image": "python:3.12"}, {"image": "python:3.13"})
+        {'image': 'python:3.13'}
+
+        >>> merge_layer({"forwardPorts": [8000]}, {"forwardPorts": [8000, 9000]})
+        {'forwardPorts': [8000, 9000]}
+    """
     result = dict(base)
     for key, overlay_value in overlay.items():
         if key in SCALAR_FIELDS:
@@ -39,7 +47,12 @@ def merge_layer(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
 
 
 def merge_layers(layers: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compose N layers in order (first = lowest priority, last = highest priority)."""
+    """Compose N layers in order (first = lowest priority, last = highest priority).
+
+    Examples:
+        >>> merge_layers([{"image": "a"}, {"image": "b"}, {}])
+        {'image': 'b'}
+    """
     result: dict[str, Any] = {}
     for layer in layers:
         result = merge_layer(result, layer)
@@ -53,6 +66,10 @@ def merge_layer_keys(layers: list[dict[str, Any]], keys: set[str]) -> dict[str, 
     so without risking a change to) anything else in the target file. A key
     in `keys` that no layer ever sets is simply absent from the result - the
     caller deletes it from the file rather than leaving an empty container.
+
+    Examples:
+        >>> merge_layer_keys([{"image": "a", "name": "x"}, {"image": "b"}], {"image"})
+        {'image': 'b'}
     """
     result: dict[str, Any] = {}
     for layer in layers:

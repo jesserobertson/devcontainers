@@ -25,6 +25,19 @@ def generate_dockerfile(
 
     features: list of (feature_id, context_relative_dir, resolved_options), in the
     order they appear in devcontainer.json's "features" map.
+
+    Examples:
+        >>> print(generate_dockerfile(
+        ...     "python:3.12",
+        ...     [("fastapi", "features/0-fastapi", {"version": "1.0"})],
+        ... ))
+        FROM python:3.12 AS stage0
+        FROM stage0 AS feature-0-fastapi
+        COPY features/0-fastapi/ /tmp/dvt-feature/
+        USER root
+        RUN chmod +x /tmp/dvt-feature/install.sh && _REMOTE_USER=dev _CONTAINER_USER=dev VERSION=1.0 /tmp/dvt-feature/install.sh && rm -rf /tmp/dvt-feature
+        FROM feature-0-fastapi AS final
+        <BLANKLINE>
     """
     lines = [f"FROM {base_image} AS stage0"]
     current_stage = "stage0"
