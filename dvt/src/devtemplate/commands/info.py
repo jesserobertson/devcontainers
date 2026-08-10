@@ -35,17 +35,20 @@ def info() -> None:
         )
         raise typer.Exit(code=1) from exc
 
-    console.print(f"Project:  {config.get('name', '?')}  ({Path.cwd()})")
-    console.print(f"Image:    {config.get('image', '?')}")
+    console.print(
+        f"Project:  {escape(str(config.get('name', '?')))}  ({Path.cwd()})"
+    )
+    console.print(f"Image:    {escape(str(config.get('image', '?')))}")
 
     sidecar_result = load_sidecar(devcontainer_dir)
     applied = sidecar_result.unwrap()["applied"] if sidecar_result.is_ok() else []
     if applied:
-        console.print(f"Features: {', '.join(entry['name'] for entry in applied)}")
+        names = ", ".join(entry["name"] for entry in applied)
+        console.print(f"Features: {escape(names)}")
     else:
         feature_refs = list(config.get("features", {}).keys())
         if feature_refs:
-            console.print(f"Features: {', '.join(feature_refs)} (untracked)")
+            console.print(f"Features: {escape(', '.join(feature_refs))} (untracked)")
 
     console.print()
 

@@ -35,6 +35,25 @@ def test_info_refuses_when_devcontainer_json_missing(tmp_path, monkeypatch):
     assert "dvt init" in result.output
 
 
+def test_info_escapes_rich_markup_in_project_name(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "[my-project]", "image": "ghcr.io/x/base:latest"}
+    )
+    import devtemplate.commands.info as info_module
+
+    monkeypatch.setattr(
+        info_module,
+        "get_client",
+        lambda *args, **kwargs: info_module.Err(RuntimeError("no runtime")),
+    )
+
+    result = runner.invoke(app, ["info"])
+
+    assert result.exit_code == 0, result.output
+    assert "[my-project]" in result.output
+
+
 def test_info_shows_untracked_features_when_no_sidecar(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_devcontainer_json(
