@@ -16,7 +16,7 @@ from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import load_settings
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
-from devtemplate.sidecar import load_sidecar, write_sidecar
+from devtemplate.sidecar import load_sidecar, sidecar_path, write_sidecar
 from devtemplate.store import (
     list_cached_templates,
     load_cached_template,
@@ -149,7 +149,10 @@ def add(
 
     target.write_text(json.dumps(merged, indent=2) + "\n")
 
+    sidecar_existed = sidecar_path(devcontainer_dir).exists()
     sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
+    if not sidecar_existed:
+        sidecar["init"] = base_config
     sidecar["applied"].append({"name": name, "overlay": overlay})
     unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
 

@@ -450,6 +450,95 @@ def test_remove_later_feature_restores_earlier_overlapping_field(
     assert final["image"] == "ghcr.io/x/base-ubuntu:latest"
 
 
+def test_remove_restores_pre_existing_hand_set_field_when_no_prior_init(
+    tmp_path, settings, monkeypatch
+):
+    # Regression test: no 'dvt init' ever ran here, so there is no sidecar file
+    # yet when 'add' runs. The base devcontainer.json is hand-written and
+    # already sets remoteEnv.MY_VAR before dvt ever touches the file. The
+    # feature's overlay ALSO sets remoteEnv (overwriting MY_VAR and adding
+    # OTHER_VAR). If 'add' fails to capture this pre-existing state as the
+    # sidecar's "init" baseline, 'remove' has nothing to restore MY_VAR from
+    # and silently deletes it instead of restoring the hand-set value.
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "remoteEnv": {"MY_VAR": "feature-value", "OTHER_VAR": "x"},
+            }
+        )
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "my-project",
+                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+                "remoteEnv": {"MY_VAR": "keep-me"},
+            }
+        )
+    )
+    assert not (devcontainer_dir / "dvt-features.json").exists()
+
+    add_result = runner.invoke(app, ["add", "agent"])
+    assert add_result.exit_code == 0, add_result.output
+
+    after_add = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert after_add["remoteEnv"] == {
+        "MY_VAR": "feature-value",
+        "OTHER_VAR": "x",
+    }
+
+    remove_result = runner.invoke(app, ["remove", "agent"])
+    assert remove_result.exit_code == 0, remove_result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert final["remoteEnv"] == {"MY_VAR": "keep-me"}
+
+
+def test_remove_refuses_and_leaves_no_partial_write_on_schema_invalid_result(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "agent", "image": "ghcr.io/jesserobertson/agent-image:latest"}
+        )
+    )
+    # No 'image', 'dockerFile', or 'dockerComposeFile' here - the feature is
+    # the only source of a container type, so removing it should leave the
+    # config unable to satisfy the schema's oneOf container requirement.
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps({"name": "my-project"})
+    )
+
+    add_result = runner.invoke(app, ["add", "agent"])
+    assert add_result.exit_code == 0, add_result.output
+
+    pre_remove_config = (devcontainer_dir / "devcontainer.json").read_text()
+    pre_remove_sidecar = (devcontainer_dir / "dvt-features.json").read_text()
+
+    remove_result = runner.invoke(app, ["remove", "agent"])
+    assert remove_result.exit_code == 1, remove_result.output
+
+    assert (
+        devcontainer_dir / "devcontainer.json"
+    ).read_text() == pre_remove_config
+    assert (
+        devcontainer_dir / "dvt-features.json"
+    ).read_text() == pre_remove_sidecar
+
+
 def test_remove_refuses_untracked_feature_name(tmp_path, settings, monkeypatch):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"
@@ -463,6 +552,47 @@ def test_remove_refuses_untracked_feature_name(tmp_path, settings, monkeypatch):
 
     assert result.exit_code == 1
     assert (devcontainer_dir / "devcontainer.json").read_text() == original
+
+
+def test_remove_refuses_untracked_feature_name_when_sidecar_exists_for_other_feature(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "fastapi"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "fastapi",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}
+                },
+            }
+        )
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    add_result = runner.invoke(app, ["add", "fastapi"])
+    assert add_result.exit_code == 0, add_result.output
+
+    pre_remove_config = (devcontainer_dir / "devcontainer.json").read_text()
+    pre_remove_sidecar = (devcontainer_dir / "dvt-features.json").read_text()
+
+    result = runner.invoke(app, ["remove", "never-added"])
+
+    assert result.exit_code == 1
+    assert (
+        devcontainer_dir / "devcontainer.json"
+    ).read_text() == pre_remove_config
+    assert (
+        devcontainer_dir / "dvt-features.json"
+    ).read_text() == pre_remove_sidecar
 
 
 def test_remove_refuses_when_devcontainer_json_missing(tmp_path, settings, monkeypatch):
