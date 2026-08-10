@@ -10,13 +10,20 @@ from devtemplate.commands.init import DEFAULT_IMAGE, init
 app = typer.Typer()
 app.command("init")(init)
 
+
+@app.command("noop")
+def _noop() -> None:
+    """No-op command to prevent Typer single-command collapse in tests."""
+    pass
+
+
 runner = CliRunner()
 
 
 def test_init_scaffolds_devcontainer_json_with_defaults(tmp_path):
     project_dir = tmp_path / "my-project"
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     written = json.loads(
@@ -36,7 +43,7 @@ def test_init_scaffolds_devcontainer_json_with_defaults(tmp_path):
 
 
 def test_init_help_text_mentions_default_image():
-    result = runner.invoke(app, ["--help"], env={"COLUMNS": "200"})
+    result = runner.invoke(app, ["init", "--help"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert DEFAULT_IMAGE in result.output
 
@@ -45,7 +52,7 @@ def test_init_image_option_overrides_default(tmp_path):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(
-        app, [str(project_dir), "--image", "ghcr.io/jesserobertson/base-cuda:latest"]
+        app, ["init", str(project_dir), "--image", "ghcr.io/jesserobertson/base-cuda:latest"]
     )
 
     assert result.exit_code == 0, result.output
@@ -62,7 +69,7 @@ def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path):
         '{"name": "existing"}'
     )
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 1
     assert (
@@ -76,7 +83,7 @@ def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path):
 def test_init_derives_name_from_target_directory(tmp_path):
     project_dir = tmp_path / "my-actual-project"
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     written = json.loads(
@@ -88,7 +95,7 @@ def test_init_derives_name_from_target_directory(tmp_path):
 def test_init_scaffolds_pixi_toml_when_absent(tmp_path):
     project_dir = tmp_path / "my-project"
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     pixi_toml = project_dir / "pixi.toml"
@@ -104,7 +111,7 @@ def test_init_does_not_overwrite_existing_pixi_toml(tmp_path):
     project_dir.mkdir(parents=True)
     (project_dir / "pixi.toml").write_text('[project]\nname = "already-here"\n')
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     assert (
@@ -117,7 +124,7 @@ def test_init_does_not_write_pixi_toml_when_pyproject_toml_exists(tmp_path):
     project_dir.mkdir(parents=True)
     (project_dir / "pyproject.toml").write_text('[tool.pixi.project]\nname = "x"\n')
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     assert not (project_dir / "pixi.toml").exists()
@@ -126,7 +133,7 @@ def test_init_does_not_write_pixi_toml_when_pyproject_toml_exists(tmp_path):
 def test_init_writes_sidecar_with_init_block(tmp_path):
     project_dir = tmp_path / "my-project"
 
-    result = runner.invoke(app, [str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     sidecar = json.loads(
