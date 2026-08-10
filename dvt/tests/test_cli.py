@@ -31,7 +31,9 @@ def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module,
@@ -84,7 +86,9 @@ def test_up_reports_clean_error_on_failure(monkeypatch, tmp_path):
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module,
@@ -252,7 +256,9 @@ def test_up_infers_name_from_the_single_matching_workspace(monkeypatch, tmp_path
     monkeypatch.chdir(tmp_path)
 
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module,
@@ -280,7 +286,9 @@ def test_up_reports_clean_error_when_multiple_workspaces_match(monkeypatch, tmp_
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        cli_module, "get_client", lambda runtime, **kwargs: cli_module.Ok(_fake_handle())
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
     )
     monkeypatch.setattr(
         cli_module,
@@ -314,9 +322,7 @@ def test_ssh_infers_name_from_the_single_matching_workspace(monkeypatch):
     monkeypatch.setattr(
         cli_module,
         "exec_interactive",
-        lambda cli_binary, client, name: (
-            captured.update(name=name) or cli_module.Ok(0)
-        ),
+        lambda cli_binary, client, name: captured.update(name=name) or cli_module.Ok(0),
     )
 
     result = runner.invoke(cli_module.app, ["ssh"])
@@ -365,7 +371,7 @@ def test_stop_infers_name_from_the_single_matching_workspace(monkeypatch):
     monkeypatch.setattr(
         cli_module,
         "find_workspace_container",
-        lambda client, name: (captured.update(name=name) or fake_container),
+        lambda client, name: captured.update(name=name) or fake_container,
     )
 
     result = runner.invoke(cli_module.app, ["stop"])
@@ -392,7 +398,7 @@ def test_delete_infers_name_from_the_single_matching_workspace(monkeypatch):
     monkeypatch.setattr(
         cli_module,
         "find_workspace_container",
-        lambda client, name: (captured.update(name=name) or fake_container),
+        lambda client, name: captured.update(name=name) or fake_container,
     )
     monkeypatch.setattr(
         cli_module, "remove_ssh_config_entry", lambda name, path: cli_module.Ok(None)

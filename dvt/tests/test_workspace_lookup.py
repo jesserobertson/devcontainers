@@ -77,7 +77,9 @@ def test_resolve_existing_refuses_when_no_match(tmp_path):
     assert "No workspace found" in str(result.unwrap_err())
 
 
-def test_resolve_existing_refuses_on_multiple_matches_naming_the_given_command(tmp_path):
+def test_resolve_existing_refuses_on_multiple_matches_naming_the_given_command(
+    tmp_path,
+):
     client = _fake_client_with_workspaces(["bar", "foo"])
 
     result = resolve_existing(client, None, tmp_path, "stop")
