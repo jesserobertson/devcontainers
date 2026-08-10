@@ -85,9 +85,10 @@ devcontainer.json changes.
 already tied to the current folder (via its `devcontainer.local_folder` container label, not
 just the folder's own name, so it still finds a workspace created under a different name).
 Exactly one match reuses it; for `up`, no match falls back to the folder's own directory name
-to create a fresh workspace; for `ssh`/`stop`/`delete`, no match refuses (nothing to act on);
-more than one match always refuses, listing every candidate name and asking for an explicit
-one.
+to create a fresh workspace — unless a workspace already exists under that name for a
+*different* folder, in which case `up` refuses rather than silently resuming someone else's
+workspace; for `ssh`/`stop`/`delete`, no match refuses outright (nothing to act on); more than
+one match always refuses, listing every candidate name and asking for an explicit one.
 
 Feature refs in the `features` map accept either a tag
 (`ghcr.io/jesserobertson/devcontainers/cli:latest`) or a digest

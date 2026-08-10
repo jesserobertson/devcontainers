@@ -18,7 +18,8 @@ only. Revisit switching breaking changes to a major bump once the project reache
 - `dvt up`/`ssh`/`stop`/`delete`'s `<name>` argument is now optional. When omitted, dvt infers
   it from a workspace already tied to the current folder (via its `devcontainer.local_folder`
   container label) — falling back to the folder's own directory name for `up` if none exists
-  yet, or refusing for `ssh`/`stop`/`delete` if none exists.
+  yet (refusing instead if that name is already taken by a *different* folder's workspace), or
+  refusing for `ssh`/`stop`/`delete` if none exists.
 
 ## [0.2.0] - 2026-08-10
 

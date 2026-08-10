@@ -34,8 +34,11 @@ def resolve_for_up(
     through unchanged. When omitted: exactly one workspace already tied to this
     folder (via its devcontainer.local_folder label) reuses that name; none yet
     falls back to the folder's own directory name, to create a fresh workspace
-    (matching dvt init's own default-name derivation); more than one refuses,
-    listing every candidate, since dvt won't guess which one you meant.
+    (matching dvt init's own default-name derivation) - unless a workspace
+    already exists under that name for a *different* folder, in which case
+    this refuses rather than silently resuming someone else's workspace; more
+    than one folder match refuses too, listing every candidate, since dvt
+    won't guess which one you meant.
     """
     if name is not None:
         return Ok(name)
