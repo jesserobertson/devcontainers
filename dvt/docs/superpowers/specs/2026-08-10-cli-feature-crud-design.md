@@ -136,29 +136,33 @@ silently alter what `remove` reverses.
 - `dvt feature show <name>`: unchanged from today's `template show` — prints the cached
   feature's raw devcontainer.json (already valid JSON; no separate `--json` needed since the
   output already is JSON).
-- `description` comes from a new `"description"` field on each `templates/<name>/devcontainer.json`
-  in `jesserobertson/devcontainers` (out of scope for this repo's changes, but required — see
-  below). Falls back to `""` for any template not yet updated, so an existing cache with old
-  template files doesn't error.
+- `description` comes from a new `"description"` field on each `templates/<name>/devcontainer.json`.
+  `dvt` (`dvt/`) is a subproject of this same `jesserobertson/devcontainers` monorepo — `templates/`
+  is a sibling directory, not a separate repository — so this is an in-repo change, done (see
+  below). Falls back to `""` for any template missing it, so an old/unsynced cache entry doesn't
+  error.
 
-## Out-of-repo change required
+## Template description field — done
 
-`jesserobertson/devcontainers`'s `templates/<name>/devcontainer.json` files each need a new
-`"description"` field, e.g.:
+Each `templates/<name>/devcontainer.json` now carries a `"description"` field, inserted right
+after `"name"`, e.g.:
 
 ```json
 {
   "name": "fastapi",
-  "description": "FastAPI service with pixi-managed Python and a pixi cache volume.",
+  "description": "FastAPI, Pydantic and Uvicorn for building Python web APIs.",
   "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
   ...
 }
 ```
 
-This is an additional top-level field; nothing in dvt's schema validation path applies to the
-source templates themselves (only to the *merged result* written into a project), so this is
-safe to add. `load_cached_template`/`fetch_template` need no changes — they already round-trip
-the whole dict.
+Sourced from each template's corresponding `features/<name>/devcontainer-feature.json`
+description, condensed to a one-line summary (dropping install-mechanism detail like the pixi
+package list, keeping GPU/CUDA requirements since those affect which base image a project
+needs). This is an additional top-level field; nothing in dvt's schema validation path applies
+to the source templates themselves (only to the *merged result* written into a project), so
+it's safe to add. `load_cached_template`/`fetch_template` need no changes — they already
+round-trip the whole dict.
 
 ## Error handling
 
