@@ -1,5 +1,6 @@
 {
   "name": "huggingface",
+  "description": "huggingface_hub and tokenizers, with HF_HOME under the workspace cache.",
   "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",

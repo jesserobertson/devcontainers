@@ -1,5 +1,6 @@
 {
   "name": "mojo",
+  "description": "Modular MAX (Mojo) nightly.",
   "image": "ghcr.io/jesserobertson/base-cuda:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",

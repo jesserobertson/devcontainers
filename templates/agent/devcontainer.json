@@ -1,5 +1,6 @@
 {
   "name": "agent",
+  "description": "Claude Code, Pi and oh-my-pi CLI agents, with an egress-allowlist firewall for unattended use.",
   "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",

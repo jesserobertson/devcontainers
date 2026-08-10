@@ -1,5 +1,6 @@
 {
   "name": "transformers",
+  "description": "transformers, datasets, accelerate and tokenizers for Hugging Face models.",
   "image": "ghcr.io/jesserobertson/base-cuda:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",

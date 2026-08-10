@@ -1,5 +1,6 @@
 {
   "name": "jax",
+  "description": "JAX with CUDA 12 support, plus Marimo for interactive exploration.",
   "image": "ghcr.io/jesserobertson/base-cuda:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
