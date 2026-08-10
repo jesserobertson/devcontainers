@@ -35,9 +35,7 @@ def info() -> None:
         )
         raise typer.Exit(code=1) from exc
 
-    console.print(
-        f"Project:  {escape(str(config.get('name', '?')))}  ({Path.cwd()})"
-    )
+    console.print(f"Project:  {escape(str(config.get('name', '?')))}  ({Path.cwd()})")
     console.print(f"Image:    {escape(str(config.get('image', '?')))}")
 
     sidecar_result = load_sidecar(devcontainer_dir)
@@ -77,10 +75,15 @@ def info() -> None:
         )
     elif len(containers) == 1:
         container = containers[0]
-        name = container.labels.get("dvt.workspace", "?")
+        workspace_name = str(container.labels.get("dvt.workspace", "?"))
         console.print(
-            f"Workspace: {name} - {container.status} (container {container.name})"
+            f"Workspace: {escape(workspace_name)} - {escape(container.status)} "
+            f"(container {escape(str(container.name))})"
         )
     else:
-        names = sorted(c.labels.get("dvt.workspace", "?") for c in containers)
-        console.print(f"Workspaces matching this folder: {', '.join(names)}")
+        matching_names = sorted(
+            str(c.labels.get("dvt.workspace", "?")) for c in containers
+        )
+        console.print(
+            f"Workspaces matching this folder: {escape(', '.join(matching_names))}"
+        )
