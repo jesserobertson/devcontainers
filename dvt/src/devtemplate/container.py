@@ -222,3 +222,16 @@ def find_workspace_container(client: DockerClient, name: str) -> Container | Non
         all=True, filters={"label": f"dvt.workspace={name}"}
     )
     return containers[0] if containers else None
+
+
+def find_workspace_containers_by_folder(
+    client: DockerClient, folder: Path
+) -> list[Container]:
+    """Find every container tagged devcontainer.local_folder=folder (resolved to an
+    absolute path the same way compute_labels wrote it), regardless of its own
+    dvt.workspace name - lets a caller recognize a workspace tied to this folder
+    even if it was created under a name that doesn't match the folder's own."""
+    return client.containers.list(
+        all=True,
+        filters={"label": f"devcontainer.local_folder={folder.resolve()}"},
+    )

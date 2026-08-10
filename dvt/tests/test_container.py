@@ -7,6 +7,7 @@ import pytest
 from devtemplate.container import (
     compute_labels,
     find_workspace_container,
+    find_workspace_containers_by_folder,
     refuse_unsupported,
     resolve_workspace,
     run_container,
@@ -315,3 +316,24 @@ def test_find_workspace_container_returns_none_when_absent():
     fake_client.containers.list.return_value = []
 
     assert find_workspace_container(fake_client, "missing") is None
+
+
+def test_find_workspace_containers_by_folder_filters_by_label(tmp_path):
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_client.containers.list.return_value = [fake_container]
+
+    found = find_workspace_containers_by_folder(fake_client, tmp_path)
+
+    assert found == [fake_container]
+    fake_client.containers.list.assert_called_once_with(
+        all=True,
+        filters={"label": f"devcontainer.local_folder={tmp_path.resolve()}"},
+    )
+
+
+def test_find_workspace_containers_by_folder_returns_empty_list_when_absent(tmp_path):
+    fake_client = MagicMock()
+    fake_client.containers.list.return_value = []
+
+    assert find_workspace_containers_by_folder(fake_client, tmp_path) == []
