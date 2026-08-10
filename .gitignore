@@ -28,5 +28,8 @@ pixi.lock
 # Local git worktrees (scratch, not shared)
 .worktrees/
 
+# Subagent-driven-development scratch (ledgers, briefs, review packages)
+.superpowers/
+
 # Local env config (host-services/*/.env.example is the tracked template)
 .env
