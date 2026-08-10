@@ -85,6 +85,25 @@ def test_list_json_output_empty_cache_returns_empty_array(settings):
     assert json.loads(result.stdout) == []
 
 
+def test_list_json_output_skips_broken_entry_without_polluting_stdout(settings):
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi"})
+    )
+    (settings.templates_dir / "broken").mkdir()
+    (settings.templates_dir / "broken" / "devcontainer.json").write_text(
+        "{ invalid json"
+    )
+
+    result = runner.invoke(app, ["list", "--json"])
+    assert result.exit_code == 0
+    # Verify stdout is pure JSON and contains only the well-formed entry
+    rows = json.loads(result.stdout)
+    assert len(rows) == 1
+    assert rows[0]["name"] == "fastapi"
+
+
 def test_show_prints_cached_feature(settings):
     settings.templates_dir.mkdir(parents=True)
     (settings.templates_dir / "fastapi").mkdir()

@@ -22,6 +22,7 @@ app = typer.Typer(
     help="Add, remove, and inspect the devcontainer features dvt knows about."
 )
 console = Console()
+stderr_console = Console(stderr=True)
 
 
 def _feature_ref(template: dict[str, Any]) -> str:
@@ -56,12 +57,12 @@ def list_features(
                     }
                 )
             case Err(error):
-                console.print(
+                stderr_console.print(
                     f"[red]Skipping {escape(repr(name))}: {escape(str(error))}[/red]"
                 )
 
     if json_output:
-        console.print_json(json.dumps(rows))
+        print(json.dumps(rows))
         return
 
     table = Table("Name", "Description", "Base Image")
@@ -78,7 +79,7 @@ def show_feature(
     settings = unwrap_or_exit(load_settings(), console)
 
     template = unwrap_or_exit(load_cached_template(settings, name), console)
-    console.print_json(json.dumps(template))
+    print(json.dumps(template))
 
 
 @app.command("sync")
