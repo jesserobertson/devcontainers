@@ -5,7 +5,7 @@ real GHCR-published Features - never a fake local template.
 Opt-in only - run with `pixi run test integration`, never part of `pixi run test
 all`, `pixi run pytest`, or CI. Requires network access and a reachable Docker
 or Podman engine (skips cleanly, not a failure, if the runtime is unreachable;
-a missing network connection surfaces as a real failure from `template sync`,
+a missing network connection surfaces as a real failure from `feature sync`,
 since this suite's whole point is exercising the real thing).
 
 Written after a live run-through of the quickstart surfaced four real bugs
@@ -18,7 +18,7 @@ image, a real published Feature, and a real container runtime:
 - container.py never substituted devcontainer.json's `${localWorkspaceFolder}`
   variable in workspaceMount, so Docker/Podman misread the literal
   `${localWorkspaceFolder}` as an (invalid) named-volume name.
-- `dvt project init` never scaffolded a pixi.toml, so every template's
+- `dvt init` never scaffolded a pixi.toml, so every feature's
   `postCreateCommand: "pixi install"` failed outright with nothing to install
   against - and even once scaffolded, installing straight into
   <project>/.pixi/envs (the workspaceMount bind mount) failed permission
@@ -51,43 +51,44 @@ pytestmark = pytest.mark.integration
 runtime_unreachable = get_client("auto").is_err()
 
 
-def test_template_sync_and_list(settings) -> None:
-    """Quickstart steps 1-2: `dvt template sync` then `dvt template list`
+def test_feature_sync_and_list(settings) -> None:
+    """Quickstart steps 1-2: `dvt feature sync` then `dvt feature list`
     against the real GitHub repo - no container runtime needed."""
-    sync_result = runner.invoke(app, ["template", "sync"])
+    sync_result = runner.invoke(app, ["feature", "sync"])
     assert sync_result.exit_code == 0, sync_result.output
     assert "cli" in sync_result.output
 
-    list_result = runner.invoke(app, ["template", "list"])
+    list_result = runner.invoke(app, ["feature", "list"])
     assert list_result.exit_code == 0, list_result.output
     assert "cli" in list_result.output
 
 
-def test_project_init_and_add_feature(settings, tmp_path, monkeypatch) -> None:
-    """Quickstart steps 3-4: scaffold from a real template, then layer a
-    second real template's requirements in via add-feature. Config-level
-    only, no container build - the full build+run+ssh cycle for one template
-    is covered by test_quickstart_cli_template_full_lifecycle below."""
-    sync_result = runner.invoke(app, ["template", "sync"])
+def test_init_and_feature_add(settings, tmp_path, monkeypatch) -> None:
+    """Quickstart steps 3-4: scaffold with `dvt init`, then layer two real
+    features' requirements in via `dvt feature add`. Config-level only, no
+    container build - the full build+run+ssh cycle for one feature is
+    covered by test_quickstart_cli_feature_full_lifecycle below."""
+    sync_result = runner.invoke(app, ["feature", "sync"])
     assert sync_result.exit_code == 0, sync_result.output
 
     project_dir = tmp_path / "my-cli-project"
     monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(
-        app, ["project", "init", str(project_dir), "--template", "cli"]
-    )
+    init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
     devcontainer_path = project_dir / ".devcontainer" / "devcontainer.json"
     devcontainer = json.loads(devcontainer_path.read_text())
     assert devcontainer["name"] == "my-cli-project"
-    # pixi.toml scaffolding + the workspace-table fix, see project.py.
+    # pixi.toml scaffolding + the workspace-table fix, see init.py.
     pixi_toml = (project_dir / "pixi.toml").read_text()
     assert "[workspace]" in pixi_toml
 
     monkeypatch.chdir(project_dir)
-    add_result = runner.invoke(app, ["project", "add-feature", "py-devtools"])
-    assert add_result.exit_code == 0, add_result.output
+    add_cli_result = runner.invoke(app, ["feature", "add", "cli"])
+    assert add_cli_result.exit_code == 0, add_cli_result.output
+
+    add_devtools_result = runner.invoke(app, ["feature", "add", "py-devtools"])
+    assert add_devtools_result.exit_code == 0, add_devtools_result.output
 
     merged = json.loads(devcontainer_path.read_text())
     assert merged["name"] == "my-cli-project"
@@ -95,34 +96,35 @@ def test_project_init_and_add_feature(settings, tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.skipif(runtime_unreachable, reason="no Docker/Podman runtime reachable")
-def test_quickstart_cli_template_full_lifecycle(
+def test_quickstart_cli_feature_full_lifecycle(
     settings, tmp_path, monkeypatch
 ) -> None:
-    """Quickstart steps 3, 5-7 end to end against the real `cli` template:
+    """Quickstart steps 3-8 end to end against the real `cli` feature:
 
     - real GHCR Feature pull + image build (exercises build.py's USER root fix)
     - real workspaceMount with ${localWorkspaceFolder} (exercises
       container.py's variable-substitution fix)
     - a real postCreateCommand `pixi install` against dvt's own scaffolded
-      pixi.toml, kept off the workspaceMount bind mount (exercises
-      project.py's pixi.toml + detached-environments fixes)
+      pixi.toml, kept off the workspaceMount bind mount (exercises init.py's
+      pixi.toml + detached-environments fixes)
     - a real `ssh` client through the actual ~/.ssh/config ProxyCommand entry
       `up` writes (proves the ssh_server.py bridge works against a real
       Feature-built image, not just the synthetic alpine one
       test_native_runtime_lifecycle.py uses)
     """
-    sync_result = runner.invoke(app, ["template", "sync"])
+    sync_result = runner.invoke(app, ["feature", "sync"])
     assert sync_result.exit_code == 0, sync_result.output
 
     project_dir = tmp_path / "dvt-test-cli"
     monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(
-        app, ["project", "init", str(project_dir), "--template", "cli"]
-    )
+    init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
     workspace_name = f"dvt-quickstart-{uuid.uuid4().hex[:8]}"
     monkeypatch.chdir(project_dir)
+
+    add_result = runner.invoke(app, ["feature", "add", "cli"])
+    assert add_result.exit_code == 0, add_result.output
 
     try:
         up_result = runner.invoke(app, ["up", workspace_name])
