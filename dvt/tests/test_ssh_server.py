@@ -231,7 +231,10 @@ async def test_server_and_client_exchange_bytes_over_a_real_ssh_session():
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             process = await conn.create_process()
             process.stdin.write("hello\n")
@@ -268,7 +271,10 @@ async def test_handle_process_bridges_a_real_subprocess_and_returns_its_exit_cod
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             process = await conn.create_process()
             process.stdin.write("hello\n")
@@ -304,7 +310,10 @@ async def test_non_interactive_exec_request_runs_the_requested_command(monkeypat
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             process = await conn.create_process("echo hello-from-real-ssh")
             result = await process.wait()
@@ -351,7 +360,10 @@ async def test_input_still_reaches_the_container_after_a_terminal_resize(monkeyp
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             process = await conn.create_process()
             process.stdin.write("one\n")
@@ -413,7 +425,10 @@ async def test_client_vanishing_mid_session_still_yields_the_container_exit_code
 
     async with asyncio.timeout(30):
         conn = await asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         )
         await conn.create_process()
         await asyncio.sleep(0.1)  # let the session settle before pulling the rug
@@ -453,7 +468,7 @@ async def test_run_stdio_server_bridges_stdin_stdout_to_a_real_ssh_session(monke
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_end, known_hosts=None, username="anyone"
+            sock=client_end, host="dvt-test-client", known_hosts=None, username="anyone"
         ) as conn:
             process = await conn.create_process()
             process.stdin.write("hello\n")
@@ -495,7 +510,7 @@ async def test_run_stdio_server_reports_a_failed_session_as_non_zero(
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_end, known_hosts=None, username="anyone"
+            sock=client_end, host="dvt-test-client", known_hosts=None, username="anyone"
         ) as conn:
             with contextlib.suppress(asyncssh.Error):
                 # The session dies on the server side; the client sees either a
@@ -538,7 +553,10 @@ async def test_container_stderr_arrives_on_the_clients_stderr_not_its_stdout(
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             process = await conn.create_process()
             process.stdin.write_eof()
@@ -579,7 +597,10 @@ async def test_multibyte_utf8_split_across_read_boundaries_survives(monkeypatch)
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             process = await conn.create_process()
             process.stdin.write_eof()
