@@ -305,6 +305,71 @@ def test_add_refuses_when_merge_result_is_schema_invalid(
     assert (devcontainer_dir / "devcontainer.json").read_text() == original
 
 
+def test_add_refuses_when_feature_already_applied(tmp_path, settings, monkeypatch):
+    # Regression test: 'add' used to just append to sidecar["applied"] every
+    # time, with no idempotency check. Adding the same feature twice doubled
+    # fields like runArgs, and 'remove' only pops the *last* matching applied
+    # entry (by design, so a legitimately re-added feature can be removed
+    # once per add) - so one 'remove' after a double-'add' would report
+    # success while the feature was still fully applied. Refusing the second
+    # 'add' outright is the smaller, correct fix.
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps({"name": "agent", "runArgs": ["--cap-add=NET_ADMIN"]})
+    )
+
+    first = runner.invoke(app, ["add", "agent"])
+    assert first.exit_code == 0, first.output
+
+    after_first_add = (devcontainer_dir / "devcontainer.json").read_text()
+    sidecar_after_first_add = (devcontainer_dir / "dvt-features.json").read_text()
+
+    second = runner.invoke(app, ["add", "agent"])
+    assert second.exit_code == 1, second.output
+
+    assert (devcontainer_dir / "devcontainer.json").read_text() == after_first_add
+    assert (
+        devcontainer_dir / "dvt-features.json"
+    ).read_text() == sidecar_after_first_add
+
+
+def test_add_refuses_on_corrupt_sidecar_without_writing_devcontainer_json(
+    tmp_path, settings, monkeypatch
+):
+    # Regression test: 'add' used to write devcontainer.json BEFORE loading
+    # the sidecar, so a corrupt/unparseable sidecar exited 1 only after the
+    # merge result had already been written - violating the documented
+    # "byte-for-byte unchanged on any refusal" guarantee. The sidecar must be
+    # loaded (and validated) before any write happens.
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    original = json.dumps(
+        {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(original)
+    (devcontainer_dir / "dvt-features.json").write_text("{ not valid json")
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"name": "agent"}))
+
+    result = runner.invoke(app, ["add", "agent"])
+
+    assert result.exit_code == 1
+    assert (devcontainer_dir / "devcontainer.json").read_text() == original
+
+
 def test_add_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
     from logerr import Ok
 
@@ -521,6 +586,60 @@ def test_remove_restores_pre_existing_hand_set_field_when_no_prior_init(
 
     final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
     assert final["remoteEnv"] == {"MY_VAR": "keep-me"}
+
+
+def test_remove_restores_hand_edit_made_between_init_and_first_add(
+    tmp_path, settings, monkeypatch
+):
+    # Regression test: 'dvt init' always writes a sidecar with a real "init"
+    # baseline and an empty "applied" list, so a guard that only re-captured
+    # "init" when no sidecar file existed yet would never fire for a project
+    # scaffolded via 'dvt init' - "init" would stay frozen at whatever
+    # 'dvt init' originally wrote. A hand-edit made between 'dvt init' and the
+    # first 'dvt feature add' would then be silently wiped out the first time
+    # 'remove' ran on a feature touching that field. The correct baseline is
+    # "whatever the file looked like right before the first feature was ever
+    # layered on" - captured at the first 'add', not at 'dvt init' time -
+    # so the fix keys off sidecar["applied"] being empty, not file existence.
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    init_config = {
+        "name": "my-project",
+        "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+    }
+    # Simulate 'dvt init': devcontainer.json plus a sidecar with a real init
+    # baseline and an empty applied list.
+    (devcontainer_dir / "devcontainer.json").write_text(json.dumps(init_config))
+    (devcontainer_dir / "dvt-features.json").write_text(
+        json.dumps({"init": init_config, "applied": []})
+    )
+
+    # Hand-edit made after 'dvt init' but before the first 'dvt feature add'.
+    hand_edited = dict(init_config)
+    hand_edited["remoteEnv"] = {"MY_VAR": "hand-set-value"}
+    (devcontainer_dir / "devcontainer.json").write_text(json.dumps(hand_edited))
+
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "agent",
+                "remoteEnv": {"MY_VAR": "feature-value", "OTHER_VAR": "x"},
+            }
+        )
+    )
+
+    add_result = runner.invoke(app, ["add", "agent"])
+    assert add_result.exit_code == 0, add_result.output
+
+    remove_result = runner.invoke(app, ["remove", "agent"])
+    assert remove_result.exit_code == 0, remove_result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert final["remoteEnv"] == {"MY_VAR": "hand-set-value"}
 
 
 def test_remove_refuses_and_leaves_no_partial_write_on_schema_invalid_result(

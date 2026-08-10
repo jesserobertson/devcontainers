@@ -16,7 +16,7 @@ from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import load_settings
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
-from devtemplate.sidecar import load_sidecar, sidecar_path, write_sidecar
+from devtemplate.sidecar import load_sidecar, write_sidecar
 from devtemplate.store import (
     list_cached_templates,
     load_cached_template,
@@ -84,7 +84,7 @@ def show_feature(
     settings = unwrap_or_exit(load_settings(), console)
 
     template = unwrap_or_exit(load_cached_template(settings, name), console)
-    print(json.dumps(template))
+    print(json.dumps(template, indent=2))
 
 
 @app.command("sync")
@@ -98,6 +98,9 @@ def sync() -> None:
     console.print(f"Synced {len(names)} features: {', '.join(names)}")
 
 
+# "description" is feature-registry metadata (used by 'dvt feature list'/'show'), not a
+# devcontainer.json spec field - the schema is closed to unknown top-level keys, so it
+# must never be merged into a consuming project's file.
 IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount", "description"}
 
 
@@ -131,6 +134,17 @@ def add(
         )
         raise typer.Exit(code=1) from exc
 
+    # Load (and validate) the sidecar before writing anything below, so a
+    # corrupt sidecar is caught up front rather than after devcontainer.json
+    # has already been overwritten with the merge result.
+    sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
+    if any(entry["name"] == name for entry in sidecar["applied"]):
+        console.print(
+            f"[red]Feature '{escape(name)}' is already applied.[/red] "
+            f"Run 'dvt feature remove {escape(name)}' first if you want to re-add it."
+        )
+        raise typer.Exit(code=1)
+
     template = unwrap_or_exit(load_cached_template(settings, name), console)
 
     overlay = {
@@ -149,9 +163,15 @@ def add(
 
     target.write_text(json.dumps(merged, indent=2) + "\n")
 
-    sidecar_existed = sidecar_path(devcontainer_dir).exists()
-    sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
-    if not sidecar_existed:
+    # "init" should capture the file's state immediately before the *first*
+    # feature was ever layered on - whether that's dvt init's original
+    # boilerplate or a hand-written file, and whether or not it's been
+    # hand-edited since dvt started tracking it. Re-capturing it here
+    # whenever "applied" is still empty (rather than only when no sidecar
+    # file existed yet) covers both cases: a sidecar dvt init already wrote
+    # still has an empty "applied" list at this point, so its "init" gets
+    # refreshed to whatever the file actually looks like right now.
+    if not sidecar["applied"]:
         sidecar["init"] = base_config
     sidecar["applied"].append({"name": name, "overlay": overlay})
     unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
