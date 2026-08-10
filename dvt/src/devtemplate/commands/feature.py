@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import jsonschema
 from pathlib import Path
 from typing import Any
 
 import httpx
+import jsonschema
 import typer
 from logerr import Err, Ok
 from rich.console import Console
