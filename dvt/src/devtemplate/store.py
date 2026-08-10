@@ -130,7 +130,7 @@ def load_cached_template(
     if not path.exists():
         return Err(
             FileNotFoundError(
-                f"No cached template named {name!r}. Run 'dvt template sync' first."
+                f"No cached feature named {name!r}. Run 'dvt feature sync' first."
             )
         )
     try:
