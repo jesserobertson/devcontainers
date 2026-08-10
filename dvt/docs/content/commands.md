@@ -55,6 +55,21 @@ since, is left untouched. Refuses (exit 1, nothing written) if `<name>` isn't tr
 `.devcontainer/dvt-features.json` (never added via `dvt feature add`, or the file predates
 it), or if the recomputed result would fail schema validation.
 
+## `dvt info`
+
+Shows the current folder's devcontainer setup: the project name and base image from
+`devcontainer.json`, and its applied features — friendly names from `.devcontainer/dvt-features.json`
+if that sidecar exists and has entries, otherwise the raw OCI Feature refs from
+`devcontainer.json`'s own `features` map (marked `(untracked)`). Refuses ("run `dvt init`
+first") if `.devcontainer/devcontainer.json` doesn't exist. Takes no arguments — always
+operates on the current directory, like `dvt feature`.
+
+Then, best-effort: if a container runtime is reachable, reports any live workspace tied to
+this folder (via the same `devcontainer.local_folder` label `up`/`ssh`/`stop`/`delete` use to
+infer a name below) — its name, running/stopped status, and container name. No runtime
+reachable, or none found, is reported plainly rather than as an error; `dvt info` never waits
+for a stopped Podman machine to start (unlike `up`/`ssh`/`stop`/`delete`) just to check status.
+
 ## Workspace lifecycle
 
 `dvt up <name>` builds an image from cwd's `.devcontainer/devcontainer.json` — pulling
@@ -65,6 +80,14 @@ resulting workspace, not a path; run `up` from inside the project directory. If 
 workspace with that name already exists, `up` starts it (if stopped) or leaves it
 running (if already running) rather than rebuilding — delete and re-`up` to pick up
 devcontainer.json changes.
+
+`<name>` is optional on `up`/`ssh`/`stop`/`delete` — when omitted, dvt looks for a workspace
+already tied to the current folder (via its `devcontainer.local_folder` container label, not
+just the folder's own name, so it still finds a workspace created under a different name).
+Exactly one match reuses it; for `up`, no match falls back to the folder's own directory name
+to create a fresh workspace; for `ssh`/`stop`/`delete`, no match refuses (nothing to act on);
+more than one match always refuses, listing every candidate name and asking for an explicit
+one.
 
 Feature refs in the `features` map accept either a tag
 (`ghcr.io/jesserobertson/devcontainers/cli:latest`) or a digest

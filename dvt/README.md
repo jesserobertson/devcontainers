@@ -20,6 +20,7 @@ dependency not yet published to PyPI, pinned to a specific commit).
     dvt feature add agent
     dvt up my-project
     dvt ssh my-project
+    dvt info                        # from inside my-project - no name needed
 
 ## Development
 

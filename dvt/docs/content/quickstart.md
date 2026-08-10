@@ -50,22 +50,37 @@ Each `add` merges that feature's requirements (its own `features` entry, `runArg
 ## 5. Start the container
 
 `up`'s `<name>` is the tag given to the workspace, not a path — run it from inside the
-project directory:
+project directory. It's optional too: omit it and `up` uses the current directory's own name
+(`my-api` here) the first time, or reuses whatever workspace is already tied to this folder on
+a later run:
 
 ```bash
-dvt up my-api
+dvt up
 ```
 
 `dvt` pulls each added Feature, builds a multi-stage image from it, runs the container,
 and runs `postCreateCommand` (then `postStartCommand`, if a feature sets one).
 
-## 6. Connect
+## 6. Check on it
 
 ```bash
-dvt ssh my-api
+dvt info
 ```
 
-## 7. Remove a feature
+Shows the project's image and applied features, plus — since it's running — its live status:
+name, running/stopped state, and container name. `<name>` isn't needed here either; `info`
+always operates on the current directory.
+
+## 7. Connect
+
+```bash
+dvt ssh
+```
+
+Same story: no name needed from inside the project directory. (`dvt ssh my-api` still works
+too, from anywhere.)
+
+## 8. Remove a feature
 
 ```bash
 dvt feature remove agent
@@ -74,9 +89,9 @@ dvt feature remove agent
 Restores the fields `agent` touched, leaving everything else in `devcontainer.json` —
 including `fastapi`'s own contribution and any manual edits — untouched.
 
-## 8. Stop or remove the workspace
+## 9. Stop or remove the workspace
 
 ```bash
-dvt stop my-api
-dvt delete my-api
+dvt stop
+dvt delete
 ```
