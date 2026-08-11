@@ -730,3 +730,192 @@ def test_remove_refuses_when_devcontainer_json_missing(tmp_path, settings, monke
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["remove", "agent"])
     assert result.exit_code == 1
+
+
+def test_add_multiple_names_applies_all_in_order(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    for template_name in ["py-devtools", "marimo"]:
+        template_dir = settings.templates_dir / template_name
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": template_name,
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{template_name}:latest": {}
+                    },
+                }
+            )
+        )
+
+    result = runner.invoke(app, ["add", "py-devtools", "marimo"])
+
+    assert result.exit_code == 0, result.output
+    assert "Added feature 'py-devtools'" in result.output
+    assert "Added feature 'marimo'" in result.output
+
+    merged = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert merged["features"] == {
+        "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {},
+        "ghcr.io/jesserobertson/devcontainers/marimo:latest": {},
+    }
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert [entry["name"] for entry in sidecar["applied"]] == ["py-devtools", "marimo"]
+
+
+def test_add_stops_on_first_failure_leaving_earlier_successes_applied(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    template_dir = settings.templates_dir / "py-devtools"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "py-devtools",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
+                },
+            }
+        )
+    )
+
+    result = runner.invoke(app, ["add", "py-devtools", "typo-name", "marimo"])
+
+    assert result.exit_code == 1
+    assert "Added feature 'py-devtools'" in result.output
+    assert "No cached feature named" in result.output
+    assert "typo-name" in result.output
+    assert "Added feature 'marimo'" not in result.output
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert [entry["name"] for entry in sidecar["applied"]] == ["py-devtools"]
+
+
+def test_remove_multiple_names_removes_all_in_order(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    for template_name in ["py-devtools", "marimo"]:
+        template_dir = settings.templates_dir / template_name
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": template_name,
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{template_name}:latest": {}
+                    },
+                }
+            )
+        )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    runner.invoke(app, ["add", "py-devtools", "marimo"])
+
+    result = runner.invoke(app, ["remove", "py-devtools", "marimo"])
+
+    assert result.exit_code == 0, result.output
+    assert "Removed feature 'py-devtools'" in result.output
+    assert "Removed feature 'marimo'" in result.output
+
+    final = json.loads((devcontainer_dir / "devcontainer.json").read_text())
+    assert "features" not in final
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert sidecar["applied"] == []
+
+
+def test_remove_stops_on_first_failure_leaving_earlier_removals_applied(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    for template_name in ["py-devtools", "marimo"]:
+        template_dir = settings.templates_dir / template_name
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": template_name,
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{template_name}:latest": {}
+                    },
+                }
+            )
+        )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    runner.invoke(app, ["add", "py-devtools", "marimo"])
+
+    result = runner.invoke(app, ["remove", "py-devtools", "never-added", "marimo"])
+
+    assert result.exit_code == 1
+    assert "Removed feature 'py-devtools'" in result.output
+    assert "is not tracked for this project" in result.output
+    assert "Removed feature 'marimo'" not in result.output
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert [entry["name"] for entry in sidecar["applied"]] == ["marimo"]
+
+
+def test_remove_same_name_twice_in_one_invocation_fails_on_the_second(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "py-devtools"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "py-devtools",
+                "features": {
+                    "ghcr.io/jesserobertson/devcontainers/py-devtools:latest": {}
+                },
+            }
+        )
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    runner.invoke(app, ["add", "py-devtools"])
+
+    result = runner.invoke(app, ["remove", "py-devtools", "py-devtools"])
+
+    assert result.exit_code == 1
+    assert "Removed feature 'py-devtools'" in result.output
+    assert "is not tracked for this project" in result.output
+
+    sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
+    assert sidecar["applied"] == []

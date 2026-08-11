@@ -7,13 +7,13 @@ from typing import Any
 import httpx
 import jsonschema
 import typer
-from logerr import Err, Ok
+from logerr import Err, Ok, Result
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
 from devtemplate.cli_support import unwrap_or_exit
-from devtemplate.config import load_settings
+from devtemplate.config import Settings, load_settings
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
 from devtemplate.sidecar import load_sidecar, write_sidecar
@@ -104,48 +104,51 @@ def sync() -> None:
 IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount", "description"}
 
 
-@app.command("add")
-def add(
-    name: str = typer.Argument(..., help="Cached feature name to add."),  # noqa: B008
-) -> None:
-    """Layer a feature onto ./.devcontainer/devcontainer.json."""
-    settings = unwrap_or_exit(load_settings(), console)
-
-    if not list_cached_templates(settings):
-        with httpx.Client() as client:
-            sync_result = sync_templates(settings, client)
-        unwrap_or_exit(sync_result, console, prefix="Sync failed: ")
-
-    devcontainer_dir = Path(".devcontainer")
-    target = devcontainer_dir / "devcontainer.json"
+def _add_one(
+    name: str, settings: Settings, devcontainer_dir: Path, target: Path
+) -> Result[None, Exception]:
+    """Layer one feature onto target's devcontainer.json. Prints its own
+    success message and returns Ok(None) once devcontainer.json and the
+    sidecar are both written. Returns Err (plain-text message, no Rich markup
+    - the caller routes it through unwrap_or_exit, which escapes and colors
+    it) on any failure: devcontainer.json missing/not strict JSON, the
+    feature already applied, an uncached feature name, a schema-invalid
+    merge result, or a sidecar write failure.
+    """
     if not target.exists():
-        console.print(
-            f"[red]{escape(str(target))} not found.[/red] Run 'dvt init' first."
-        )
-        raise typer.Exit(code=1)
+        return Err(FileNotFoundError(f"{target} not found. Run 'dvt init' first."))
 
     try:
         base_config = json.loads(target.read_text())
-    except json.JSONDecodeError as exc:
-        console.print(
-            f"[red]{escape(str(target))} is not strict JSON "
-            "(comments/trailing commas are not supported).[/red] "
-            "Add this feature's devcontainer.json snippet by hand instead."
+    except json.JSONDecodeError:
+        return Err(
+            ValueError(
+                f"{target} is not strict JSON (comments/trailing commas are not "
+                "supported). Add this feature's devcontainer.json snippet by "
+                "hand instead."
+            )
         )
-        raise typer.Exit(code=1) from exc
 
     # Load (and validate) the sidecar before writing anything below, so a
     # corrupt sidecar is caught up front rather than after devcontainer.json
     # has already been overwritten with the merge result.
-    sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
-    if any(entry["name"] == name for entry in sidecar["applied"]):
-        console.print(
-            f"[red]Feature '{escape(name)}' is already applied.[/red] "
-            f"Run 'dvt feature remove {escape(name)}' first if you want to re-add it."
-        )
-        raise typer.Exit(code=1)
+    sidecar_result = load_sidecar(devcontainer_dir)
+    if sidecar_result.is_err():
+        return Err(sidecar_result.unwrap_err())
+    sidecar = sidecar_result.unwrap()
 
-    template = unwrap_or_exit(load_cached_template(settings, name), console)
+    if any(entry["name"] == name for entry in sidecar["applied"]):
+        return Err(
+            ValueError(
+                f"Feature {name!r} is already applied. Run 'dvt feature remove "
+                f"{name}' first if you want to re-add it."
+            )
+        )
+
+    template_result = load_cached_template(settings, name)
+    if template_result.is_err():
+        return Err(template_result.unwrap_err())
+    template = template_result.unwrap()
 
     overlay = {
         key: value for key, value in template.items() if key not in IDENTITY_FIELDS
@@ -155,11 +158,12 @@ def add(
     try:
         validate_devcontainer_config(merged)
     except jsonschema.ValidationError as exc:
-        console.print(
-            f"[red]Adding '{escape(name)}' would produce an invalid "
-            f"devcontainer.json:[/red] {escape(exc.message)}"
+        return Err(
+            ValueError(
+                f"Adding {name!r} would produce an invalid devcontainer.json: "
+                f"{exc.message}"
+            )
         )
-        raise typer.Exit(code=1) from exc
 
     target.write_text(json.dumps(merged, indent=2) + "\n")
 
@@ -174,44 +178,68 @@ def add(
     if not sidecar["applied"]:
         sidecar["init"] = base_config
     sidecar["applied"].append({"name": name, "overlay": overlay})
-    unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
+    write_result = write_sidecar(devcontainer_dir, sidecar)
+    if write_result.is_err():
+        return Err(write_result.unwrap_err())
 
-    console.print(f"Added feature '{name}' to {target}.")
+    console.print(f"Added feature '{escape(name)}' to {escape(str(target))}.")
+    return Ok(None)
 
 
-@app.command("remove")
-def remove(
-    name: str = typer.Argument(..., help="Applied feature name to remove."),  # noqa: B008
+@app.command("add")
+def add(
+    names: list[str] = typer.Argument(  # noqa: B008
+        ..., help="Cached feature name(s) to add, applied in order."
+    ),
 ) -> None:
-    """Un-layer a feature previously added with 'dvt feature add'."""
+    """Layer one or more features onto ./.devcontainer/devcontainer.json, in order."""
+    settings = unwrap_or_exit(load_settings(), console)
+
+    if not list_cached_templates(settings):
+        with httpx.Client() as client:
+            sync_result = sync_templates(settings, client)
+        unwrap_or_exit(sync_result, console, prefix="Sync failed: ")
+
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
-    if not target.exists():
-        console.print(
-            f"[red]{escape(str(target))} not found.[/red] Run 'dvt init' first."
-        )
-        raise typer.Exit(code=1)
+    for name in names:
+        unwrap_or_exit(_add_one(name, settings, devcontainer_dir, target), console)
 
-    sidecar = unwrap_or_exit(load_sidecar(devcontainer_dir), console)
+
+def _remove_one(
+    name: str, devcontainer_dir: Path, target: Path
+) -> Result[None, Exception]:
+    """Un-layer one feature previously added with 'dvt feature add'. Same
+    Result/success-printing contract as _add_one.
+    """
+    if not target.exists():
+        return Err(FileNotFoundError(f"{target} not found. Run 'dvt init' first."))
+
+    sidecar_result = load_sidecar(devcontainer_dir)
+    if sidecar_result.is_err():
+        return Err(sidecar_result.unwrap_err())
+    sidecar = sidecar_result.unwrap()
     applied = sidecar["applied"]
     index = next(
         (i for i in range(len(applied) - 1, -1, -1) if applied[i]["name"] == name),
         None,
     )
     if index is None:
-        console.print(
-            f"[red]Feature '{escape(name)}' is not tracked for this project.[/red] "
-            "dvt has no record of adding it - either "
-            f"{escape(str(devcontainer_dir / 'dvt-features.json'))} doesn't exist "
-            "yet, or this feature isn't in its list of applied features. Only "
-            "features added with 'dvt feature add' can be removed this way.\n\n"
-            "To remove it by hand instead, edit "
-            f"{escape(str(target))} directly. To rebuild tracking from scratch: "
-            f"back up {escape(str(target))}, delete it, run 'dvt init', then "
-            "'dvt feature add <name>' for each feature you want - this starts "
-            "fresh tracking, but any manual customization won't carry over."
+        return Err(
+            ValueError(
+                f"Feature {name!r} is not tracked for this project. dvt has no "
+                "record of adding it - either "
+                f"{devcontainer_dir / 'dvt-features.json'} doesn't exist yet, or "
+                "this feature isn't in its list of applied features. Only "
+                "features added with 'dvt feature add' can be removed this "
+                "way.\n\n"
+                f"To remove it by hand instead, edit {target} directly. To "
+                f"rebuild tracking from scratch: back up {target}, delete it, "
+                "run 'dvt init', then 'dvt feature add <name>' for each "
+                "feature you want - this starts fresh tracking, but any "
+                "manual customization won't carry over."
+            )
         )
-        raise typer.Exit(code=1)
 
     removed_entry = applied[index]
     remaining = applied[:index] + applied[index + 1 :]
@@ -221,13 +249,13 @@ def remove(
 
     try:
         current = json.loads(target.read_text())
-    except json.JSONDecodeError as exc:
-        console.print(
-            f"[red]{escape(str(target))} is not strict JSON "
-            "(comments/trailing commas are not supported).[/red] "
-            "Remove this feature's fields by hand instead."
+    except json.JSONDecodeError:
+        return Err(
+            ValueError(
+                f"{target} is not strict JSON (comments/trailing commas are not "
+                "supported). Remove this feature's fields by hand instead."
+            )
         )
-        raise typer.Exit(code=1) from exc
 
     updated = dict(current)
     for key in touched_keys:
@@ -239,15 +267,32 @@ def remove(
     try:
         validate_devcontainer_config(updated)
     except jsonschema.ValidationError as exc:
-        console.print(
-            f"[red]Removing '{escape(name)}' would produce an invalid "
-            f"devcontainer.json:[/red] {escape(exc.message)}"
+        return Err(
+            ValueError(
+                f"Removing {name!r} would produce an invalid devcontainer.json: "
+                f"{exc.message}"
+            )
         )
-        raise typer.Exit(code=1) from exc
 
     target.write_text(json.dumps(updated, indent=2) + "\n")
 
     sidecar["applied"] = remaining
-    unwrap_or_exit(write_sidecar(devcontainer_dir, sidecar), console)
+    write_result = write_sidecar(devcontainer_dir, sidecar)
+    if write_result.is_err():
+        return Err(write_result.unwrap_err())
 
-    console.print(f"Removed feature '{name}' from {target}.")
+    console.print(f"Removed feature '{escape(name)}' from {escape(str(target))}.")
+    return Ok(None)
+
+
+@app.command("remove")
+def remove(
+    names: list[str] = typer.Argument(  # noqa: B008
+        ..., help="Applied feature name(s) to remove, in order."
+    ),
+) -> None:
+    """Un-layer one or more features previously added with 'dvt feature add', in order."""
+    devcontainer_dir = Path(".devcontainer")
+    target = devcontainer_dir / "devcontainer.json"
+    for name in names:
+        unwrap_or_exit(_remove_one(name, devcontainer_dir, target), console)
