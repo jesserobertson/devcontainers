@@ -67,10 +67,21 @@ def build_image(
     features: list[tuple[str, Path, dict[str, str]]],
     tag: str,
     scratch_dir: Path,
+    *,
+    nocache: bool = False,
+    pull: bool = False,
 ) -> str:
     """Assemble a build context under scratch_dir (copying each extracted Feature
     directory in), write the generated Dockerfile, and build it. features: list of
-    (feature_id, extracted_dir, resolved_options)."""
+    (feature_id, extracted_dir, resolved_options).
+
+    nocache/pull default to False (normal cached build). Set both True to force
+    a from-scratch rebuild (used by `dvt up --rebuild`): nocache disables
+    Docker's build-layer cache, pull re-fetches the base image even if a local
+    copy exists - together they pick up a moved upstream base image tag or a
+    stale intermediate layer. Simply deleting the previously built image tag
+    would not achieve this, since Docker's build cache is keyed by instruction
+    content, not by output tag."""
     scratch_dir.mkdir(parents=True, exist_ok=True)
     context_features: list[tuple[str, str, dict[str, str]]] = []
     for index, (feature_id, extracted_dir, options) in enumerate(features):
@@ -81,5 +92,7 @@ def build_image(
     dockerfile_content = generate_dockerfile(base_image, context_features)
     (scratch_dir / "Dockerfile").write_text(dockerfile_content)
 
-    client.images.build(path=str(scratch_dir), tag=tag, rm=True)
+    client.images.build(
+        path=str(scratch_dir), tag=tag, rm=True, nocache=nocache, pull=pull
+    )
     return tag

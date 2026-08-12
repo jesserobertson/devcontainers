@@ -131,3 +131,37 @@ def test_build_image_returns_err_when_extracted_dir_missing(tmp_path):
     assert result.is_err()
     assert isinstance(result.unwrap_err(), FileNotFoundError)
     fake_client.images.build.assert_not_called()
+
+
+def test_build_image_defaults_to_cached_build(tmp_path):
+    fake_client = MagicMock()
+    fake_client.images.build.return_value = (MagicMock(), iter([]))
+
+    result = build_image(
+        fake_client, "base:latest", [], "dvt/x:latest", tmp_path / "scratch"
+    )
+
+    assert result.is_ok()
+    _, kwargs = fake_client.images.build.call_args
+    assert kwargs["nocache"] is False
+    assert kwargs["pull"] is False
+
+
+def test_build_image_forces_fresh_build_when_requested(tmp_path):
+    fake_client = MagicMock()
+    fake_client.images.build.return_value = (MagicMock(), iter([]))
+
+    result = build_image(
+        fake_client,
+        "base:latest",
+        [],
+        "dvt/x:latest",
+        tmp_path / "scratch",
+        nocache=True,
+        pull=True,
+    )
+
+    assert result.is_ok()
+    _, kwargs = fake_client.images.build.call_args
+    assert kwargs["nocache"] is True
+    assert kwargs["pull"] is True
