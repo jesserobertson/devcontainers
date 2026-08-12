@@ -93,14 +93,24 @@ def _config_drift_error(
 
 
 def _folder_mismatch_error(
-    existing_folder: str, project_path: Path, name: str
+    existing_folder: str | None, project_path: Path, name: str
 ) -> Exception:
-    """Build the Err raised when --rebuild is invoked for a workspace whose
-    devcontainer.local_folder label points somewhere other than the folder
-    dvt is currently running from. Rebuilding from the wrong vantage point
+    """Build the Err raised when --rebuild is invoked for a workspace that
+    isn't *confirmed* to belong to the folder dvt is currently running from -
+    either its devcontainer.local_folder label names a different folder, or
+    the label is missing entirely (so there's nothing to confirm against at
+    all). Rebuilding from the wrong vantage point, or an unconfirmed one,
     would tear down the real workspace and rebuild it with an unrelated
     project's config, so this refuses outright and leaves the container
     completely untouched."""
+    if existing_folder is None:
+        return ValueError(
+            f"Workspace {name!r} exists but dvt can't confirm it was built "
+            f"from '{project_path.resolve()}' (it has no "
+            "devcontainer.local_folder label to check). Refusing to "
+            "--rebuild it from here - run 'dvt up --rebuild' from the "
+            "workspace's own folder instead."
+        )
     return ValueError(
         f"Workspace {name!r} was built from {existing_folder!r}, but dvt is "
         f"running from '{project_path.resolve()}'. Run 'dvt up --rebuild' "
@@ -160,27 +170,35 @@ def up_workspace(
     with Docker's build cache and base-image reuse both disabled.
 
     The existing container's `devcontainer.local_folder` label is checked
-    against `project_path` before any of this: if it doesn't match (this
-    `name` was resolved from a container built from a different folder), dvt
-    can't meaningfully evaluate drift from here. Without `--rebuild` it just
-    resumes, skipping the drift check entirely. With `--rebuild` it refuses
-    outright instead - proceeding would tear down the *real* workspace and
-    rebuild it using the wrong folder's devcontainer.json. A missing
-    `devcontainer.local_folder` label (foreign/pre-feature container) is
-    treated the same as a match, falling back to the normal drift-check
-    behavior below.
+    against `project_path` before any of this, but the two branches need
+    different levels of confidence in that check:
+
+    - Without `--rebuild`, a *confirmed* mismatch (label present and
+      different) skips the drift check entirely and just resumes - dvt can't
+      meaningfully evaluate drift from the wrong vantage point. A *missing*
+      label (foreign/pre-feature container, nothing to check against) falls
+      back to the normal drift-check behavior below - resuming is
+      non-destructive either way, so the lenient reading costs nothing.
+    - With `--rebuild`, anything short of an *affirmatively confirmed* match
+      (label present and equal) refuses outright, treating "missing label"
+      the same as "confirmed mismatch": proceeding would tear down the
+      existing container on nothing more than the assumption it belongs to
+      `project_path`, which is exactly the hazard this check exists to close.
     """
     existing = find_workspace_container(handle.client, name)
     config_file = project_path / ".devcontainer" / "devcontainer.json"
 
     if existing is not None:
         existing_folder = existing.labels.get("devcontainer.local_folder")
-        folder_matches = existing_folder is None or existing_folder == str(
-            project_path.resolve()
-        )
+        resolved_project_path = str(project_path.resolve())
 
         if not rebuild:
-            if folder_matches:
+            # Lenient: a missing label isn't treated as a mismatch, since
+            # resuming an unconfirmed container is non-destructive.
+            folder_confirmed_mismatch = (
+                existing_folder is not None and existing_folder != resolved_project_path
+            )
+            if not folder_confirmed_mismatch:
                 config_result = _load_config(config_file)
                 if config_result.is_ok():
                     current_config = config_result.unwrap()
@@ -188,7 +206,10 @@ def up_workspace(
                         raise _config_drift_error(existing, current_config, name)
             return _resume_existing(existing, name).unwrap()
 
-        if not folder_matches:
+        # Strict: --rebuild tears the container down, so it requires an
+        # affirmatively confirmed match, not merely "not confirmed to differ".
+        folder_confirmed_match = existing_folder == resolved_project_path
+        if not folder_confirmed_match:
             raise _folder_mismatch_error(existing_folder, project_path, name)
 
     config = _load_config(config_file).unwrap()

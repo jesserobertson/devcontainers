@@ -544,6 +544,35 @@ def test_up_workspace_rebuild_refuses_when_folder_does_not_match(
     assert build_calls == []
 
 
+def test_up_workspace_rebuild_refuses_when_folder_label_is_missing(
+    project, handle, settings, monkeypatch
+):
+    """--rebuild against a container with no devcontainer.local_folder label
+    at all must refuse just like an explicit mismatch would - there's no way
+    to confirm the container actually belongs to project_path, and tearing
+    it down on an unconfirmed assumption is exactly the hazard this check
+    exists to close. This is stricter than the not-rebuild path, where a
+    missing label is harmless to fall through on since nothing gets
+    destroyed there."""
+    existing = MagicMock()
+    existing.labels = {}
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    build_calls = []
+    monkeypatch.setattr(
+        workspace_module,
+        "build_image",
+        lambda *a, **k: build_calls.append(1) or Ok("dvt/fastapi:latest"),
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
+
+    assert result.is_err()
+    existing.remove.assert_not_called()
+    assert build_calls == []
+
+
 def test_up_workspace_resumes_without_drift_check_when_folder_does_not_match(
     project, handle, settings, monkeypatch
 ):
