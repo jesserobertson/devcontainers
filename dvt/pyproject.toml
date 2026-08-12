@@ -13,7 +13,7 @@ dependencies = [
     "jsonschema>=4.18",
     "docker>=7.0",
     "asyncssh>=2.14",
-    "logerr[retry] @ git+https://github.com/jesserobertson/logerr.git@d3e1926540560e31941c86f4b31aab5f78397f7f",
+    "logerr[retry] @ git+https://github.com/jesserobertson/logerr.git@cbd89bd61c7f3a2abc3f32619f0f10fb5ef1c8a8",
 ]
 
 [project.scripts]
