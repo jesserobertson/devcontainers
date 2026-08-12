@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import base64
 from unittest.mock import MagicMock
 
 import pytest
 
 from devtemplate.container import (
     compute_labels,
+    config_has_drifted,
     find_workspace_container,
     find_workspace_containers_by_folder,
+    read_stored_config,
     refuse_unsupported,
     resolve_workspace,
     run_container,
@@ -127,6 +130,64 @@ def test_compute_labels_encodes_metadata(tmp_path):
     assert labels["devcontainer.local_folder"] == str(tmp_path.resolve())
     assert labels["devcontainer.config_file"] == str(config_file.resolve())
     assert "devcontainer.metadata" in labels
+
+
+def test_read_stored_config_round_trips_compute_labels(tmp_path):
+    config = {"name": "x", "image": "base:latest"}
+    labels = compute_labels(config, "x", tmp_path, tmp_path / "devcontainer.json")
+    fake_container = MagicMock()
+    fake_container.labels = labels
+
+    result = read_stored_config(fake_container)
+
+    assert result.is_ok()
+    assert result.unwrap() == config
+
+
+def test_read_stored_config_errs_on_missing_label():
+    fake_container = MagicMock()
+    fake_container.labels = {}
+
+    result = read_stored_config(fake_container)
+
+    assert result.is_err()
+
+
+def test_read_stored_config_errs_on_invalid_json_label():
+    fake_container = MagicMock()
+    fake_container.labels = {
+        "devcontainer.metadata": base64.b64encode(b"not json").decode()
+    }
+
+    result = read_stored_config(fake_container)
+
+    assert result.is_err()
+
+
+def test_config_has_drifted_false_when_config_matches(tmp_path):
+    config = {"name": "x", "image": "base:latest"}
+    labels = compute_labels(config, "x", tmp_path, tmp_path / "devcontainer.json")
+    fake_container = MagicMock()
+    fake_container.labels = labels
+
+    assert config_has_drifted(fake_container, config) is False
+
+
+def test_config_has_drifted_true_when_config_changed(tmp_path):
+    original = {"name": "x", "image": "base:latest"}
+    labels = compute_labels(original, "x", tmp_path, tmp_path / "devcontainer.json")
+    fake_container = MagicMock()
+    fake_container.labels = labels
+    changed = {**original, "postCreateCommand": "pixi install"}
+
+    assert config_has_drifted(fake_container, changed) is True
+
+
+def test_config_has_drifted_true_when_stored_config_unreadable():
+    fake_container = MagicMock()
+    fake_container.labels = {}
+
+    assert config_has_drifted(fake_container, {"name": "x"}) is True
 
 
 def test_run_container_translates_cap_add(tmp_path):

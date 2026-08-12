@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import docker.types
 from docker.client import DockerClient
@@ -75,19 +75,48 @@ def resolve_workspace(config: dict[str, Any], project_path: Path) -> tuple[str, 
     return workspace_folder, workspace_mount
 
 
+def _encode_metadata(config: dict[str, Any]) -> str:
+    """base64(json.dumps(config)) - the exact devcontainer.metadata label value.
+    Factored out of compute_labels so read_stored_config's decode side and this
+    encode side stay obviously in sync."""
+    return base64.b64encode(json.dumps(config).encode()).decode()
+
+
 def compute_labels(
     config: dict[str, Any], name: str, project_path: Path, config_file: Path
 ) -> dict[str, str]:
     """The label contract other devcontainer-aware tooling (VS Code's Dev
     Containers extension, @devcontainers/cli, devpod) uses to recognize and
     introspect a container dvt built."""
-    metadata_json = json.dumps(config)
     return {
-        "devcontainer.metadata": base64.b64encode(metadata_json.encode()).decode(),
+        "devcontainer.metadata": _encode_metadata(config),
         "devcontainer.local_folder": str(project_path.resolve()),
         "devcontainer.config_file": str(config_file.resolve()),
         "dvt.workspace": name,
     }
+
+
+@wrap_result
+def read_stored_config(container: Container) -> dict[str, Any]:
+    """Decode a container's devcontainer.metadata label back into the dict it
+    was built from. Errs if the label is missing or isn't valid base64/JSON -
+    every container dvt itself builds always carries a well-formed one via
+    compute_labels, so a failure here means a foreign or corrupted container."""
+    encoded = container.labels.get("devcontainer.metadata")
+    if encoded is None:
+        raise ValueError("container has no devcontainer.metadata label")
+    return cast(dict[str, Any], json.loads(base64.b64decode(encoded).decode()))
+
+
+def config_has_drifted(container: Container, config: dict[str, Any]) -> bool:
+    """True if container's stored config differs from config (the current
+    on-disk devcontainer.json, already parsed). Dict equality, not label-string
+    equality - JSON key order isn't meaningful. An unreadable stored config
+    counts as drifted: better to ask for --rebuild than silently resume a
+    container whose provenance can't be verified."""
+    return (
+        read_stored_config(container).map(lambda stored: stored != config).unwrap_or(True)
+    )
 
 
 def _substitute_mount_variables(
