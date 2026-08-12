@@ -8,24 +8,23 @@ import pytest
 from logerr import Ok
 
 from devtemplate import workspace as workspace_module
+from devtemplate.container import compute_labels
 from devtemplate.runtime import RuntimeHandle
 from devtemplate.workspace import up_workspace
+
+PROJECT_CONFIG = {
+    "name": "fastapi",
+    "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+    "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
+    "postCreateCommand": "pixi install",
+}
 
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     devcontainer_dir = tmp_path / ".devcontainer"
     devcontainer_dir.mkdir()
-    (devcontainer_dir / "devcontainer.json").write_text(
-        json.dumps(
-            {
-                "name": "fastapi",
-                "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
-                "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
-                "postCreateCommand": "pixi install",
-            }
-        )
-    )
+    (devcontainer_dir / "devcontainer.json").write_text(json.dumps(PROJECT_CONFIG))
     return tmp_path
 
 
@@ -106,6 +105,9 @@ def test_up_workspace_starts_existing_stopped_container(
 ):
     existing = MagicMock()
     existing.status = "exited"
+    existing.labels = compute_labels(
+        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+    )
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
@@ -123,6 +125,9 @@ def test_up_workspace_starts_existing_stopped_container(
 def test_up_workspace_noop_when_already_running(project, handle, settings, monkeypatch):
     existing = MagicMock()
     existing.status = "running"
+    existing.labels = compute_labels(
+        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+    )
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
@@ -140,11 +145,12 @@ def test_up_workspace_noop_when_already_running(project, handle, settings, monke
 def test_up_workspace_resumes_existing_even_without_devcontainer_json(
     tmp_path, handle, settings, monkeypatch
 ):
-    """devcontainer.json state must never gate resumability: the container
-    label is the sole source of truth for whether a workspace exists. Here
-    there is no .devcontainer/devcontainer.json at all (missing/invalid), yet
-    an existing container is found, so up_workspace must resume it without
-    ever loading or validating the config."""
+    """devcontainer.json state must never gate resumability. up_workspace now
+    reads it on the resume path too (to check for drift), but a missing file
+    must not block resuming - the drift check is simply skipped, and the
+    existing container is resumed exactly as if devcontainer.json were
+    present and unchanged. Here there is no .devcontainer/devcontainer.json
+    at all."""
     existing = MagicMock()
     existing.status = "exited"
     monkeypatch.setattr(
@@ -155,11 +161,6 @@ def test_up_workspace_resumes_existing_even_without_devcontainer_json(
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
-
-    def _fail_load_config(config_file):
-        raise AssertionError("_load_config must not be called on the resume path")
-
-    monkeypatch.setattr(workspace_module, "_load_config", _fail_load_config)
 
     result = up_workspace(handle, settings, "fastapi", tmp_path)
 
@@ -327,3 +328,146 @@ def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
 
     assert result.is_ok()
     assert ensure_gpu_calls == []
+
+
+def test_up_workspace_refuses_when_config_drifted(project, handle, settings, monkeypatch):
+    existing = MagicMock()
+    existing.status = "running"
+    existing.labels = compute_labels(
+        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+    )
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    (project / ".devcontainer" / "devcontainer.json").write_text(
+        json.dumps({**PROJECT_CONFIG, "postCreateCommand": "pixi install --locked"})
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project)
+
+    assert result.is_err()
+    assert "postCreateCommand" in str(result.unwrap_err())
+    existing.remove.assert_not_called()
+
+
+def test_up_workspace_refuses_when_stored_config_unreadable(
+    project, handle, settings, monkeypatch
+):
+    existing = MagicMock()
+    existing.labels = {}
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project)
+
+    assert result.is_err()
+    assert "couldn't verify" in str(result.unwrap_err())
+    existing.remove.assert_not_called()
+
+
+def test_up_workspace_rebuild_tears_down_and_rebuilds(project, handle, settings, monkeypatch):
+    existing = MagicMock()
+    existing.labels = compute_labels(
+        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+    )
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+    )
+    build_calls = []
+    monkeypatch.setattr(
+        workspace_module,
+        "build_image",
+        lambda *a, **k: build_calls.append(k) or Ok("dvt/fastapi:latest"),
+    )
+    fake_new_container = MagicMock()
+    monkeypatch.setattr(
+        workspace_module, "run_container", lambda *a, **k: Ok(fake_new_container)
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
+    )
+    monkeypatch.setattr(
+        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
+
+    assert result.is_ok()
+    assert result.unwrap() is fake_new_container
+    existing.remove.assert_called_once_with(force=True)
+    handle.client.images.remove.assert_called_once_with("dvt/fastapi:latest", force=True)
+    assert build_calls == [{"nocache": True, "pull": True}]
+
+
+def test_up_workspace_rebuild_skips_teardown_when_no_existing_container(
+    project, handle, settings, monkeypatch
+):
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: None
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+    )
+    monkeypatch.setattr(
+        workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
+    )
+    fake_container = MagicMock()
+    monkeypatch.setattr(
+        workspace_module, "run_container", lambda *a, **k: Ok(fake_container)
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
+    )
+    monkeypatch.setattr(
+        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
+
+    assert result.is_ok()
+    assert result.unwrap() is fake_container
+    handle.client.images.remove.assert_not_called()
+
+
+def test_up_workspace_rebuild_proceeds_when_image_removal_fails(
+    project, handle, settings, monkeypatch
+):
+    existing = MagicMock()
+    existing.labels = compute_labels(
+        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+    )
+    handle.client.images.remove.side_effect = RuntimeError("image in use")
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+    )
+    monkeypatch.setattr(
+        workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
+    )
+    fake_container = MagicMock()
+    monkeypatch.setattr(
+        workspace_module, "run_container", lambda *a, **k: Ok(fake_container)
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
+    )
+    monkeypatch.setattr(
+        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
+
+    assert result.is_ok()
+    existing.remove.assert_called_once_with(force=True)

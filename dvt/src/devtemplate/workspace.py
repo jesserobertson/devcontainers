@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+from docker.client import DockerClient
 from docker.models.containers import Container
 from logerr import Result
 from logerr.itertools import traverse_result
@@ -15,7 +16,9 @@ from devtemplate import podman_machine
 from devtemplate.build import build_image
 from devtemplate.config import Settings
 from devtemplate.container import (
+    config_has_drifted,
     find_workspace_container,
+    read_stored_config,
     refuse_unsupported,
     run_container,
     run_lifecycle_commands,
@@ -59,25 +62,87 @@ def _resume_existing(existing: Container, name: str) -> Container:
     return existing
 
 
+def _config_drift_error(existing: Container, config: dict[str, Any], name: str) -> Exception:
+    """Build the Err raised when an existing workspace's container doesn't
+    match the current devcontainer.json. Distinguishes "config on disk
+    differs from what was built" (lists the changed top-level keys) from
+    "can't tell" (the container's own devcontainer.metadata label is
+    unreadable) - both point at --rebuild, but the message says why."""
+    stored_result = read_stored_config(existing)
+    if stored_result.is_err():
+        return ValueError(
+            f"Workspace {name!r} already exists but dvt couldn't verify its "
+            f"config ({stored_result.unwrap_err()}). Run 'dvt up --rebuild' "
+            "to rebuild it."
+        )
+    stored = stored_result.unwrap()
+    changed_keys = sorted(
+        key
+        for key in stored.keys() | config.keys()
+        if stored.get(key) != config.get(key)
+    )
+    return ValueError(
+        f"Workspace {name!r} already exists but its devcontainer.json has "
+        f"changed since it was built ({', '.join(changed_keys)}). Run "
+        "'dvt up --rebuild' to rebuild it, or 'dvt up' again to keep using "
+        "the existing container."
+    )
+
+
+@wrap_result
+def _rebuild_teardown(client: DockerClient, existing: Container, image_tag: str) -> None:
+    """Remove the existing container so the fresh-build path below can run as
+    if no workspace existed yet. Only existing.remove() failing is fatal
+    (surfaced as Err) - if the old container can't be removed, --rebuild
+    can't safely proceed. Dropping the cached image tag afterward is
+    best-effort and swallowed on failure: it's purely for `docker images`
+    hygiene, since the upcoming build_image(nocache=True, pull=True) call
+    overwrites the tag regardless and is what actually forces freshness, not
+    this removal.
+    """
+    existing.remove(force=True)
+    try:
+        client.images.remove(image_tag, force=True)
+    except Exception:
+        pass
+
+
 @wrap_result
 def up_workspace(
-    handle: RuntimeHandle, settings: Settings, name: str, project_path: Path
+    handle: RuntimeHandle,
+    settings: Settings,
+    name: str,
+    project_path: Path,
+    rebuild: bool = False,
 ) -> Container:
     """Full `dvt up` sequence: validate -> pull Features -> build -> run ->
     lifecycle commands -> SSH config. Returns the running Container.
 
-    Handles the re-`up` case (a workspace with this name already exists): if its
-    container is stopped, starts it rather than rebuilding; if already running,
-    just ensures the SSH config entry is current and returns it. Only builds+runs
-    from scratch when no container with this `dvt.workspace` label exists yet -
-    no in-place devcontainer.json changes are picked up on re-`up` in v1; delete
-    and re-`up` for that.
+    Handles the re-`up` case (a workspace with this name already exists): if
+    devcontainer.json is unreadable, or matches what the container was built
+    from (compared via its devcontainer.metadata label), resumes it exactly
+    as before. If devcontainer.json differs and `rebuild` is False, refuses
+    with a message naming the changed keys and pointing at `--rebuild`. If
+    `rebuild` is True, tears down the existing container and its cached
+    image tag first (regardless of whether config actually drifted -
+    `--rebuild` is also the general force-fresh escape hatch for e.g. a moved
+    upstream base image tag), then falls through into the same
+    build-from-scratch sequence used when no container exists yet, with
+    Docker's build cache and base-image reuse both disabled.
     """
     existing = find_workspace_container(handle.client, name)
-    if existing is not None:
-        return _resume_existing(existing, name).unwrap()
-
     config_file = project_path / ".devcontainer" / "devcontainer.json"
+
+    if existing is not None:
+        if not rebuild:
+            config_result = _load_config(config_file)
+            if config_result.is_ok():
+                current_config = config_result.unwrap()
+                if config_has_drifted(existing, current_config):
+                    raise _config_drift_error(existing, current_config, name)
+            return _resume_existing(existing, name).unwrap()
+        _rebuild_teardown(handle.client, existing, f"dvt/{name}:latest").unwrap()
+
     config = _load_config(config_file).unwrap()
 
     refuse_unsupported(config).unwrap()
@@ -114,6 +179,8 @@ def up_workspace(
             features,
             f"dvt/{name}:latest",
             Path(scratch),
+            nocache=rebuild,
+            pull=rebuild,
         ).unwrap()
 
     container = run_container(
