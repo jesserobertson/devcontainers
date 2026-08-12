@@ -61,6 +61,11 @@ def up(
         None,
         help="Name for the new workspace (default: inferred from the current folder).",
     ),
+    rebuild: bool = typer.Option(  # noqa: B008
+        False,
+        "--rebuild",
+        help="Force a fresh rebuild, discarding the existing container and cached image.",
+    ),
 ) -> None:
     """Build and run a workspace from ./.devcontainer/devcontainer.json."""
     settings = unwrap_or_exit(load_settings(), console)
@@ -75,7 +80,9 @@ def up(
     resolved_name = unwrap_or_exit(
         resolve_for_up(handle.client, name, Path.cwd()), console
     )
-    unwrap_or_exit(up_workspace(handle, settings, resolved_name, Path.cwd()), console)
+    unwrap_or_exit(
+        up_workspace(handle, settings, resolved_name, Path.cwd(), rebuild=rebuild), console
+    )
     console.print(
         f"[green]Workspace '{escape(resolved_name)}' is up.[/green] "
         f"Connect with: dvt ssh {escape(resolved_name)} "

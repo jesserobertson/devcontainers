@@ -38,7 +38,7 @@ def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path: cli_module.Ok(object()),
+        lambda handle, settings, name, path, rebuild=False: cli_module.Ok(object()),
     )
 
     result = runner.invoke(cli_module.app, ["up", "my-project"])
@@ -69,7 +69,7 @@ def test_up_passes_podman_machine_settings_to_get_client(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path: cli_module.Ok(object()),
+        lambda handle, settings, name, path, rebuild=False: cli_module.Ok(object()),
     )
 
     result = runner.invoke(cli_module.app, ["up", "my-project"])
@@ -93,7 +93,7 @@ def test_up_reports_clean_error_on_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path: cli_module.Err(
+        lambda handle, settings, name, path, rebuild=False: cli_module.Err(
             FileNotFoundError("no devcontainer.json")
         ),
     )
@@ -269,7 +269,7 @@ def test_up_infers_name_from_the_single_matching_workspace(monkeypatch, tmp_path
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path: (
+        lambda handle, settings, name, path, rebuild=False: (
             captured.update(name=name) or cli_module.Ok(object())
         ),
     )
@@ -408,6 +408,36 @@ def test_delete_infers_name_from_the_single_matching_workspace(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["name"] == "reused-name"
+
+
+def test_up_rebuild_flag_threads_through_to_up_workspace(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path, rebuild=False: (
+            captured.update(rebuild=rebuild) or cli_module.Ok(object())
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["up", "my-project", "--rebuild"])
+
+    assert result.exit_code == 0
+    assert captured["rebuild"] is True
 
 
 def test_info_is_registered_as_a_top_level_command():
