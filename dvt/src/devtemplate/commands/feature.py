@@ -7,7 +7,8 @@ from typing import Any
 import httpx
 import jsonschema
 import typer
-from logerr import Err, Ok, Result
+from logerr import Err, Ok
+from logerr.utilities import wrap_result
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -104,9 +105,10 @@ def sync() -> None:
 IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount", "description"}
 
 
+@wrap_result
 def _add_one(
     name: str, settings: Settings, devcontainer_dir: Path, target: Path
-) -> Result[None, Exception]:
+) -> None:
     """Layer one feature onto target's devcontainer.json. Prints its own
     success message and returns Ok(None) once devcontainer.json and the
     sidecar are both written. Returns Err (plain-text message, no Rich markup
@@ -116,39 +118,29 @@ def _add_one(
     merge result, or a sidecar write failure.
     """
     if not target.exists():
-        return Err(FileNotFoundError(f"{target} not found. Run 'dvt init' first."))
+        raise FileNotFoundError(f"{target} not found. Run 'dvt init' first.")
 
     try:
         base_config = json.loads(target.read_text())
-    except json.JSONDecodeError:
-        return Err(
-            ValueError(
-                f"{target} is not strict JSON (comments/trailing commas are not "
-                "supported). Add this feature's devcontainer.json snippet by "
-                "hand instead."
-            )
-        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{target} is not strict JSON (comments/trailing commas are not "
+            "supported). Add this feature's devcontainer.json snippet by "
+            "hand instead."
+        ) from exc
 
     # Load (and validate) the sidecar before writing anything below, so a
     # corrupt sidecar is caught up front rather than after devcontainer.json
     # has already been overwritten with the merge result.
-    sidecar_result = load_sidecar(devcontainer_dir)
-    if sidecar_result.is_err():
-        return Err(sidecar_result.unwrap_err())
-    sidecar = sidecar_result.unwrap()
+    sidecar = load_sidecar(devcontainer_dir).unwrap()
 
     if any(entry["name"] == name for entry in sidecar["applied"]):
-        return Err(
-            ValueError(
-                f"Feature {name!r} is already applied. Run 'dvt feature remove "
-                f"{name}' first if you want to re-add it."
-            )
+        raise ValueError(
+            f"Feature {name!r} is already applied. Run 'dvt feature remove "
+            f"{name}' first if you want to re-add it."
         )
 
-    template_result = load_cached_template(settings, name)
-    if template_result.is_err():
-        return Err(template_result.unwrap_err())
-    template = template_result.unwrap()
+    template = load_cached_template(settings, name).unwrap()
 
     overlay = {
         key: value for key, value in template.items() if key not in IDENTITY_FIELDS
@@ -158,12 +150,9 @@ def _add_one(
     try:
         validate_devcontainer_config(merged)
     except jsonschema.ValidationError as exc:
-        return Err(
-            ValueError(
-                f"Adding {name!r} would produce an invalid devcontainer.json: "
-                f"{exc.message}"
-            )
-        )
+        raise ValueError(
+            f"Adding {name!r} would produce an invalid devcontainer.json: {exc.message}"
+        ) from exc
 
     target.write_text(json.dumps(merged, indent=2) + "\n")
 
@@ -178,12 +167,9 @@ def _add_one(
     if not sidecar["applied"]:
         sidecar["init"] = base_config
     sidecar["applied"].append({"name": name, "overlay": overlay})
-    write_result = write_sidecar(devcontainer_dir, sidecar)
-    if write_result.is_err():
-        return Err(write_result.unwrap_err())
+    write_sidecar(devcontainer_dir, sidecar).unwrap()
 
     console.print(f"Added feature '{escape(name)}' to {escape(str(target))}.")
-    return Ok(None)
 
 
 @app.command("add")
@@ -206,39 +192,33 @@ def add(
         unwrap_or_exit(_add_one(name, settings, devcontainer_dir, target), console)
 
 
-def _remove_one(
-    name: str, devcontainer_dir: Path, target: Path
-) -> Result[None, Exception]:
+@wrap_result
+def _remove_one(name: str, devcontainer_dir: Path, target: Path) -> None:
     """Un-layer one feature previously added with 'dvt feature add'. Same
     Result/success-printing contract as _add_one.
     """
     if not target.exists():
-        return Err(FileNotFoundError(f"{target} not found. Run 'dvt init' first."))
+        raise FileNotFoundError(f"{target} not found. Run 'dvt init' first.")
 
-    sidecar_result = load_sidecar(devcontainer_dir)
-    if sidecar_result.is_err():
-        return Err(sidecar_result.unwrap_err())
-    sidecar = sidecar_result.unwrap()
+    sidecar = load_sidecar(devcontainer_dir).unwrap()
     applied = sidecar["applied"]
     index = next(
         (i for i in range(len(applied) - 1, -1, -1) if applied[i]["name"] == name),
         None,
     )
     if index is None:
-        return Err(
-            ValueError(
-                f"Feature {name!r} is not tracked for this project. dvt has no "
-                "record of adding it - either "
-                f"{devcontainer_dir / 'dvt-features.json'} doesn't exist yet, or "
-                "this feature isn't in its list of applied features. Only "
-                "features added with 'dvt feature add' can be removed this "
-                "way.\n\n"
-                f"To remove it by hand instead, edit {target} directly. To "
-                f"rebuild tracking from scratch: back up {target}, delete it, "
-                "run 'dvt init', then 'dvt feature add <name>' for each "
-                "feature you want - this starts fresh tracking, but any "
-                "manual customization won't carry over."
-            )
+        raise ValueError(
+            f"Feature {name!r} is not tracked for this project. dvt has no "
+            "record of adding it - either "
+            f"{devcontainer_dir / 'dvt-features.json'} doesn't exist yet, or "
+            "this feature isn't in its list of applied features. Only "
+            "features added with 'dvt feature add' can be removed this "
+            "way.\n\n"
+            f"To remove it by hand instead, edit {target} directly. To "
+            f"rebuild tracking from scratch: back up {target}, delete it, "
+            "run 'dvt init', then 'dvt feature add <name>' for each "
+            "feature you want - this starts fresh tracking, but any "
+            "manual customization won't carry over."
         )
 
     removed_entry = applied[index]
@@ -249,13 +229,11 @@ def _remove_one(
 
     try:
         current = json.loads(target.read_text())
-    except json.JSONDecodeError:
-        return Err(
-            ValueError(
-                f"{target} is not strict JSON (comments/trailing commas are not "
-                "supported). Remove this feature's fields by hand instead."
-            )
-        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{target} is not strict JSON (comments/trailing commas are not "
+            "supported). Remove this feature's fields by hand instead."
+        ) from exc
 
     updated = dict(current)
     for key in touched_keys:
@@ -267,22 +245,17 @@ def _remove_one(
     try:
         validate_devcontainer_config(updated)
     except jsonschema.ValidationError as exc:
-        return Err(
-            ValueError(
-                f"Removing {name!r} would produce an invalid devcontainer.json: "
-                f"{exc.message}"
-            )
-        )
+        raise ValueError(
+            f"Removing {name!r} would produce an invalid devcontainer.json: "
+            f"{exc.message}"
+        ) from exc
 
     target.write_text(json.dumps(updated, indent=2) + "\n")
 
     sidecar["applied"] = remaining
-    write_result = write_sidecar(devcontainer_dir, sidecar)
-    if write_result.is_err():
-        return Err(write_result.unwrap_err())
+    write_sidecar(devcontainer_dir, sidecar).unwrap()
 
     console.print(f"Removed feature '{escape(name)}' from {escape(str(target))}.")
-    return Ok(None)
 
 
 @app.command("remove")

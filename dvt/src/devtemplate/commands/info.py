@@ -40,8 +40,7 @@ def info() -> None:
     )
     console.print(f"Image:    {escape(str(config.get('image', '?')))}")
 
-    sidecar_result = load_sidecar(devcontainer_dir)
-    applied = sidecar_result.unwrap()["applied"] if sidecar_result.is_ok() else []
+    applied = load_sidecar(devcontainer_dir).map(lambda s: s["applied"]).unwrap_or([])
     if applied:
         names = ", ".join(entry["name"] for entry in applied)
         console.print(f"Features: {escape(names)}")

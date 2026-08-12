@@ -5,9 +5,10 @@ import re
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, cast
 
-from logerr import Err, Ok, Result
+from logerr import Ok, Result
+from logerr.utilities import wrap_result
 
 _DEFAULT_MACHINE_NAME = "dvt-machine"
 _DEFAULT_CPUS = 2
@@ -42,181 +43,131 @@ def _announce(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def _run_podman_json(cli_binary: str, args: list[str]) -> Result[Any, Exception]:
-    try:
-        result = subprocess.run(
-            [cli_binary, *args], capture_output=True, text=True, timeout=30
+@wrap_result
+def _run_podman_json(cli_binary: str, args: list[str]) -> Any:
+    result = subprocess.run(
+        [cli_binary, *args], capture_output=True, text=True, timeout=30
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"podman {' '.join(args)} failed (exit {result.returncode}): "
+            f"{result.stderr.strip()}"
         )
-        if result.returncode != 0:
-            return Err(
-                RuntimeError(
-                    f"podman {' '.join(args)} failed (exit {result.returncode}): "
-                    f"{result.stderr.strip()}"
-                )
-            )
-        return Ok(json.loads(result.stdout))
-    except Exception as exc:
-        return Err(exc)
+    return json.loads(result.stdout)
 
 
 def list_machines(cli_binary: str) -> Result[list[dict[str, Any]], Exception]:
-    return _run_podman_json(cli_binary, ["machine", "list", "--format", "json"])
+    return cast(
+        "Result[list[dict[str, Any]], Exception]",
+        _run_podman_json(cli_binary, ["machine", "list", "--format", "json"]),
+    )
 
 
-def inspect_machine(cli_binary: str, name: str) -> Result[dict[str, Any], Exception]:
-    try:
-        result = _run_podman_json(cli_binary, ["machine", "inspect", name])
-        if result.is_err():
-            return Err(result.unwrap_err())
-        inspected = result.unwrap()
-        if (
-            not isinstance(inspected, list)
-            or not inspected
-            or not isinstance(inspected[0], dict)
-        ):
-            return Err(
-                ValueError(
-                    f"podman machine inspect {name!r} returned unexpected shape: {inspected!r}"
-                )
-            )
-        return Ok(inspected[0])
-    except Exception as exc:
-        return Err(exc)
+@wrap_result
+def inspect_machine(cli_binary: str, name: str) -> dict[str, Any]:
+    inspected = _run_podman_json(cli_binary, ["machine", "inspect", name]).unwrap()
+    if (
+        not isinstance(inspected, list)
+        or not inspected
+        or not isinstance(inspected[0], dict)
+    ):
+        raise ValueError(
+            f"podman machine inspect {name!r} returned unexpected shape: {inspected!r}"
+        )
+    return inspected[0]
 
 
-def start_machine(cli_binary: str, name: str) -> Result[None, Exception]:
-    try:
-        _announce(f"Starting Podman machine {name!r} (this can take a minute)...")
+@wrap_result
+def start_machine(cli_binary: str, name: str) -> None:
+    _announce(f"Starting Podman machine {name!r} (this can take a minute)...")
+    result = subprocess.run(
+        [cli_binary, "machine", "start", name],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to start machine {name!r}: {result.stderr.strip()}")
+
+
+@wrap_result
+def init_machine(cli_binary: str, name: str) -> None:
+    _announce(
+        f"Initializing Podman machine {name!r} - this downloads a VM image "
+        "and may take several minutes on first run..."
+    )
+    result = subprocess.run(
+        [
+            cli_binary,
+            "machine",
+            "init",
+            name,
+            "--cpus",
+            str(_DEFAULT_CPUS),
+            "--memory",
+            str(_DEFAULT_MEMORY_MB),
+            "--disk-size",
+            str(_DEFAULT_DISK_GB),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=_INIT_TIMEOUT_SECONDS,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to init machine {name!r}: {result.stderr.strip()}")
+
+
+@wrap_result
+def wait_until_ready(cli_binary: str, timeout_seconds: int = 60) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
         result = subprocess.run(
-            [cli_binary, "machine", "start", name],
-            capture_output=True,
-            text=True,
-            timeout=120,
+            [cli_binary, "ps"], capture_output=True, text=True, timeout=10
         )
-        if result.returncode != 0:
-            return Err(
-                RuntimeError(
-                    f"Failed to start machine {name!r}: {result.stderr.strip()}"
-                )
-            )
-        return Ok(None)
-    except Exception as exc:
-        return Err(exc)
+        if result.returncode == 0:
+            return
+        time.sleep(2)
+    raise RuntimeError(f"Machine did not become ready within {timeout_seconds}s")
 
 
-def init_machine(cli_binary: str, name: str) -> Result[None, Exception]:
-    try:
-        _announce(
-            f"Initializing Podman machine {name!r} - this downloads a VM image "
-            "and may take several minutes on first run..."
-        )
-        result = subprocess.run(
-            [
-                cli_binary,
-                "machine",
-                "init",
-                name,
-                "--cpus",
-                str(_DEFAULT_CPUS),
-                "--memory",
-                str(_DEFAULT_MEMORY_MB),
-                "--disk-size",
-                str(_DEFAULT_DISK_GB),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_INIT_TIMEOUT_SECONDS,
-        )
-        if result.returncode != 0:
-            return Err(
-                RuntimeError(
-                    f"Failed to init machine {name!r}: {result.stderr.strip()}"
-                )
-            )
-        return Ok(None)
-    except Exception as exc:
-        return Err(exc)
-
-
-def wait_until_ready(
-    cli_binary: str, timeout_seconds: int = 60
-) -> Result[None, Exception]:
-    try:
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            result = subprocess.run(
-                [cli_binary, "ps"], capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0:
-                return Ok(None)
-            time.sleep(2)
-        return Err(
-            RuntimeError(f"Machine did not become ready within {timeout_seconds}s")
-        )
-    except Exception as exc:
-        return Err(exc)
-
-
-def _connection_url(inspected: dict[str, Any]) -> Result[str, Exception]:
+@wrap_result
+def _connection_url(inspected: dict[str, Any]) -> str:
     """Translate `podman machine inspect`'s ConnectionInfo into a docker-py
     base_url. Verified directly against a real machine: PodmanPipe.Path looks
     like '\\\\.\\pipe\\podman-devpod-machine' on Windows; docker-py expects
     'npipe:////./pipe/podman-devpod-machine'. Falls back to PodmanSocket for
     non-Windows callers of this function (WSL-internal use), though this
     module is only invoked from runtime.py on win32 - see Global Constraints."""
-    try:
-        connection_info = inspected.get("ConnectionInfo")
-        if not isinstance(connection_info, dict):
-            return Err(
-                ValueError(
-                    f"machine inspect result has no ConnectionInfo: {inspected!r}"
-                )
-            )
-        pipe = connection_info.get("PodmanPipe")
-        if isinstance(pipe, dict) and isinstance(pipe.get("Path"), str):
-            match = _NAMED_PIPE_PATTERN.match(pipe["Path"])
-            if match:
-                return Ok(f"npipe:////./pipe/{match.group(1)}")
-        socket_info = connection_info.get("PodmanSocket")
-        if isinstance(socket_info, dict) and isinstance(socket_info.get("Path"), str):
-            return Ok(f"unix://{socket_info['Path']}")
-        return Err(
-            ValueError(
-                f"machine inspect result has no usable connection endpoint: {connection_info!r}"
-            )
-        )
-    except Exception as exc:
-        return Err(exc)
+    connection_info = inspected.get("ConnectionInfo")
+    if not isinstance(connection_info, dict):
+        raise ValueError(f"machine inspect result has no ConnectionInfo: {inspected!r}")
+    pipe = connection_info.get("PodmanPipe")
+    if isinstance(pipe, dict) and isinstance(pipe.get("Path"), str):
+        match = _NAMED_PIPE_PATTERN.match(pipe["Path"])
+        if match:
+            return f"npipe:////./pipe/{match.group(1)}"
+    socket_info = connection_info.get("PodmanSocket")
+    if isinstance(socket_info, dict) and isinstance(socket_info.get("Path"), str):
+        return f"unix://{socket_info['Path']}"
+    raise ValueError(
+        f"machine inspect result has no usable connection endpoint: {connection_info!r}"
+    )
 
 
-def _inspect_and_connect(
-    cli_binary: str, name: str
-) -> Result[tuple[str, str], Exception]:
-    try:
-        inspect_result = inspect_machine(cli_binary, name)
-        if inspect_result.is_err():
-            return Err(inspect_result.unwrap_err())
-        url_result = _connection_url(inspect_result.unwrap())
-        if url_result.is_err():
-            return Err(url_result.unwrap_err())
-        return Ok((name, url_result.unwrap()))
-    except Exception as exc:
-        return Err(exc)
+@wrap_result
+def _inspect_and_connect(cli_binary: str, name: str) -> tuple[str, str]:
+    inspected = inspect_machine(cli_binary, name).unwrap()
+    url = _connection_url(inspected).unwrap()
+    return name, url
 
 
+@wrap_result
 def _start_and_connect(
     cli_binary: str, name: str
 ) -> Result[tuple[str, str], Exception]:
-    try:
-        start_result = start_machine(cli_binary, name)
-        if start_result.is_err():
-            return Err(start_result.unwrap_err())
-        ready_result = wait_until_ready(cli_binary)
-        if ready_result.is_err():
-            return Err(ready_result.unwrap_err())
-        return _inspect_and_connect(cli_binary, name)
-    except Exception as exc:
-        return Err(exc)
+    start_machine(cli_binary, name).unwrap()
+    wait_until_ready(cli_binary).unwrap()
+    return _inspect_and_connect(cli_binary, name)
 
 
 _NVIDIA_TOOLKIT_INSTALL_COMMAND = (
@@ -227,136 +178,94 @@ _NVIDIA_TOOLKIT_INSTALL_COMMAND = (
 )
 
 
-def check_gpu_cdi_ready(cli_binary: str, machine_name: str) -> Result[bool, Exception]:
-    try:
-        result = subprocess.run(
-            [
-                cli_binary,
-                "machine",
-                "ssh",
-                machine_name,
-                "test -f /etc/cdi/nvidia.yaml && echo exists || echo missing",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
+@wrap_result
+def check_gpu_cdi_ready(cli_binary: str, machine_name: str) -> bool:
+    result = subprocess.run(
+        [
+            cli_binary,
+            "machine",
+            "ssh",
+            machine_name,
+            "test -f /etc/cdi/nvidia.yaml && echo exists || echo missing",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to check CDI status on {machine_name!r}: {result.stderr.strip()}"
         )
-        if result.returncode != 0:
-            return Err(
-                RuntimeError(
-                    f"Failed to check CDI status on {machine_name!r}: {result.stderr.strip()}"
-                )
-            )
-        return Ok("exists" in result.stdout)
-    except Exception as exc:
-        return Err(exc)
+    return "exists" in result.stdout
 
 
-def install_nvidia_toolkit(
-    cli_binary: str, machine_name: str
-) -> Result[None, Exception]:
-    try:
-        _announce(
-            "Installing the NVIDIA Container Toolkit in Podman machine "
-            f"{machine_name!r} - this may take several minutes..."
+@wrap_result
+def install_nvidia_toolkit(cli_binary: str, machine_name: str) -> None:
+    _announce(
+        "Installing the NVIDIA Container Toolkit in Podman machine "
+        f"{machine_name!r} - this may take several minutes..."
+    )
+    result = subprocess.run(
+        [cli_binary, "machine", "ssh", machine_name, _NVIDIA_TOOLKIT_INSTALL_COMMAND],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to install NVIDIA Container Toolkit on {machine_name!r}: "
+            f"{result.stderr.strip()}"
         )
-        result = subprocess.run(
-            [
-                cli_binary,
-                "machine",
-                "ssh",
-                machine_name,
-                _NVIDIA_TOOLKIT_INSTALL_COMMAND,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if result.returncode != 0:
-            return Err(
-                RuntimeError(
-                    f"Failed to install NVIDIA Container Toolkit on {machine_name!r}: "
-                    f"{result.stderr.strip()}"
-                )
-            )
-        return Ok(None)
-    except Exception as exc:
-        return Err(exc)
 
 
+@wrap_result
 def ensure_gpu_support(cli_binary: str, machine_name: str) -> Result[None, Exception]:
-    try:
-        ready_result = check_gpu_cdi_ready(cli_binary, machine_name)
-        if ready_result.is_err():
-            return Err(ready_result.unwrap_err())
-        if ready_result.unwrap():
-            return Ok(None)
-        return install_nvidia_toolkit(cli_binary, machine_name)
-    except Exception as exc:
-        return Err(exc)
+    if check_gpu_cdi_ready(cli_binary, machine_name).unwrap():
+        return Ok(None)
+    return install_nvidia_toolkit(cli_binary, machine_name)
 
 
+@wrap_result
 def ensure_machine_ready(
     cli_binary: str, *, auto_start: bool, auto_init: bool
 ) -> Result[tuple[str, str], Exception]:
     """Detect a Podman machine, auto-start it if stopped (when auto_start),
     refuse to auto-create one unless auto_init is set, and resolve its
     connection URL. Returns (machine_name, connection_url)."""
-    try:
-        machines_result = list_machines(cli_binary)
-        if machines_result.is_err():
-            return Err(machines_result.unwrap_err())
-        machines = machines_result.unwrap()
+    machines = list_machines(cli_binary).unwrap()
 
-        if not machines:
-            if not auto_init:
-                return Err(
-                    RuntimeError(
-                        "No Podman machine found. Run 'podman machine init' first, "
-                        "or set DVT_PODMAN_MACHINE_AUTO_INIT=true."
-                    )
-                )
-            init_result = init_machine(cli_binary, _DEFAULT_MACHINE_NAME)
-            if init_result.is_err():
-                return Err(init_result.unwrap_err())
-            if not auto_start:
-                return Err(
-                    RuntimeError(
-                        f"Machine {_DEFAULT_MACHINE_NAME!r} is not running. "
-                        f"Run 'podman machine start {_DEFAULT_MACHINE_NAME}' first, "
-                        "or set DVT_PODMAN_MACHINE_AUTO_START=true."
-                    )
-                )
-            return _start_and_connect(cli_binary, _DEFAULT_MACHINE_NAME)
-
-        first_machine = machines[0]
-        if not isinstance(first_machine, dict) or not isinstance(
-            first_machine.get("Name"), str
-        ):
-            return Err(
-                ValueError(
-                    f"podman machine list returned unexpected shape: {first_machine!r}"
-                )
+    if not machines:
+        if not auto_init:
+            raise RuntimeError(
+                "No Podman machine found. Run 'podman machine init' first, "
+                "or set DVT_PODMAN_MACHINE_AUTO_INIT=true."
             )
-        name = first_machine["Name"].rstrip("*")
-        inspect_result = inspect_machine(cli_binary, name)
-        if inspect_result.is_err():
-            return Err(inspect_result.unwrap_err())
-        inspected = inspect_result.unwrap()
-
-        if inspected.get("State") == "running":
-            url_result = _connection_url(inspected)
-            if url_result.is_err():
-                return Err(url_result.unwrap_err())
-            return Ok((name, url_result.unwrap()))
-
+        init_machine(cli_binary, _DEFAULT_MACHINE_NAME).unwrap()
         if not auto_start:
-            return Err(
-                RuntimeError(
-                    f"Machine {name!r} is not running. Run 'podman machine start {name}' first, "
-                    "or set DVT_PODMAN_MACHINE_AUTO_START=true."
-                )
+            raise RuntimeError(
+                f"Machine {_DEFAULT_MACHINE_NAME!r} is not running. "
+                f"Run 'podman machine start {_DEFAULT_MACHINE_NAME}' first, "
+                "or set DVT_PODMAN_MACHINE_AUTO_START=true."
             )
-        return _start_and_connect(cli_binary, name)
-    except Exception as exc:
-        return Err(exc)
+        return _start_and_connect(cli_binary, _DEFAULT_MACHINE_NAME)
+
+    first_machine = machines[0]
+    if not isinstance(first_machine, dict) or not isinstance(
+        first_machine.get("Name"), str
+    ):
+        raise ValueError(
+            f"podman machine list returned unexpected shape: {first_machine!r}"
+        )
+    name = first_machine["Name"].rstrip("*")
+    inspected = inspect_machine(cli_binary, name).unwrap()
+
+    if inspected.get("State") == "running":
+        url = _connection_url(inspected).unwrap()
+        return Ok((name, url))
+
+    if not auto_start:
+        raise RuntimeError(
+            f"Machine {name!r} is not running. Run 'podman machine start {name}' first, "
+            "or set DVT_PODMAN_MACHINE_AUTO_START=true."
+        )
+    return _start_and_connect(cli_binary, name)

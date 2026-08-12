@@ -9,6 +9,7 @@ import docker.types
 from docker.client import DockerClient
 from docker.models.containers import Container
 from logerr import Err, Ok, Result
+from logerr.utilities import wrap_result
 
 UNSUPPORTED_LIFECYCLE_FIELDS = {
     "onCreateCommand",
@@ -19,6 +20,7 @@ UNSUPPORTED_LIFECYCLE_FIELDS = {
 SUPPORTED_LIFECYCLE_ORDER = ["postCreateCommand", "postStartCommand"]
 
 
+@wrap_result
 def refuse_unsupported(config: dict[str, Any]) -> Result[None, Exception]:
     """Refuse (Err, nothing built) if config uses spec surface this runtime
     doesn't implement: docker-compose, build.dockerfile, lifecycle commands other
@@ -32,36 +34,33 @@ def refuse_unsupported(config: dict[str, Any]) -> Result[None, Exception]:
         >>> refuse_unsupported({"dockerComposeFile": "docker-compose.yml"}).is_err()
         True
     """
-    try:
-        if "dockerComposeFile" in config:
-            return Err(ValueError("dockerComposeFile devcontainers are not supported"))
-        if "build" in config:
+    if "dockerComposeFile" in config:
+        return Err(ValueError("dockerComposeFile devcontainers are not supported"))
+    if "build" in config:
+        return Err(
+            ValueError(
+                'build.dockerfile devcontainers are not supported - use "image" instead'
+            )
+        )
+    used_unsupported = UNSUPPORTED_LIFECYCLE_FIELDS & config.keys()
+    if used_unsupported:
+        return Err(
+            ValueError(
+                f"Unsupported lifecycle command(s): {sorted(used_unsupported)} "
+                "(only postCreateCommand/postStartCommand are supported)"
+            )
+        )
+    for feature_ref, feature_options in config.get("features", {}).items():
+        if isinstance(feature_options, dict) and (
+            "installsAfter" in feature_options or "dependsOn" in feature_options
+        ):
             return Err(
                 ValueError(
-                    'build.dockerfile devcontainers are not supported - use "image" instead'
+                    f"Feature {feature_ref!r} uses installsAfter/dependsOn, "
+                    "which this runtime doesn't support (single-Feature only)"
                 )
             )
-        used_unsupported = UNSUPPORTED_LIFECYCLE_FIELDS & config.keys()
-        if used_unsupported:
-            return Err(
-                ValueError(
-                    f"Unsupported lifecycle command(s): {sorted(used_unsupported)} "
-                    "(only postCreateCommand/postStartCommand are supported)"
-                )
-            )
-        for feature_ref, feature_options in config.get("features", {}).items():
-            if isinstance(feature_options, dict) and (
-                "installsAfter" in feature_options or "dependsOn" in feature_options
-            ):
-                return Err(
-                    ValueError(
-                        f"Feature {feature_ref!r} uses installsAfter/dependsOn, "
-                        "which this runtime doesn't support (single-Feature only)"
-                    )
-                )
-        return Ok(None)
-    except Exception as exc:
-        return Err(exc)
+    return Ok(None)
 
 
 def resolve_workspace(config: dict[str, Any], project_path: Path) -> tuple[str, str]:
@@ -112,6 +111,7 @@ def _parse_mount(mount_spec: str) -> dict[str, dict[str, str]]:
     return {parts["source"]: {"bind": parts["target"], "mode": "rw"}}
 
 
+@wrap_result
 def _translate_run_args(
     run_args: list[str],
 ) -> Result[tuple[list[str], list[Any]], Exception]:
@@ -122,26 +122,23 @@ def _translate_run_args(
     cap_adds: list[str] = []
     device_requests: list[Any] = []
     index = 0
-    try:
-        while index < len(run_args):
-            arg = run_args[index]
-            if arg.startswith("--cap-add="):
-                cap_adds.append(arg.split("=", 1)[1])
-                index += 1
-            elif (
-                arg == "--gpus"
-                and index + 1 < len(run_args)
-                and run_args[index + 1] == "all"
-            ):
-                device_requests.append(
-                    docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
-                )
-                index += 2
-            else:
-                return Err(ValueError(f"Unsupported runArgs entry {arg!r}"))
-        return Ok((cap_adds, device_requests))
-    except Exception as exc:
-        return Err(exc)
+    while index < len(run_args):
+        arg = run_args[index]
+        if arg.startswith("--cap-add="):
+            cap_adds.append(arg.split("=", 1)[1])
+            index += 1
+        elif (
+            arg == "--gpus"
+            and index + 1 < len(run_args)
+            and run_args[index + 1] == "all"
+        ):
+            device_requests.append(
+                docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])
+            )
+            index += 2
+        else:
+            return Err(ValueError(f"Unsupported runArgs entry {arg!r}"))
+    return Ok((cap_adds, device_requests))
 
 
 # The devcontainer spec's `overrideCommand` defaults to true: the tool is expected
@@ -153,6 +150,7 @@ def _translate_run_args(
 _KEEP_ALIVE_ENTRYPOINT = ["sleep", "infinity"]
 
 
+@wrap_result
 def run_container(
     client: DockerClient,
     image: str,
@@ -160,67 +158,49 @@ def run_container(
     name: str,
     project_path: Path,
     config_file: Path,
-) -> Result[Container, Exception]:
-    try:
-        workspace_folder, workspace_mount = resolve_workspace(config, project_path)
-        volumes: dict[str, dict[str, str]] = {}
-        for mount_spec in [workspace_mount, *config.get("mounts", [])]:
-            resolved_spec = _substitute_mount_variables(
-                mount_spec, project_path, workspace_folder
-            )
-            volumes.update(_parse_mount(resolved_spec))
-
-        run_args_result = _translate_run_args(config.get("runArgs", []))
-        if run_args_result.is_err():
-            return Err(run_args_result.unwrap_err())
-        cap_adds, device_requests = run_args_result.unwrap()
-
-        entrypoint = (
-            _KEEP_ALIVE_ENTRYPOINT if config.get("overrideCommand", True) else None
+) -> Container:
+    workspace_folder, workspace_mount = resolve_workspace(config, project_path)
+    volumes: dict[str, dict[str, str]] = {}
+    for mount_spec in [workspace_mount, *config.get("mounts", [])]:
+        resolved_spec = _substitute_mount_variables(
+            mount_spec, project_path, workspace_folder
         )
+        volumes.update(_parse_mount(resolved_spec))
 
-        container = client.containers.run(
-            image,
-            detach=True,
-            name=f"dvt-{name}",
-            labels=compute_labels(config, name, project_path, config_file),
-            volumes=volumes,
-            working_dir=workspace_folder,
-            environment=config.get("containerEnv", {}),
-            user=config.get("remoteUser"),
-            cap_add=cap_adds,
-            device_requests=device_requests,
-            entrypoint=entrypoint,
-        )
-        return Ok(container)
-    except Exception as exc:
-        return Err(exc)
+    cap_adds, device_requests = _translate_run_args(config.get("runArgs", [])).unwrap()
+
+    entrypoint = _KEEP_ALIVE_ENTRYPOINT if config.get("overrideCommand", True) else None
+
+    return client.containers.run(
+        image,
+        detach=True,
+        name=f"dvt-{name}",
+        labels=compute_labels(config, name, project_path, config_file),
+        volumes=volumes,
+        working_dir=workspace_folder,
+        environment=config.get("containerEnv", {}),
+        user=config.get("remoteUser"),
+        cap_add=cap_adds,
+        device_requests=device_requests,
+        entrypoint=entrypoint,
+    )
 
 
-def run_lifecycle_commands(
-    container: Container, config: dict[str, Any]
-) -> Result[None, Exception]:
-    try:
-        for field in SUPPORTED_LIFECYCLE_ORDER:
-            command = config.get(field)
-            if command is None:
-                continue
-            shell_command = (
-                command if isinstance(command, str) else " && ".join(command)
+@wrap_result
+def run_lifecycle_commands(container: Container, config: dict[str, Any]) -> None:
+    for field in SUPPORTED_LIFECYCLE_ORDER:
+        command = config.get(field)
+        if command is None:
+            continue
+        shell_command = command if isinstance(command, str) else " && ".join(command)
+        exit_code, output = container.exec_run(["sh", "-c", shell_command])
+        if exit_code != 0:
+            output_text = (
+                output.decode(errors="replace")
+                if isinstance(output, bytes)
+                else b"".join(output).decode(errors="replace")
             )
-            exit_code, output = container.exec_run(["sh", "-c", shell_command])
-            if exit_code != 0:
-                output_text = (
-                    output.decode(errors="replace")
-                    if isinstance(output, bytes)
-                    else b"".join(output).decode(errors="replace")
-                )
-                return Err(
-                    RuntimeError(f"{field} failed (exit {exit_code}): {output_text}")
-                )
-        return Ok(None)
-    except Exception as exc:
-        return Err(exc)
+            raise RuntimeError(f"{field} failed (exit {exit_code}): {output_text}")
 
 
 def find_workspace_container(client: DockerClient, name: str) -> Container | None:

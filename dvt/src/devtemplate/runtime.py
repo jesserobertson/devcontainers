@@ -8,7 +8,8 @@ from typing import Literal
 
 import docker
 from docker.client import DockerClient
-from logerr import Err, Ok, Result
+from logerr import Err, Ok, Result  # noqa: F401
+from logerr.utilities import nullable, wrap_result
 
 from devtemplate import podman_machine
 
@@ -49,40 +50,29 @@ def _default_podman_socket() -> str | None:
     return f"unix:///run/user/{os.getuid()}/podman/podman.sock"
 
 
-def _resolve_podman(
-    *, auto_init: bool, auto_start: bool
-) -> Result[RuntimeHandle, Exception]:
+@wrap_result
+def _resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
     cli_binary = shutil.which("podman")
     if cli_binary is None:
-        return Err(FileNotFoundError("podman not found on PATH"))
+        raise FileNotFoundError("podman not found on PATH")
     if sys.platform == "win32":
-        machine_result = podman_machine.ensure_machine_ready(
+        machine_name, socket_url = podman_machine.ensure_machine_ready(
             cli_binary, auto_start=auto_start, auto_init=auto_init
-        )
-        if machine_result.is_err():
-            return Err(machine_result.unwrap_err())
-        machine_name, socket_url = machine_result.unwrap()
+        ).unwrap()
     else:
         machine_name = None
         socket_url = os.environ.get("CONTAINER_HOST") or _default_podman_socket()
         if socket_url is None:
-            return Err(
-                RuntimeError(
-                    "Podman socket not found (tried CONTAINER_HOST / default rootless path)"
-                )
+            raise RuntimeError(
+                "Podman socket not found (tried CONTAINER_HOST / default rootless path)"
             )
-    try:
-        client = docker.DockerClient(base_url=socket_url)
-        client.ping()
-    except Exception as exc:
-        return Err(exc)
-    return Ok(
-        RuntimeHandle(
-            client=client,
-            engine="podman",
-            cli_binary=cli_binary,
-            machine_name=machine_name,
-        )
+    client = docker.DockerClient(base_url=socket_url)
+    client.ping()
+    return RuntimeHandle(
+        client=client,
+        engine="podman",
+        cli_binary=cli_binary,
+        machine_name=machine_name,
     )
 
 
@@ -104,14 +94,13 @@ def get_client(
     request surfaces Podman-specific errors directly (e.g. "no machine found")
     rather than the generic message "auto" falls back to on double failure."""
     if runtime == "docker":
-        handle = _try_docker()
-        if handle is None:
-            return Err(
-                RuntimeError(
-                    "Docker not reachable (tried DOCKER_HOST / platform default)"
-                )
-            )
-        return Ok(handle)
+        return nullable(
+            _try_docker(),
+            error_factory=lambda: RuntimeError(
+                "Docker not reachable (tried DOCKER_HOST / platform default)"
+            ),
+            return_type="result",
+        )
     if runtime == "podman":
         return _resolve_podman(
             auto_init=podman_machine_auto_init, auto_start=podman_machine_auto_start
@@ -119,6 +108,10 @@ def get_client(
     handle = _try_docker() or _try_podman(
         auto_init=podman_machine_auto_init, auto_start=podman_machine_auto_start
     )
-    if handle is None:
-        return Err(RuntimeError("No container runtime found (tried Docker, Podman)"))
-    return Ok(handle)
+    return nullable(
+        handle,
+        error_factory=lambda: RuntimeError(
+            "No container runtime found (tried Docker, Podman)"
+        ),
+        return_type="result",
+    )

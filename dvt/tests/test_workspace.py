@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from logerr import Ok
 
 from devtemplate import workspace as workspace_module
 from devtemplate.runtime import RuntimeHandle
@@ -54,28 +55,28 @@ def test_up_workspace_full_build_and_run_sequence(
     monkeypatch.setattr(
         workspace_module,
         "pull_feature",
-        lambda client, ref, cache_dir: workspace_module.Ok(Path("/extracted")),
+        lambda client, ref, cache_dir: Ok(Path("/extracted")),
     )
     monkeypatch.setattr(
         workspace_module,
         "build_image",
-        lambda *a, **k: workspace_module.Ok("dvt/fastapi:latest"),
+        lambda *a, **k: Ok("dvt/fastapi:latest"),
     )
     fake_container = MagicMock()
     monkeypatch.setattr(
         workspace_module,
         "run_container",
-        lambda *a, **k: workspace_module.Ok(fake_container),
+        lambda *a, **k: Ok(fake_container),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_lifecycle_commands",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     result = up_workspace(handle, settings, "fastapi", project)
 
@@ -111,7 +112,7 @@ def test_up_workspace_starts_existing_stopped_container(
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     result = up_workspace(handle, settings, "fastapi", project)
 
@@ -128,7 +129,7 @@ def test_up_workspace_noop_when_already_running(project, handle, settings, monke
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     result = up_workspace(handle, settings, "fastapi", project)
 
@@ -152,7 +153,7 @@ def test_up_workspace_resumes_existing_even_without_devcontainer_json(
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
 
     def _fail_load_config(config_file):
@@ -192,29 +193,27 @@ def test_up_workspace_ensures_gpu_support_on_podman_windows(
     monkeypatch.setattr(
         workspace_module.podman_machine,
         "ensure_gpu_support",
-        lambda cli_binary, machine_name: (
-            calls.append(machine_name) or workspace_module.Ok(None)
-        ),
+        lambda cli_binary, machine_name: calls.append(machine_name) or Ok(None),
     )
     monkeypatch.setattr(
         workspace_module,
         "build_image",
-        lambda *a, **k: workspace_module.Ok("dvt/jax:latest"),
+        lambda *a, **k: Ok("dvt/jax:latest"),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_container",
-        lambda *a, **k: workspace_module.Ok(MagicMock()),
+        lambda *a, **k: Ok(MagicMock()),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_lifecycle_commands",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
 
     result = up_workspace(handle, settings, "jax", project)
@@ -233,33 +232,33 @@ def test_up_workspace_skips_gpu_check_on_docker(project, settings, monkeypatch):
     monkeypatch.setattr(
         workspace_module,
         "pull_feature",
-        lambda client, ref, cache_dir: workspace_module.Ok(Path("/x")),
+        lambda client, ref, cache_dir: Ok(Path("/x")),
     )
     monkeypatch.setattr(
         workspace_module,
         "build_image",
-        lambda *a, **k: workspace_module.Ok("dvt/fastapi:latest"),
+        lambda *a, **k: Ok("dvt/fastapi:latest"),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_container",
-        lambda *a, **k: workspace_module.Ok(MagicMock()),
+        lambda *a, **k: Ok(MagicMock()),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_lifecycle_commands",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     ensure_gpu_calls = []
     monkeypatch.setattr(
         workspace_module.podman_machine,
         "ensure_gpu_support",
-        lambda *a, **k: ensure_gpu_calls.append(1) or workspace_module.Ok(None),
+        lambda *a, **k: ensure_gpu_calls.append(1) or Ok(None),
     )
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
 
     result = up_workspace(handle, settings, "fastapi", project)
@@ -295,33 +294,33 @@ def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
     monkeypatch.setattr(
         workspace_module,
         "pull_feature",
-        lambda client, ref, cache_dir: workspace_module.Ok(Path("/x")),
+        lambda client, ref, cache_dir: Ok(Path("/x")),
     )
     monkeypatch.setattr(
         workspace_module,
         "build_image",
-        lambda *a, **k: workspace_module.Ok("dvt/python:latest"),
+        lambda *a, **k: Ok("dvt/python:latest"),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_container",
-        lambda *a, **k: workspace_module.Ok(MagicMock()),
+        lambda *a, **k: Ok(MagicMock()),
     )
     monkeypatch.setattr(
         workspace_module,
         "run_lifecycle_commands",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
     ensure_gpu_calls = []
     monkeypatch.setattr(
         workspace_module.podman_machine,
         "ensure_gpu_support",
-        lambda *a, **k: ensure_gpu_calls.append(1) or workspace_module.Ok(None),
+        lambda *a, **k: ensure_gpu_calls.append(1) or Ok(None),
     )
     monkeypatch.setattr(
         workspace_module,
         "write_ssh_config_entry",
-        lambda *a, **k: workspace_module.Ok(None),
+        lambda *a, **k: Ok(None),
     )
 
     result = up_workspace(handle, settings, "python", project)

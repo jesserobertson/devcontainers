@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from docker.client import DockerClient
-from logerr import Err, Ok, Result
+from logerr.utilities import wrap_result
 
 from devtemplate.container import (
     find_workspace_container,
@@ -27,9 +27,8 @@ def _multiple_matches_error(command: str, names: list[str]) -> Exception:
     )
 
 
-def resolve_for_up(
-    client: DockerClient, name: str | None, cwd: Path
-) -> Result[str, Exception]:
+@wrap_result
+def resolve_for_up(client: DockerClient, name: str | None, cwd: Path) -> str:
     """Turn dvt up's optional name into a concrete one. An explicit name passes
     through unchanged. When omitted: exactly one workspace already tied to this
     folder (via its devcontainer.local_folder label) reuses that name; none yet
@@ -41,55 +40,43 @@ def resolve_for_up(
     won't guess which one you meant.
     """
     if name is not None:
-        return Ok(name)
-    try:
-        names = _names_by_folder(client, cwd)
-    except Exception as exc:
-        return Err(exc)
+        return name
+    names = _names_by_folder(client, cwd)
     if len(names) == 1:
-        return Ok(names[0])
+        return names[0]
     if names:
-        return Err(_multiple_matches_error("up", names))
+        raise _multiple_matches_error("up", names)
 
     fallback_name = cwd.resolve().name
-    try:
-        existing = find_workspace_container(client, fallback_name)
-    except Exception as exc:
-        return Err(exc)
+    existing = find_workspace_container(client, fallback_name)
     if existing is not None:
         existing_folder = existing.labels.get("devcontainer.local_folder")
         if existing_folder != str(cwd.resolve()):
-            return Err(
-                ValueError(
-                    f"A workspace named '{fallback_name}' already exists for a "
-                    f"different folder ({existing_folder or 'unknown'}). "
-                    "Pass an explicit name for this one."
-                )
+            raise ValueError(
+                f"A workspace named '{fallback_name}' already exists for a "
+                f"different folder ({existing_folder or 'unknown'}). "
+                "Pass an explicit name for this one."
             )
-    return Ok(fallback_name)
+    return fallback_name
 
 
+@wrap_result
 def resolve_existing(
     client: DockerClient, name: str | None, cwd: Path, command: str
-) -> Result[str, Exception]:
+) -> str:
     """Same shape as resolve_for_up, for commands that only ever act on a
     workspace that already exists (ssh/stop/delete) - so no matches is also a
     refusal, not a directory-name fallback. `command` names the actual command
     that was run, so the refusal's suggested next step is accurate.
     """
     if name is not None:
-        return Ok(name)
-    try:
-        names = _names_by_folder(client, cwd)
-    except Exception as exc:
-        return Err(exc)
+        return name
+    names = _names_by_folder(client, cwd)
     if len(names) == 1:
-        return Ok(names[0])
+        return names[0]
     if not names:
-        return Err(
-            ValueError(
-                "No workspace found for this folder. Specify a name, "
-                "or run 'dvt up' to create one."
-            )
+        raise ValueError(
+            "No workspace found for this folder. Specify a name, "
+            "or run 'dvt up' to create one."
         )
-    return Err(_multiple_matches_error(command, names))
+    raise _multiple_matches_error(command, names)

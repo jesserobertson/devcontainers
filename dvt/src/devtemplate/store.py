@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from typing import Any
+from typing import Any, cast
 
 import httpx
-from logerr import Err, Ok, Result
+from logerr import Result
 from logerr.itertools import traverse_result
+from logerr.utilities import wrap_result
 
 from devtemplate.config import Settings
 from devtemplate.github import fetch_template, list_template_names
@@ -30,32 +31,24 @@ def _validate_template_name(name: str) -> Result[str, Exception]:
     )
 
 
-def read_manifest(settings: Settings) -> Result[list[str], Exception]:
+@wrap_result
+def read_manifest(settings: Settings) -> list[str]:
     if not settings.manifest_path.exists():
-        return Ok([])
-    try:
-        data = json.loads(settings.manifest_path.read_text())
-        return Ok(data.get(MANIFEST_KEY, []))
-    except Exception as exc:
-        return Err(exc)
+        return []
+    data: dict[str, Any] = json.loads(settings.manifest_path.read_text())
+    return cast(list[str], data.get(MANIFEST_KEY, []))
 
 
-def write_manifest(
-    settings: Settings, managed_templates: list[str]
-) -> Result[None, Exception]:
-    try:
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-        settings.manifest_path.write_text(
-            json.dumps({MANIFEST_KEY: sorted(managed_templates)}, indent=2)
-        )
-        return Ok(None)
-    except Exception as exc:
-        return Err(exc)
+@wrap_result
+def write_manifest(settings: Settings, managed_templates: list[str]) -> None:
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.manifest_path.write_text(
+        json.dumps({MANIFEST_KEY: sorted(managed_templates)}, indent=2)
+    )
 
 
-def sync_templates(
-    settings: Settings, client: httpx.Client
-) -> Result[list[str], Exception]:
+@wrap_result
+def sync_templates(settings: Settings, client: httpx.Client) -> list[str]:
     """Fetch every template listed under templates/ on GitHub into the local cache.
 
     Only ever writes to the names GitHub currently lists, so any custom template
@@ -71,32 +64,22 @@ def sync_templates(
     in the old manifest) — a hand-added custom template directory was never in any
     manifest dvt wrote, so it's never a pruning candidate.
     """
-    names_result = list_template_names(
+    names = list_template_names(
         client, settings.github_repo, settings.github_branch
-    )
-    if names_result.is_err():
-        return names_result
-    names = names_result.unwrap()
+    ).unwrap()
 
-    validated_names = traverse_result(names, _validate_template_name)
-    if validated_names.is_err():
-        return Err(validated_names.unwrap_err())
+    traverse_result(names, _validate_template_name).unwrap()
 
-    previous_result = read_manifest(settings)
-    previous_names = previous_result.unwrap() if previous_result.is_ok() else []
+    previous_names = read_manifest(settings).unwrap_or([])
 
     settings.templates_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
-        template_result = fetch_template(
+        template = fetch_template(
             client, settings.github_repo, settings.github_branch, name
-        )
-        if template_result.is_err():
-            return Err(template_result.unwrap_err())
+        ).unwrap()
         template_dir = settings.templates_dir / name
         template_dir.mkdir(parents=True, exist_ok=True)
-        (template_dir / "devcontainer.json").write_text(
-            json.dumps(template_result.unwrap(), indent=2)
-        )
+        (template_dir / "devcontainer.json").write_text(json.dumps(template, indent=2))
 
     removed = set(previous_names) - set(names)
     for stale_name in removed:
@@ -106,10 +89,8 @@ def sync_templates(
         if stale_dir.is_dir():
             shutil.rmtree(stale_dir)
 
-    manifest_result = write_manifest(settings, names)
-    if manifest_result.is_err():
-        return Err(manifest_result.unwrap_err())
-    return Ok(names)
+    write_manifest(settings, names).unwrap()
+    return names
 
 
 def list_cached_templates(settings: Settings) -> list[str]:
@@ -120,20 +101,12 @@ def list_cached_templates(settings: Settings) -> list[str]:
     return sorted(p.name for p in settings.templates_dir.iterdir() if p.is_dir())
 
 
-def load_cached_template(
-    settings: Settings, name: str
-) -> Result[dict[str, Any], Exception]:
-    validation = _validate_template_name(name)
-    if validation.is_err():
-        return Err(validation.unwrap_err())
+@wrap_result
+def load_cached_template(settings: Settings, name: str) -> dict[str, Any]:
+    _validate_template_name(name).unwrap()
     path = settings.templates_dir / name / "devcontainer.json"
     if not path.exists():
-        return Err(
-            FileNotFoundError(
-                f"No cached feature named {name!r}. Run 'dvt feature sync' first."
-            )
+        raise FileNotFoundError(
+            f"No cached feature named {name!r}. Run 'dvt feature sync' first."
         )
-    try:
-        return Ok(json.loads(path.read_text()))
-    except Exception as exc:
-        return Err(exc)
+    return cast(dict[str, Any], json.loads(path.read_text()))

@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from docker.client import DockerClient
-from logerr import Err, Ok, Result
+from logerr.utilities import wrap_result
 
 
 def _dockerfile_stage_name(index: int, feature_id: str) -> str:
@@ -60,28 +60,26 @@ def generate_dockerfile(
     return "\n".join(lines) + "\n"
 
 
+@wrap_result
 def build_image(
     client: DockerClient,
     base_image: str,
     features: list[tuple[str, Path, dict[str, str]]],
     tag: str,
     scratch_dir: Path,
-) -> Result[str, Exception]:
+) -> str:
     """Assemble a build context under scratch_dir (copying each extracted Feature
     directory in), write the generated Dockerfile, and build it. features: list of
     (feature_id, extracted_dir, resolved_options)."""
-    try:
-        scratch_dir.mkdir(parents=True, exist_ok=True)
-        context_features: list[tuple[str, str, dict[str, str]]] = []
-        for index, (feature_id, extracted_dir, options) in enumerate(features):
-            context_relative = f"features/{index}-{feature_id}"
-            shutil.copytree(extracted_dir, scratch_dir / context_relative)
-            context_features.append((feature_id, context_relative, options))
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    context_features: list[tuple[str, str, dict[str, str]]] = []
+    for index, (feature_id, extracted_dir, options) in enumerate(features):
+        context_relative = f"features/{index}-{feature_id}"
+        shutil.copytree(extracted_dir, scratch_dir / context_relative)
+        context_features.append((feature_id, context_relative, options))
 
-        dockerfile_content = generate_dockerfile(base_image, context_features)
-        (scratch_dir / "Dockerfile").write_text(dockerfile_content)
+    dockerfile_content = generate_dockerfile(base_image, context_features)
+    (scratch_dir / "Dockerfile").write_text(dockerfile_content)
 
-        client.images.build(path=str(scratch_dir), tag=tag, rm=True)
-        return Ok(tag)
-    except Exception as exc:
-        return Err(exc)
+    client.images.build(path=str(scratch_dir), tag=tag, rm=True)
+    return tag
