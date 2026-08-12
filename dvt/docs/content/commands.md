@@ -81,14 +81,22 @@ workspace with that name already exists, `up` starts it (if stopped) or leaves i
 running (if already running), unless `devcontainer.json` has changed since that
 container was built (compared against the config baked into the container's own
 `devcontainer.metadata` label) — in which case `up` refuses and points at
-`dvt up --rebuild`, rather than silently reusing a stale image.
+`dvt up --rebuild`, rather than silently reusing a stale image. `up` also refuses if
+it can't read what the existing container was actually built from (an unreadable or
+missing `devcontainer.metadata` label) — a distinct failure from "config changed",
+since dvt can't tell either way and won't guess. A missing or unreadable
+`devcontainer.json` *on disk*, on the other hand, does not block resuming — the
+drift check is simply skipped and the existing container comes back up as-is.
 
 `--rebuild` forces a from-scratch rebuild regardless of whether anything actually
-changed: it removes the existing container and its cached image tag, then builds
-fresh with Docker's build cache and base-image reuse both disabled, so a moved
-upstream base image tag is picked up too. If the rebuild's own build fails, the old
-container is already gone — unlike a plain `up`, which never destroys anything until
-a replacement is confirmed working.
+changed: once the current `devcontainer.json` has been loaded and validated
+successfully, it removes the existing container and its cached image tag, then
+builds fresh with Docker's build cache and base-image reuse both disabled, so a
+moved upstream base image tag is picked up too. A workspace is only ever rebuilt
+from its own project's folder — `--rebuild` refuses, leaving the container
+untouched, if run from somewhere else. A plain `up` never destroys anything, full
+stop; only `--rebuild` does, and only after its own validation has already
+succeeded.
 
 `<name>` is optional on `up`/`ssh`/`stop`/`delete` — when omitted, dvt looks for a workspace
 already tied to the current folder (via its `devcontainer.local_folder` container label, not

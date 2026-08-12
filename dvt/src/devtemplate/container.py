@@ -115,7 +115,9 @@ def config_has_drifted(container: Container, config: dict[str, Any]) -> bool:
     counts as drifted: better to ask for --rebuild than silently resume a
     container whose provenance can't be verified."""
     return (
-        read_stored_config(container).map(lambda stored: stored != config).unwrap_or(True)
+        read_stored_config(container)
+        .map(lambda stored: stored != config)
+        .unwrap_or(True)
     )
 
 

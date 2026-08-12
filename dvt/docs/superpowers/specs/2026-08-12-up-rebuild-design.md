@@ -127,8 +127,9 @@ threaded straight through as `up_workspace(handle, settings, resolved_name, Path
 
 ```
 Workspace 'fastapi' already exists but its devcontainer.json has changed since it was
-built (features, postCreateCommand). Run 'dvt up --rebuild' to rebuild it, or 'dvt up'
-again to keep using the existing container.
+built (features, postCreateCommand). Run 'dvt up --rebuild' to rebuild it, or revert
+devcontainer.json and run 'dvt up' again. To use the existing container without going
+through 'up' at all, run 'dvt ssh fastapi'.
 ```
 
 If the drift check itself failed (unreadable label), the message says so instead of listing

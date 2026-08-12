@@ -56,10 +56,11 @@ def test_up_workspace_full_build_and_run_sequence(
         "pull_feature",
         lambda client, ref, cache_dir: Ok(Path("/extracted")),
     )
+    build_calls = []
     monkeypatch.setattr(
         workspace_module,
         "build_image",
-        lambda *a, **k: Ok("dvt/fastapi:latest"),
+        lambda *a, **k: build_calls.append(k) or Ok("dvt/fastapi:latest"),
     )
     fake_container = MagicMock()
     monkeypatch.setattr(
@@ -81,6 +82,7 @@ def test_up_workspace_full_build_and_run_sequence(
 
     assert result.is_ok()
     assert result.unwrap() is fake_container
+    assert build_calls == [{"nocache": False, "pull": False}]
 
 
 def test_up_workspace_refuses_unsupported_config(
@@ -106,7 +108,10 @@ def test_up_workspace_starts_existing_stopped_container(
     existing = MagicMock()
     existing.status = "exited"
     existing.labels = compute_labels(
-        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+        PROJECT_CONFIG,
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
     )
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
@@ -126,7 +131,10 @@ def test_up_workspace_noop_when_already_running(project, handle, settings, monke
     existing = MagicMock()
     existing.status = "running"
     existing.labels = compute_labels(
-        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+        PROJECT_CONFIG,
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
     )
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
@@ -330,11 +338,16 @@ def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
     assert ensure_gpu_calls == []
 
 
-def test_up_workspace_refuses_when_config_drifted(project, handle, settings, monkeypatch):
+def test_up_workspace_refuses_when_config_drifted(
+    project, handle, settings, monkeypatch
+):
     existing = MagicMock()
     existing.status = "running"
     existing.labels = compute_labels(
-        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+        PROJECT_CONFIG,
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
     )
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
@@ -366,10 +379,15 @@ def test_up_workspace_refuses_when_stored_config_unreadable(
     existing.remove.assert_not_called()
 
 
-def test_up_workspace_rebuild_tears_down_and_rebuilds(project, handle, settings, monkeypatch):
+def test_up_workspace_rebuild_tears_down_and_rebuilds(
+    project, handle, settings, monkeypatch
+):
     existing = MagicMock()
     existing.labels = compute_labels(
-        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+        PROJECT_CONFIG,
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
     )
     monkeypatch.setattr(
         workspace_module, "find_workspace_container", lambda client, name: existing
@@ -401,7 +419,9 @@ def test_up_workspace_rebuild_tears_down_and_rebuilds(project, handle, settings,
     assert result.is_ok()
     assert result.unwrap() is fake_new_container
     existing.remove.assert_called_once_with(force=True)
-    handle.client.images.remove.assert_called_once_with("dvt/fastapi:latest", force=True)
+    handle.client.images.remove.assert_called_once_with(
+        "dvt/fastapi:latest", force=True
+    )
     assert build_calls == [{"nocache": True, "pull": True}]
 
 
@@ -442,7 +462,10 @@ def test_up_workspace_rebuild_proceeds_when_image_removal_fails(
 ):
     existing = MagicMock()
     existing.labels = compute_labels(
-        PROJECT_CONFIG, "fastapi", project, project / ".devcontainer" / "devcontainer.json"
+        PROJECT_CONFIG,
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
     )
     handle.client.images.remove.side_effect = RuntimeError("image in use")
     monkeypatch.setattr(
@@ -471,3 +494,82 @@ def test_up_workspace_rebuild_proceeds_when_image_removal_fails(
 
     assert result.is_ok()
     existing.remove.assert_called_once_with(force=True)
+
+
+def test_up_workspace_rebuild_validates_config_before_teardown(
+    tmp_path, handle, settings, monkeypatch
+):
+    """--rebuild against an existing container must not tear anything down
+    until the config it needs has been loaded and validated. Here
+    devcontainer.json doesn't even exist, so the whole thing should fail
+    before existing.remove() is ever called - leaving the workspace intact
+    for the user to fix and retry."""
+    existing = MagicMock()
+    existing.labels = {"devcontainer.local_folder": str(tmp_path.resolve())}
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+
+    result = up_workspace(handle, settings, "fastapi", tmp_path, rebuild=True)
+
+    assert result.is_err()
+    existing.remove.assert_not_called()
+
+
+def test_up_workspace_rebuild_refuses_when_folder_does_not_match(
+    project, handle, settings, monkeypatch
+):
+    """--rebuild against a container that was actually built from a
+    different folder must refuse outright rather than tearing down the real
+    workspace and rebuilding it with this folder's (unrelated) config."""
+    existing = MagicMock()
+    existing.labels = {"devcontainer.local_folder": "/some/other/project"}
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    build_calls = []
+    monkeypatch.setattr(
+        workspace_module,
+        "build_image",
+        lambda *a, **k: build_calls.append(1) or Ok("dvt/fastapi:latest"),
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
+
+    assert result.is_err()
+    message = str(result.unwrap_err())
+    assert "/some/other/project" in message
+    assert str(project.resolve()) in message
+    existing.remove.assert_not_called()
+    assert build_calls == []
+
+
+def test_up_workspace_resumes_without_drift_check_when_folder_does_not_match(
+    project, handle, settings, monkeypatch
+):
+    """Without --rebuild, a container whose devcontainer.local_folder doesn't
+    match project_path must be resumed unconditionally - the drift check is
+    skipped entirely, even when the stored config would otherwise look
+    drifted, since dvt can't meaningfully compare against the wrong folder's
+    devcontainer.json."""
+    existing = MagicMock()
+    existing.status = "exited"
+    existing.labels = compute_labels(
+        {**PROJECT_CONFIG, "postCreateCommand": "totally different"},
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
+    )
+    existing.labels["devcontainer.local_folder"] = "/some/other/project"
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    monkeypatch.setattr(
+        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project)
+
+    assert result.is_ok()
+    assert result.unwrap() is existing
+    existing.start.assert_called_once()

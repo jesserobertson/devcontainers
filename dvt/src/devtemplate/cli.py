@@ -81,7 +81,8 @@ def up(
         resolve_for_up(handle.client, name, Path.cwd()), console
     )
     unwrap_or_exit(
-        up_workspace(handle, settings, resolved_name, Path.cwd(), rebuild=rebuild), console
+        up_workspace(handle, settings, resolved_name, Path.cwd(), rebuild=rebuild),
+        console,
     )
     console.print(
         f"[green]Workspace '{escape(resolved_name)}' is up.[/green] "

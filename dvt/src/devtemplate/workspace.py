@@ -62,7 +62,9 @@ def _resume_existing(existing: Container, name: str) -> Container:
     return existing
 
 
-def _config_drift_error(existing: Container, config: dict[str, Any], name: str) -> Exception:
+def _config_drift_error(
+    existing: Container, config: dict[str, Any], name: str
+) -> Exception:
     """Build the Err raised when an existing workspace's container doesn't
     match the current devcontainer.json. Distinguishes "config on disk
     differs from what was built" (lists the changed top-level keys) from
@@ -84,13 +86,39 @@ def _config_drift_error(existing: Container, config: dict[str, Any], name: str) 
     return ValueError(
         f"Workspace {name!r} already exists but its devcontainer.json has "
         f"changed since it was built ({', '.join(changed_keys)}). Run "
-        "'dvt up --rebuild' to rebuild it, or 'dvt up' again to keep using "
-        "the existing container."
+        "'dvt up --rebuild' to rebuild it, or revert devcontainer.json and "
+        f"run 'dvt up' again. To use the existing container without going "
+        f"through 'up' at all, run 'dvt ssh {name}'."
     )
 
 
+def _folder_mismatch_error(
+    existing_folder: str, project_path: Path, name: str
+) -> Exception:
+    """Build the Err raised when --rebuild is invoked for a workspace whose
+    devcontainer.local_folder label points somewhere other than the folder
+    dvt is currently running from. Rebuilding from the wrong vantage point
+    would tear down the real workspace and rebuild it with an unrelated
+    project's config, so this refuses outright and leaves the container
+    completely untouched."""
+    return ValueError(
+        f"Workspace {name!r} was built from {existing_folder!r}, but dvt is "
+        f"running from '{project_path.resolve()}'. Run 'dvt up --rebuild' "
+        "from the workspace's own folder instead."
+    )
+
+
+def _image_tag(name: str) -> str:
+    """The image tag dvt builds and tags a workspace's image under. Factored
+    out so the tag literal used to remove the cached image (_rebuild_teardown)
+    and the one used to build the fresh image (build_image) can't drift apart."""
+    return f"dvt/{name}:latest"
+
+
 @wrap_result
-def _rebuild_teardown(client: DockerClient, existing: Container, image_tag: str) -> None:
+def _rebuild_teardown(
+    client: DockerClient, existing: Container, image_tag: str
+) -> None:
     """Remove the existing container so the fresh-build path below can run as
     if no workspace existed yet. Only existing.remove() failing is fatal
     (surfaced as Err) - if the old container can't be removed, --rebuild
@@ -123,25 +151,45 @@ def up_workspace(
     from (compared via its devcontainer.metadata label), resumes it exactly
     as before. If devcontainer.json differs and `rebuild` is False, refuses
     with a message naming the changed keys and pointing at `--rebuild`. If
-    `rebuild` is True, tears down the existing container and its cached
-    image tag first (regardless of whether config actually drifted -
-    `--rebuild` is also the general force-fresh escape hatch for e.g. a moved
-    upstream base image tag), then falls through into the same
-    build-from-scratch sequence used when no container exists yet, with
-    Docker's build cache and base-image reuse both disabled.
+    `rebuild` is True, the config is loaded and validated *before* anything
+    is torn down - only once that succeeds does dvt remove the existing
+    container and its cached image tag (regardless of whether config
+    actually drifted - `--rebuild` is also the general force-fresh escape
+    hatch for e.g. a moved upstream base image tag), then falls through into
+    the same build-from-scratch sequence used when no container exists yet,
+    with Docker's build cache and base-image reuse both disabled.
+
+    The existing container's `devcontainer.local_folder` label is checked
+    against `project_path` before any of this: if it doesn't match (this
+    `name` was resolved from a container built from a different folder), dvt
+    can't meaningfully evaluate drift from here. Without `--rebuild` it just
+    resumes, skipping the drift check entirely. With `--rebuild` it refuses
+    outright instead - proceeding would tear down the *real* workspace and
+    rebuild it using the wrong folder's devcontainer.json. A missing
+    `devcontainer.local_folder` label (foreign/pre-feature container) is
+    treated the same as a match, falling back to the normal drift-check
+    behavior below.
     """
     existing = find_workspace_container(handle.client, name)
     config_file = project_path / ".devcontainer" / "devcontainer.json"
 
     if existing is not None:
+        existing_folder = existing.labels.get("devcontainer.local_folder")
+        folder_matches = existing_folder is None or existing_folder == str(
+            project_path.resolve()
+        )
+
         if not rebuild:
-            config_result = _load_config(config_file)
-            if config_result.is_ok():
-                current_config = config_result.unwrap()
-                if config_has_drifted(existing, current_config):
-                    raise _config_drift_error(existing, current_config, name)
+            if folder_matches:
+                config_result = _load_config(config_file)
+                if config_result.is_ok():
+                    current_config = config_result.unwrap()
+                    if config_has_drifted(existing, current_config):
+                        raise _config_drift_error(existing, current_config, name)
             return _resume_existing(existing, name).unwrap()
-        _rebuild_teardown(handle.client, existing, f"dvt/{name}:latest").unwrap()
+
+        if not folder_matches:
+            raise _folder_mismatch_error(existing_folder, project_path, name)
 
     config = _load_config(config_file).unwrap()
 
@@ -152,6 +200,9 @@ def up_workspace(
             f'{config_file} has no top-level "image" - only image-based '
             "devcontainer.json is supported"
         )
+
+    if existing is not None:
+        _rebuild_teardown(handle.client, existing, _image_tag(name)).unwrap()
 
     features_config = config.get("features", {})
     feature_refs = list(features_config.keys())
@@ -177,7 +228,7 @@ def up_workspace(
             handle.client,
             config["image"],
             features,
-            f"dvt/{name}:latest",
+            _image_tag(name),
             Path(scratch),
             nocache=rebuild,
             pull=rebuild,

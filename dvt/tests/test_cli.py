@@ -440,6 +440,38 @@ def test_up_rebuild_flag_threads_through_to_up_workspace(monkeypatch, tmp_path):
     assert captured["rebuild"] is True
 
 
+def test_up_without_rebuild_flag_threads_false_through_to_up_workspace(
+    monkeypatch, tmp_path
+):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path, rebuild=False: (
+            captured.update(rebuild=rebuild) or cli_module.Ok(object())
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["up", "my-project"])
+
+    assert result.exit_code == 0
+    assert captured["rebuild"] is False
+
+
 def test_info_is_registered_as_a_top_level_command():
     result = runner.invoke(app, ["info", "--help"])
     assert result.exit_code == 0
