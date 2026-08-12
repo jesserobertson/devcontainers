@@ -78,8 +78,17 @@ multi-stage Dockerfile, exactly the way `@devcontainers/cli`/`devpod` themselves
 build Features — then runs the container. `<name>` is the tag given to the
 resulting workspace, not a path; run `up` from inside the project directory. If a
 workspace with that name already exists, `up` starts it (if stopped) or leaves it
-running (if already running) rather than rebuilding — delete and re-`up` to pick up
-devcontainer.json changes.
+running (if already running), unless `devcontainer.json` has changed since that
+container was built (compared against the config baked into the container's own
+`devcontainer.metadata` label) — in which case `up` refuses and points at
+`dvt up --rebuild`, rather than silently reusing a stale image.
+
+`--rebuild` forces a from-scratch rebuild regardless of whether anything actually
+changed: it removes the existing container and its cached image tag, then builds
+fresh with Docker's build cache and base-image reuse both disabled, so a moved
+upstream base image tag is picked up too. If the rebuild's own build fails, the old
+container is already gone — unlike a plain `up`, which never destroys anything until
+a replacement is confirmed working.
 
 `<name>` is optional on `up`/`ssh`/`stop`/`delete` — when omitted, dvt looks for a workspace
 already tied to the current folder (via its `devcontainer.local_folder` container label, not
