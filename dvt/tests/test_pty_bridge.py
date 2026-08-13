@@ -177,6 +177,52 @@ async def test_bridge_to_ssh_process_forwards_client_resize_to_the_pty():
 
 
 @pytest.mark.asyncio
+async def test_bridge_to_ssh_process_ignores_break_and_signal_requests():
+    """Regression guard matching today's behaviour (see the design spec's
+    Testing section): a client-sent break or signal request must be silently
+    ignored, exactly like ssh_server.py's own non-pty path already treats
+    them - *not* forwarded to the pty (there is no SSH-protocol-level
+    concept for either on a real terminal; a client typing Ctrl-C instead
+    arrives as an ordinary 0x03 byte, covered by the round-trip test above)
+    and, critically, not allowed to end the session. Proven by sending both,
+    then confirming the bridge is still alive and forwarding ordinary data
+    afterwards."""
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        pty_proc = spawn_pty_process(
+            [sys.executable, "-c", _ECHO_ONE_LINE], rows=24, cols=80
+        )
+        await bridge_to_ssh_process(pty_proc, process)
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
+        ) as conn:
+            process = await conn.create_process(term_type="xterm")
+
+            process.send_break(1000)
+            process.send_signal("INT")
+            await asyncio.sleep(0.2)
+
+            # Session must still be alive and forwarding data normally after
+            # the break/signal - see the \r\n note in the round-trip test
+            # above for why this needs \r\n rather than a bare \n.
+            process.stdin.write("hello\r\n")
+            result = await process.wait()
+
+    assert "echo:hello" in result.stdout
+    assert result.exit_status == 0
+    (await server_task).close()
+
+
+@pytest.mark.asyncio
 async def test_bridge_to_ssh_process_returns_the_pty_processs_exit_code():
     host_key = asyncssh.generate_private_key("ssh-ed25519")
     server_sock, client_sock = socket.socketpair()
