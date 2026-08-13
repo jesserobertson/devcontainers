@@ -196,11 +196,11 @@ devtemplate/features/
                 #   de-underscored for the sake of it
 ```
 
-- `workspace.py`'s one import
+- `workspace/up.py`'s one import
   (`from devtemplate.features import pull_feature`) is unchanged in
   spirit — it already imports at the package level, so this split doesn't
-  even require touching `workspace.py`'s import statement, only where
-  `pull_feature` is defined.
+  even require touching that import statement, only where `pull_feature`
+  is defined.
 - `tests/test_features.py` updates its `_parse_feature_ref` import to the
   renamed, no-underscore name at its new location
   (`devtemplate.features.oci`).
@@ -209,36 +209,57 @@ devtemplate/features/
   lines total doesn't support four more modules; that would be exactly the
   churn this design is trying to avoid.
 
-### `workspace.py`: partial split, not a package
+### New package: `devtemplate/workspace/` (replaces `workspace.py`,
+`workspace_existing.py`'s planned content, and the already-existing
+`workspace_lookup.py`)
 
-Only one real sub-concern is worth extracting: deciding what to do about
-an already-existing container. This is a sibling flat module, matching how
-`workspace_lookup.py` already sits next to `workspace.py` — no new
-package, no `__init__.py` involved.
+Revised from an earlier draft of this spec, which had these as three
+sibling flat files distinguished only by a shared filename prefix. That
+undersells what they actually are: one cohesive concern (orchestrating
+`dvt up`) with three internal parts. A package makes that visible in the
+directory structure itself, not just in filenames — consistent with how
+`sshd/`, `features/`, and `pty/` already work in this design.
 
 ```
-devtemplate/
-  workspace.py           # up_workspace (only __all__ entry) +
-                          #   feature_id, image_tag, load_config,
-                          #   refresh_ssh_config — renamed, no underscore,
-                          #   but NOT in __all__ (still internal-only,
-                          #   just not signaled by spelling anymore)
-  workspace_existing.py  # resume_existing, config_drift_error,
-                          #   folder_mismatch_error, rebuild_teardown,
-                          #   plus the ~35 lines of lenient-vs-strict
-                          #   folder-confirmation branching currently
-                          #   inline in up_workspace
-                          #   __all__ lists whichever of these
-                          #   up_workspace actually needs to call —
-                          #   likely all four, a plan/implementation-time
-                          #   call once the extraction is in front of them
+devtemplate/workspace/
+  __init__.py   # re-exports up_workspace (+ resolve_for_up/
+                #   resolve_existing if anything outside this package
+                #   imports them today - confirm by grepping call sites
+                #   at implementation time); __all__ lists those
+  up.py         # up_workspace (the one __all__ export at this level) +
+                #   feature_id, image_tag, load_config,
+                #   refresh_ssh_config — renamed, no underscore, but NOT
+                #   in this file's own __all__ (internal to the package,
+                #   just not signaled by spelling anymore)
+  existing.py   # resume_existing, config_drift_error,
+                #   folder_mismatch_error, rebuild_teardown, plus the
+                #   ~35 lines of lenient-vs-strict folder-confirmation
+                #   branching currently inline in up_workspace — this
+                #   file's __all__ lists whichever of these up.py
+                #   actually calls (likely all four)
+  lookup.py     # was workspace_lookup.py, content unchanged by this
+                #   split - names_by_folder, multiple_matches_error
+                #   (renamed, no underscore, internal) + resolve_for_up,
+                #   resolve_existing (this file's __all__)
 ```
 
-- `up_workspace` keeps the linear pull → build → run → lifecycle →
-  ssh-config pipeline; the existing-container decision becomes a call (or
-  small number of calls) into `workspace_existing`, not inline branching.
-- No `__all__`-driven package re-export needed here since it's a flat
-  sibling module, same as `workspace_lookup.py` today.
+- `up.py` keeps the linear pull → build → run → lifecycle → ssh-config
+  pipeline; the existing-container decision becomes a call (or small
+  number of calls) into `existing.py`, not inline branching.
+- Cross-submodule imports within this package use the same full
+  absolute-dotted-path style the rest of the codebase already uses
+  everywhere (`from devtemplate.workspace.existing import
+  resume_existing`, not a relative `from .existing import ...`) — this
+  codebase has no relative imports today, and this package doesn't
+  introduce the first one.
+- `container.py` is explicitly NOT part of this package — it's a
+  different concern (translating devcontainer.json into docker-py
+  run/label/lookup calls), the audit found it fine as-is, and nothing
+  about "workspace orchestration" implies "container runtime
+  interaction" needs to move too.
+- `tests/test_workspace_lookup.py` (if that's its current name) keeps its
+  test content unchanged, just updates its import to
+  `devtemplate.workspace.lookup`.
 
 ### Flat modules gaining `__all__` with no structural change
 
@@ -246,9 +267,9 @@ Every remaining `.py` file under `src/devtemplate` — including ones with
 zero current private helpers (`models.py`, `config.py`, `sidecar.py`,
 `schema.py`, `github.py`, `cli_support.py`, `ssh.py`) and ones the audit
 found fine as multi-helper single files (`podman_machine.py`, `merge.py`,
-`runtime.py`, `cli.py`, `container.py`, `workspace_lookup.py`,
-`commands/feature.py`, `commands/info.py`, `commands/init.py`,
-`build.py`, `store.py`) — gets an explicit `__all__` listing its current
+`runtime.py`, `cli.py`, `container.py`, `commands/feature.py`,
+`commands/info.py`, `commands/init.py`, `build.py`, `store.py`) — gets
+an explicit `__all__` listing its current
 public names, and any underscore-prefixed helper renamed per the Naming
 convention section. No file moves, no new modules. This is mechanical,
 same-shape work across ~15-17 files and is expected to be batched into one
@@ -266,6 +287,11 @@ or a small number of task dispatches per file, not one dispatch each.
   instead of the old flat module.
 - `tests/test_features.py` needs its import updated for the `features/`
   package.
+- `tests/test_workspace*.py` (the `up_workspace` tests and the existing
+  `workspace_lookup.py` tests) need their imports updated for the new
+  `workspace/` package's submodule paths; test content/assertions are
+  unchanged for the lookup tests since `lookup.py`'s content doesn't
+  change, only its location.
 - No test's actual *behavior* assertions change — this is a pure
   reorganization plus a rename; the SSH PTY feature's own extensive test
   suite (both in `sshd`'s territory and `pty`'s) must keep passing
