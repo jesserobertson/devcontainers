@@ -98,6 +98,21 @@ module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
+# pywinpty ships no py.typed marker and no stubs, and is a win32-only
+# dependency so it isn't even installed on the Linux/macOS CI runners.
+[[tool.mypy.overrides]]
+module = "winpty.*"
+ignore_missing_imports = true
+
+# typeshed guards fcntl/termios/pty and os's W*() helpers behind
+# `sys.platform != "win32"`, so the attr-defined ignores this module needs on
+# CI's windows-latest runner are unused on the Linux/macOS ones. Scoped to
+# that single warning rather than disabling attr-defined outright, so genuine
+# typos in the module are still caught on every platform.
+[[tool.mypy.overrides]]
+module = "devtemplate.pty.posix"
+warn_unused_ignores = false
+
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64", "osx-64"]

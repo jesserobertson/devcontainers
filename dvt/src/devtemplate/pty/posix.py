@@ -15,6 +15,15 @@ import struct
 # (inside method bodies), not at class-definition time, so they can be
 # defined unconditionally; and spawn_pty_process()'s dispatcher in spawn.py
 # guarantees posix.spawn() is never called on Windows in production anyway.
+#
+# The `# type: ignore[attr-defined]` comments further down are the type-check
+# mirror of this: typeshed guards fcntl/termios/pty's contents and os's
+# W*() helpers behind `sys.platform != "win32"`, so mypy run on a Windows
+# host (as CI's windows-latest runner does) sees the modules but none of
+# their members. The ignores are unused on Linux/macOS, hence this module's
+# `warn_unused_ignores = false` override in pyproject.toml - deliberately
+# scoped to that one warning here rather than disabling attr-defined for the
+# whole file, so a genuine typo in any other attribute is still caught.
 if os.name == "posix":
     import fcntl
     import pty  # stdlib pty module, not devtemplate.pty - see module docstring
@@ -52,14 +61,17 @@ class PosixPtyProcess:
 
     def resize(self, rows: int, cols: int) -> None:
         winsize = struct.pack("HHHH", rows, cols, 0, 0)
-        fcntl.ioctl(self._master_fd, termios.TIOCSWINSZ, winsize)
+        fcntl.ioctl(self._master_fd, termios.TIOCSWINSZ, winsize)  # type: ignore[attr-defined]
 
     def wait(self) -> int:
         _, status = os.waitpid(self._pid, 0)
-        if os.WIFEXITED(status):
-            return os.WEXITSTATUS(status)
-        if os.WIFSIGNALED(status):
-            return 128 + os.WTERMSIG(status)
+        # The int() calls keep this returning a concrete int under
+        # warn_return_any: on a Windows-hosted mypy run the os.W*() helpers
+        # are unknown attributes, so their results would otherwise be Any.
+        if os.WIFEXITED(status):  # type: ignore[attr-defined]
+            return int(os.WEXITSTATUS(status))  # type: ignore[attr-defined]
+        if os.WIFSIGNALED(status):  # type: ignore[attr-defined]
+            return 128 + int(os.WTERMSIG(status))  # type: ignore[attr-defined]
         return status
 
     def close(self) -> None:
@@ -75,7 +87,7 @@ def spawn(argv: list[str], rows: int, cols: int) -> PosixPtyProcess:
     terminal - simply inheriting an already-open fd via Popen(stdin=slave_fd)
     does not reliably confer that, and getting it right by hand needs an
     explicit setsid() plus a pathname re-open or ioctl(TIOCSCTTY)."""
-    pid, master_fd = pty.fork()
+    pid, master_fd = pty.fork()  # type: ignore[attr-defined]
     if pid == 0:
         # In the child: os.execvp never returns on success. The try/finally
         # guarantees this function - and by extension this whole process,

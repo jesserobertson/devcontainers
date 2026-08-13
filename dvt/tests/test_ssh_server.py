@@ -657,7 +657,9 @@ async def test_handle_process_uses_the_pty_bridge_when_a_pty_was_requested(monke
 
 
 @pytest.mark.asyncio
-async def test_handle_process_defaults_a_dimensionless_pty_request_to_80x24(monkeypatch):
+async def test_handle_process_defaults_a_dimensionless_pty_request_to_80x24(
+    monkeypatch,
+):
     """RFC 4254 lets a client request a pty without stating its dimensions
     and says the zero values must then be ignored - asyncssh's own client
     does exactly that unless given term_size, so get_terminal_size() reports
@@ -712,7 +714,10 @@ async def test_non_pty_exec_session_still_uses_the_plain_pipe_path(monkeypatch):
 
     async with asyncio.timeout(30):
         async with asyncssh.connect(
-            sock=client_sock, host="dvt-test-client", known_hosts=None, username="anyone"
+            sock=client_sock,
+            host="dvt-test-client",
+            known_hosts=None,
+            username="anyone",
         ) as conn:
             # No term_type= passed to create_process(): matches a plain,
             # non-pty exec request exactly.
