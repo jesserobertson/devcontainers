@@ -115,10 +115,20 @@ async def _handle_process(
 
     if process.get_terminal_type() is not None:
         width, height, _, _ = process.get_terminal_size()
+        # A client may legally request a pty without stating its dimensions,
+        # in which case RFC 4254 says the zero values must be ignored -
+        # asyncssh's own client does exactly this unless given term_size, and
+        # get_terminal_size() then reports (0, 0, 0, 0). The POSIX backend
+        # tolerates a 0x0 pty, but ConPTY rejects it outright ("PTY cols and
+        # rows must be positive and non-zero"), and with this feature's
+        # deliberate no-fallback policy that would kill the session with exit
+        # 255 - reproducing the very "session looks broken" bug this branch
+        # exists to fix, for a client that did nothing wrong. 80x24 is the
+        # conventional default an unsized terminal gets.
         pty_proc = spawn_pty_process(
             [cli_binary, "exec", "-it", container_name, *shell_argv],
-            rows=height,
-            cols=width,
+            rows=height or 24,
+            cols=width or 80,
         )
         return await bridge_to_ssh_process(pty_proc, process)
 

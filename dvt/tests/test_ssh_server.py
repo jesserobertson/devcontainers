@@ -657,6 +657,41 @@ async def test_handle_process_uses_the_pty_bridge_when_a_pty_was_requested(monke
 
 
 @pytest.mark.asyncio
+async def test_handle_process_defaults_a_dimensionless_pty_request_to_80x24(monkeypatch):
+    """RFC 4254 lets a client request a pty without stating its dimensions
+    and says the zero values must then be ignored - asyncssh's own client
+    does exactly that unless given term_size, so get_terminal_size() reports
+    (0, 0, 0, 0). ConPTY rejects a 0x0 pty outright, and with this feature's
+    no-fallback policy that would kill the session with exit 255 for a client
+    that did nothing wrong, so the branch substitutes the conventional
+    80x24."""
+    import devtemplate.ssh_server as ssh_server_module
+
+    spawn_calls: list[tuple[list[str], int, int]] = []
+
+    def fake_spawn(argv, rows, cols):
+        spawn_calls.append((argv, rows, cols))
+        return object()
+
+    async def fake_bridge(pty_proc, process):
+        return 0
+
+    monkeypatch.setattr(ssh_server_module, "spawn_pty_process", fake_spawn)
+    monkeypatch.setattr(ssh_server_module, "bridge_to_ssh_process", fake_bridge)
+
+    fake_process = MagicMock()
+    fake_process.get_terminal_type.return_value = "xterm"
+    fake_process.get_terminal_size.return_value = (0, 0, 0, 0)
+    fake_process.command = None
+
+    await ssh_server_module._handle_process(fake_process, "docker", "myws")
+
+    assert spawn_calls == [
+        (["docker", "exec", "-it", "myws", "sh", "-c", 'exec "${SHELL:-sh}"'], 24, 80)
+    ]
+
+
+@pytest.mark.asyncio
 async def test_non_pty_exec_session_still_uses_the_plain_pipe_path(monkeypatch):
     """The single most important regression test in this feature: a client
     that does NOT request a pty (ssh <name> "cmd", what VS Code Remote-SSH/
