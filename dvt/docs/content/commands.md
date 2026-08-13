@@ -120,7 +120,8 @@ own `USER` — per the devcontainer Features spec, not configurable.
 into any image. `dvt up` writes (and `dvt delete` removes) a `Host <name>` block
 in `~/.ssh/config` whose `ProxyCommand` runs `dvt ssh --stdio <name>`: a real
 `asyncssh`-based SSH server that this process runs against its own stdin/stdout,
-bridging the resulting session to `docker`/`podman exec -i` in that container.
+bridging the resulting session to `docker`/`podman exec` in that container —
+`-it` with a real pty for sessions that requested one, `-i` otherwise.
 
 `dvt stop <name>` / `dvt delete <name>` find the workspace via its `dvt.workspace`
 container label — not a `dvt`-side registry — so they work from any directory.

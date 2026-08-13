@@ -7,10 +7,12 @@ exchange, authentication, channel open) across it. Piping straight to a bare
 
 This module runs an actual `asyncssh` server bound to this process's own
 stdin/stdout (via an internal `socket.socketpair()` bridged by blocking-I/O
-threads), and forwards each session it accepts to `docker`/`podman exec -i
-<container> sh`. That is what makes `dvt ssh --stdio` usable as a
-`ProxyCommand` target - by JetBrains Gateway, VS Code Remote-SSH, or plain
-`ssh` - without baking an `sshd` into every workspace image.
+threads), and forwards each session it accepts to `docker`/`podman exec`
+against `<container>` - `-it` with a real host-side pty for sessions that
+requested one (see `devtemplate.pty`), `-i` otherwise. That is what makes
+`dvt ssh --stdio` usable as a `ProxyCommand` target - by JetBrains Gateway,
+VS Code Remote-SSH, or plain `ssh` - without baking an `sshd` into every
+workspace image.
 """
 
 from __future__ import annotations
@@ -305,8 +307,9 @@ def _pump_stdio_to_socket(sock: socket.socket) -> None:
 def run_stdio_server(cli_binary: str, container_name: str) -> int:
     """Run a real (if minimal) SSH server bound to this process's own
     stdin/stdout, bridging the one session it'll ever handle to
-    `docker/podman exec -i <container_name> sh`. Returns the bridged
-    process's exit code.
+    `docker`/`podman exec` against `container_name` - `-it` with a real
+    host-side pty if the session requested one, `-i` otherwise (see
+    `_handle_process`). Returns the bridged process's exit code.
 
     This is deliberately the one fallible entry point here that returns a
     plain `int` rather than a `Result`: it exists to turn a session into a
