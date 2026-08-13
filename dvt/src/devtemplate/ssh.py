@@ -57,8 +57,10 @@ def stdio_proxy(cli_binary: str, client: DockerClient, name: str) -> int:
     """The non-interactive pipe mode `dvt ssh --stdio <name>` runs: finds the
     container labeled dvt.workspace=name and runs a real SSH server
     (ssh_server.run_stdio_server) bound to this process's own stdin/stdout,
-    bridged to `docker/podman exec -i` in that container. This is what the
-    ProxyCommand entry written by write_ssh_config_entry invokes."""
+    bridged to `docker/podman exec` in that container - `-it` with a real
+    host-side pty for sessions that requested one, `-i` otherwise (see
+    ssh_server's own module docstring). This is what the ProxyCommand entry
+    written by write_ssh_config_entry invokes."""
     # Imported here, not at module scope, and inside the try like every
     # other fallible statement in this codebase: ssh_server pulls in
     # asyncssh and transitively cryptography, ~25% of
