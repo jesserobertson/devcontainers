@@ -145,9 +145,17 @@ container label — not a `dvt`-side registry — so they work from any director
   the two separately (`> out.txt 2> err.txt`) works as expected.
 - **A real pty for interactive sessions.** A client that requests a pty
   (a plain `ssh <name>`, or `ssh -t <name> <command>`) gets a genuine
-  host-side pseudo-terminal bridged through to `docker`/`podman exec -it` -
-  a working prompt/banner, Ctrl-C, job control, and correctly-sized
-  full-screen programs, matching `dvt ssh <name>`'s direct (non-SSH) path.
+  host-side pseudo-terminal bridged through to `docker`/`podman exec -it`,
+  which is what a prompt/banner, Ctrl-C, job control, and correctly-sized
+  full-screen programs need — matching `dvt ssh <name>`'s direct (non-SSH)
+  path. Exercised end-to-end with a real `asyncssh` client against a real
+  spawned pty process: the child sees a genuine tty, bytes round-trip both
+  directions, a client-side resize reaches the pty, and the exit code
+  propagates. Not yet additionally confirmed with an actual `ssh` binary in
+  an interactive terminal against a live container, so the user-visible
+  behaviours above (a fish prompt actually appearing, Ctrl-C actually
+  interrupting, `vim`/`top` actually redrawing on resize) follow from the
+  plumbing being correct rather than from having been watched happen.
   Implemented via the stdlib `pty` module on Linux/macOS and `pywinpty`
   (ConPTY) on Windows. Non-pty exec sessions (`ssh <name> "cmd"`, what VS
   Code Remote-SSH/JetBrains Gateway are expected to rely on) are completely
