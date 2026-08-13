@@ -90,22 +90,33 @@ async def bridge_to_ssh_process(
     writer.start()
 
     async def pump_client_to_pty() -> None:
-        with contextlib.suppress(asyncssh.Error, OSError):
-            while True:
-                try:
-                    data = await process.stdin.read(_CHUNK)
-                except asyncssh.misc.TerminalSizeChanged as exc:
-                    pty_proc.resize(exc.height, exc.width)
-                    continue
-                except _CHANNEL_EVENTS:
-                    continue
-                if not data:
-                    break
-                await loop.sock_sendall(
-                    bridge_sock, data.encode() if isinstance(data, str) else data
-                )
-        with contextlib.suppress(OSError):
-            bridge_sock.shutdown(socket.SHUT_WR)
+        # The shutdown lives in a finally, not merely after the suppress
+        # block, because the overwhelmingly common way this task ends is
+        # cancellation from the finally below - a normal interactive session
+        # exiting - and asyncio.CancelledError is neither asyncssh.Error nor
+        # OSError, so a trailing statement would simply never run. Without
+        # the shutdown, _pump_socket_to_pty never sees EOF on its end of the
+        # socketpair, stays blocked in recv(), and writer.join() below burns
+        # the whole _DRAIN_TIMEOUT on every single session teardown while
+        # leaking that thread.
+        try:
+            with contextlib.suppress(asyncssh.Error, OSError):
+                while True:
+                    try:
+                        data = await process.stdin.read(_CHUNK)
+                    except asyncssh.misc.TerminalSizeChanged as exc:
+                        pty_proc.resize(exc.height, exc.width)
+                        continue
+                    except _CHANNEL_EVENTS:
+                        continue
+                    if not data:
+                        break
+                    await loop.sock_sendall(
+                        bridge_sock, data.encode() if isinstance(data, str) else data
+                    )
+        finally:
+            with contextlib.suppress(OSError):
+                bridge_sock.shutdown(socket.SHUT_WR)
 
     async def pump_pty_to_client() -> None:
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
