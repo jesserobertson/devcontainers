@@ -55,7 +55,14 @@ def _pump_socket_to_pty(sock: socket.socket, pty_proc: PtyProcess) -> None:
     pty_proc.write(). The other half of the same thread pair as
     _pump_pty_to_socket. Incremental decoder for the same multi-byte-UTF-8-
     across-a-read-boundary reason as everywhere else in this codebase that
-    decodes a byte stream."""
+    decodes a byte stream.
+
+    errors="replace" is a deliberate, accepted scope limitation, not an
+    oversight: it's correct for interactive keystrokes (this bridge exists
+    for terminal sessions, not file transfer), but would corrupt a stream
+    that happens to carry genuinely binary data, e.g. `ssh -t host
+    'cat > f' < binary_file`. No fallback to raw bytes is planned - a pty
+    session is fundamentally a text terminal, not a binary pipe."""
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     try:
         while True:
@@ -119,6 +126,10 @@ async def bridge_to_ssh_process(
                 bridge_sock.shutdown(socket.SHUT_WR)
 
     async def pump_pty_to_client() -> None:
+        # errors="replace" here is the same deliberate, accepted scope
+        # limitation as _pump_socket_to_pty's - fine for interactive
+        # terminal output, but would corrupt a stream carrying genuinely
+        # binary data. See that function's docstring for the full rationale.
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         with contextlib.suppress(asyncssh.Error, OSError):
             while True:
