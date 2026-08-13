@@ -115,7 +115,8 @@ async def _handle_process(
         else ["sh", "-c", process.command]
     )
 
-    if process.get_terminal_type() is not None:
+    term_type = process.get_terminal_type()
+    if term_type is not None:
         width, height, _, _ = process.get_terminal_size()
         # A client may legally request a pty without stating its dimensions,
         # in which case RFC 4254 says the zero values must be ignored -
@@ -127,8 +128,23 @@ async def _handle_process(
         # 255 - reproducing the very "session looks broken" bug this branch
         # exists to fix, for a client that did nothing wrong. 80x24 is the
         # conventional default an unsized terminal gets.
+        #
+        # -e TERM=... is passed explicitly because docker/podman exec -it
+        # otherwise defaults the container's TERM to xterm regardless of what
+        # the client actually asked for - a real sshd forwards the client's
+        # TERM, and without this a client on xterm-256color (or similar)
+        # silently loses color capability in full-screen programs like
+        # vim/htop inside the container.
         pty_proc = spawn_pty_process(
-            [cli_binary, "exec", "-it", container_name, *shell_argv],
+            [
+                cli_binary,
+                "exec",
+                "-it",
+                "-e",
+                f"TERM={term_type}",
+                container_name,
+                *shell_argv,
+            ],
             rows=height or 24,
             cols=width or 80,
         )

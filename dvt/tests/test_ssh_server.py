@@ -651,7 +651,21 @@ async def test_handle_process_uses_the_pty_bridge_when_a_pty_was_requested(monke
 
     assert result == 0
     assert spawn_calls == [
-        (["docker", "exec", "-it", "myws", "sh", "-c", 'exec "${SHELL:-sh}"'], 24, 80)
+        (
+            [
+                "docker",
+                "exec",
+                "-it",
+                "-e",
+                "TERM=xterm",
+                "myws",
+                "sh",
+                "-c",
+                'exec "${SHELL:-sh}"',
+            ],
+            24,
+            80,
+        )
     ]
     assert bridge_calls == [(fake_pty_proc, fake_process)]
 
@@ -689,7 +703,21 @@ async def test_handle_process_defaults_a_dimensionless_pty_request_to_80x24(
     await ssh_server_module._handle_process(fake_process, "docker", "myws")
 
     assert spawn_calls == [
-        (["docker", "exec", "-it", "myws", "sh", "-c", 'exec "${SHELL:-sh}"'], 24, 80)
+        (
+            [
+                "docker",
+                "exec",
+                "-it",
+                "-e",
+                "TERM=xterm",
+                "myws",
+                "sh",
+                "-c",
+                'exec "${SHELL:-sh}"',
+            ],
+            24,
+            80,
+        )
     ]
 
 
