@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 import shutil
 import tarfile
@@ -13,11 +12,20 @@ import httpx
 from logerr import Err, Ok, Result
 from logerr.utilities import wrap_result
 
+__all__ = [
+    "parse_feature_ref",
+    "parse_www_authenticate",
+    "get_token",
+    "fetch_manifest",
+    "first_layer_digest",
+    "fetch_and_extract_layer",
+]
+
 _WWW_AUTHENTICATE_PARAM = re.compile(r'(\w+)="([^"]*)"')
 _MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
 
 
-def _parse_feature_ref(ref: str) -> Result[tuple[str, str, str], Exception]:
+def parse_feature_ref(ref: str) -> Result[tuple[str, str, str], Exception]:
     """Split 'registry/repository/path:tag' or 'registry/repository/path@sha256:hex'
     into (registry, repository_path, reference), where reference is either a tag
     or a digest - OCI registries accept either directly in the manifest URL's
@@ -50,7 +58,7 @@ def _parse_feature_ref(ref: str) -> Result[tuple[str, str, str], Exception]:
     return Ok((registry, repository, tag))
 
 
-def _parse_www_authenticate(header_value: str) -> Result[dict[str, str], Exception]:
+def parse_www_authenticate(header_value: str) -> Result[dict[str, str], Exception]:
     params = dict(_WWW_AUTHENTICATE_PARAM.findall(header_value))
     return Result.from_predicate(
         params,
@@ -60,7 +68,7 @@ def _parse_www_authenticate(header_value: str) -> Result[dict[str, str], Excepti
 
 
 @wrap_result
-def _get_token(client: httpx.Client, registry: str, repository: str, tag: str) -> str:
+def get_token(client: httpx.Client, registry: str, repository: str, tag: str) -> str:
     """Anonymous OCI Distribution auth: probe the manifest endpoint unauthenticated,
     parse the resulting 401's WWW-Authenticate challenge, fetch a token from its
     realm. Registry-agnostic - not hardcoded to ghcr.io's own /token endpoint, since
@@ -76,7 +84,7 @@ def _get_token(client: httpx.Client, registry: str, repository: str, tag: str) -
     challenge = probe.headers.get("www-authenticate")
     if challenge is None:
         raise ValueError(f"401 response from {registry} had no WWW-Authenticate header")
-    params = _parse_www_authenticate(challenge).unwrap()
+    params = parse_www_authenticate(challenge).unwrap()
     token_response = client.get(
         params["realm"],
         params={"service": params["service"], "scope": params["scope"]},
@@ -85,7 +93,7 @@ def _get_token(client: httpx.Client, registry: str, repository: str, tag: str) -
     return str(token_response.json()["token"])
 
 
-def _first_layer_digest(manifest: Any, ref: str) -> Result[str, Exception]:
+def first_layer_digest(manifest: Any, ref: str) -> Result[str, Exception]:
     """Pull the first layer's digest out of a manifest, treating any malformed
     shape (a non-dict manifest, no layers, a non-dict layer entry, a
     missing/non-string digest) as a Result error rather than letting
@@ -111,11 +119,11 @@ def _first_layer_digest(manifest: Any, ref: str) -> Result[str, Exception]:
 
 
 @wrap_result
-def _fetch_manifest(
+def fetch_manifest(
     client: httpx.Client, registry: str, repository: str, tag: str, token: str
 ) -> Any:
     """Returns whatever JSON value the registry responded with - not
-    necessarily a dict. _first_layer_digest is responsible for rejecting a
+    necessarily a dict. first_layer_digest is responsible for rejecting a
     non-dict manifest as a Result error rather than trusting this shape."""
     response = client.get(
         f"https://{registry}/v2/{repository}/manifests/{tag}",
@@ -126,7 +134,7 @@ def _fetch_manifest(
 
 
 @wrap_result
-def _fetch_and_extract_layer(
+def fetch_and_extract_layer(
     client: httpx.Client,
     registry: str,
     repository: str,
@@ -162,27 +170,3 @@ def _fetch_and_extract_layer(
         raise
     tmp_dir.rename(dest_dir)
     return dest_dir
-
-
-@wrap_result
-def pull_feature(client: httpx.Client, ref: str, cache_dir: Path) -> Path:
-    """Pull and extract an OCI Feature artifact, returning its extracted directory.
-
-    Cached under cache_dir / sha256(ref) - hashed rather than derived from the ref's
-    own text, since a ref can contain arbitrary registry/path characters that aren't
-    all safe path segments, and (unlike this repo's own template names) Feature refs
-    aren't restricted to a known-safe pattern - they can point at any registry.
-    """
-    registry, repository, tag = _parse_feature_ref(ref).unwrap()
-
-    dest_dir = cache_dir / hashlib.sha256(ref.encode()).hexdigest()
-    if dest_dir.exists():
-        return dest_dir
-
-    token = _get_token(client, registry, repository, tag).unwrap()
-    manifest = _fetch_manifest(client, registry, repository, tag, token).unwrap()
-    digest = _first_layer_digest(manifest, ref).unwrap()
-
-    return _fetch_and_extract_layer(
-        client, registry, repository, digest, token, dest_dir
-    ).unwrap()

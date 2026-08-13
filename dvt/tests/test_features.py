@@ -6,7 +6,8 @@ import tarfile
 
 import httpx
 
-from devtemplate.features import _parse_feature_ref, pull_feature
+from devtemplate.features import pull_feature
+from devtemplate.features.oci import parse_feature_ref
 
 
 def _make_feature_tar() -> bytes:
@@ -62,8 +63,8 @@ def _registry_handler(blob_digest: str, blob_bytes: bytes):
     return handler
 
 
-def test_parse_feature_ref_splits_registry_repository_tag():
-    result = _parse_feature_ref("ghcr.io/jesserobertson/devcontainers/fastapi:latest")
+def testparse_feature_ref_splits_registry_repository_tag():
+    result = parse_feature_ref("ghcr.io/jesserobertson/devcontainers/fastapi:latest")
     assert result.is_ok()
     assert result.unwrap() == (
         "ghcr.io",
@@ -72,8 +73,8 @@ def test_parse_feature_ref_splits_registry_repository_tag():
     )
 
 
-def test_parse_feature_ref_rejects_missing_tag():
-    result = _parse_feature_ref("ghcr.io/jesserobertson/devcontainers/fastapi")
+def testparse_feature_ref_rejects_missing_tag():
+    result = parse_feature_ref("ghcr.io/jesserobertson/devcontainers/fastapi")
     assert result.is_err()
 
 
@@ -256,8 +257,8 @@ def test_get_token_returns_err_on_malformed_www_authenticate_header(tmp_path):
     assert result.is_err()
 
 
-def test_parse_feature_ref_accepts_digest_form():
-    result = _parse_feature_ref(
+def testparse_feature_ref_accepts_digest_form():
+    result = parse_feature_ref(
         "ghcr.io/jesserobertson/devcontainers/fastapi@sha256:"
         "f26cbb9c85b8211fa150e50200d48033d82d6678b6c871e8c2db015a1d81ffff"
     )
@@ -270,8 +271,8 @@ def test_parse_feature_ref_accepts_digest_form():
     )
 
 
-def test_parse_feature_ref_rejects_digest_form_missing_repository():
-    result = _parse_feature_ref("ghcr.io/@sha256:abc")
+def testparse_feature_ref_rejects_digest_form_missing_repository():
+    result = parse_feature_ref("ghcr.io/@sha256:abc")
     assert result.is_err()
 
 
