@@ -143,6 +143,19 @@ container label — not a `dvt`-side registry — so they work from any director
 - **stdout/stderr stay separate** — the container's stderr arrives on the
   SSH client's own stderr channel, never merged into stdout, so redirecting
   the two separately (`> out.txt 2> err.txt`) works as expected.
+- **A real pty for interactive sessions.** A client that requests a pty
+  (a plain `ssh <name>`, or `ssh -t <name> <command>`) gets a genuine
+  host-side pseudo-terminal bridged through to `docker`/`podman exec -it` -
+  a working prompt/banner, Ctrl-C, job control, and correctly-sized
+  full-screen programs, matching `dvt ssh <name>`'s direct (non-SSH) path.
+  Implemented via the stdlib `pty` module on Linux/macOS and `pywinpty`
+  (ConPTY) on Windows. Non-pty exec sessions (`ssh <name> "cmd"`, what VS
+  Code Remote-SSH/JetBrains Gateway are expected to rely on) are completely
+  unaffected - they keep the separate stdin/stdout/stderr pipes described
+  above, since a pty session and a non-pty exec session are structurally
+  different: a pty merges stdout+stderr into one stream (standard terminal
+  semantics, the same as any real interactive SSH session), which the
+  non-pty path deliberately does not do.
 - **Multi-byte UTF-8 output survives read-boundary splits** — a run of
   non-ASCII output large enough to land a multi-byte character across two
   underlying reads still decodes correctly on the client side, instead of
@@ -163,12 +176,6 @@ through SSH at all; it uses the container's labels directly. See
 
 ### SSH access: known v1 gaps
 
-- **No PTY is allocated on the container side.** The bridged session runs
-  `docker`/`podman exec -i`, not `-it`, so there is no tty to interpret control
-  characters: **Ctrl-C does nothing** in an interactive `ssh <name>` session,
-  and there's no job control. `dvt ssh <name>` (no `ssh` client involved) uses
-  `exec -it` and is unaffected. Full-screen programs may also misbehave for the
-  same reason.
 - **No SFTP subsystem.** Anything that transfers files over the connection —
   `sftp`, `scp` in its modern SFTP mode, and IDE remote-development backends
   that upload themselves — will not work through the `ProxyCommand` entry.
