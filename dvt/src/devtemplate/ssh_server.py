@@ -25,6 +25,9 @@ import threading
 
 import asyncssh
 
+from devtemplate.pty.bridge import bridge_to_ssh_process
+from devtemplate.pty.spawn import spawn_pty_process
+
 _CHUNK = 4096
 """Read size for every byte pump in this module - a session is interactive
 terminal traffic, so throughput never matters, but latency does."""
@@ -90,6 +93,12 @@ async def _handle_process(
     Reports the subprocess's exit status to the SSH client *and* returns it,
     so the caller can use it as its own process exit code. `process.exit()`
     only sets the SSH channel's status; it hands nothing back to Python.
+
+    If the client requested a pty (`process.get_terminal_type()` is not
+    `None`), bridges to a real host-side pseudo-terminal instead (see
+    `devtemplate.pty`) - `-it` rather than `-i`, so the container's shell
+    gets a real tty. Non-pty exec requests are completely unaffected by this
+    branch.
     """
     # A bare shell request runs the container user's own configured shell
     # (falling back to sh if $SHELL isn't set) rather than hardcoding sh -
@@ -103,6 +112,16 @@ async def _handle_process(
         if process.command is None
         else ["sh", "-c", process.command]
     )
+
+    if process.get_terminal_type() is not None:
+        width, height, _, _ = process.get_terminal_size()
+        pty_proc = spawn_pty_process(
+            [cli_binary, "exec", "-it", container_name, *shell_argv],
+            rows=height,
+            cols=width,
+        )
+        return await bridge_to_ssh_process(pty_proc, process)
+
     proc = await asyncio.create_subprocess_exec(
         cli_binary,
         "exec",
@@ -327,6 +346,18 @@ def run_stdio_server(cli_binary: str, container_name: str) -> int:
             # resolve this host's FQDN at startup, which costs seconds of
             # connection latency on machines behind slow reverse DNS.
             gss_host=None,
+            # asyncssh defaults this to True, which activates its own
+            # line-editing convenience layer for any session that requests a
+            # pty (term_type set + encoding not None - exactly the condition
+            # _handle_process's pty branch handles) and silently mangles raw
+            # input in the process: a client sending "hello\r\n" arrives at
+            # the pty as "hello\n\n". That defeats the entire point of a real
+            # pty bridge - the container's own shell is supposed to do the
+            # real line editing/echo, exactly as a real `sshd` hands a real
+            # terminal's raw bytes straight through untouched. Non-pty exec
+            # sessions never activate this option either way, so this has no
+            # effect on the plain-pipe path below.
+            line_editor=False,
         )
         await conn.wait_closed()
 

@@ -7,6 +7,7 @@ import socket
 import sys
 import threading
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import asyncssh
 import pytest
@@ -613,4 +614,80 @@ async def test_multibyte_utf8_split_across_read_boundaries_survives(monkeypatch)
     # a bare equality assertion over 34k characters is unreadable when it fails.
     assert "\ufffd" not in result.stdout, "a chunk boundary corrupted a character"
     assert result.stdout == expected
+    (await server_task).close()
+
+
+@pytest.mark.asyncio
+async def test_handle_process_uses_the_pty_bridge_when_a_pty_was_requested(monkeypatch):
+    """process.get_terminal_type() is asyncssh's own signal that the client
+    asked for a pty (ssh <name>, or ssh -t <name> <cmd>) - _handle_process
+    must route to the new pty bridge in that case, not the plain-pipe path.
+    Only the two devtemplate.pty entry points are mocked; nothing about
+    asyncssh or the branching logic itself is."""
+    import devtemplate.ssh_server as ssh_server_module
+
+    fake_pty_proc = object()
+    spawn_calls: list[tuple[list[str], int, int]] = []
+
+    def fake_spawn(argv, rows, cols):
+        spawn_calls.append((argv, rows, cols))
+        return fake_pty_proc
+
+    bridge_calls: list[tuple[object, object]] = []
+
+    async def fake_bridge(pty_proc, process):
+        bridge_calls.append((pty_proc, process))
+        return 0
+
+    monkeypatch.setattr(ssh_server_module, "spawn_pty_process", fake_spawn)
+    monkeypatch.setattr(ssh_server_module, "bridge_to_ssh_process", fake_bridge)
+
+    fake_process = MagicMock()
+    fake_process.get_terminal_type.return_value = "xterm"
+    fake_process.get_terminal_size.return_value = (80, 24, 0, 0)
+    fake_process.command = None
+
+    result = await ssh_server_module._handle_process(fake_process, "docker", "myws")
+
+    assert result == 0
+    assert spawn_calls == [
+        (["docker", "exec", "-it", "myws", "sh", "-c", 'exec "${SHELL:-sh}"'], 24, 80)
+    ]
+    assert bridge_calls == [(fake_pty_proc, fake_process)]
+
+
+@pytest.mark.asyncio
+async def test_non_pty_exec_session_still_uses_the_plain_pipe_path(monkeypatch):
+    """The single most important regression test in this feature: a client
+    that does NOT request a pty (ssh <name> "cmd", what VS Code Remote-SSH/
+    JetBrains Gateway rely on) must be completely unaffected by this
+    change - same argv (-i, not -it), same separate-stdout/stderr pipes.
+    Reuses the existing real-subprocess pattern below, not a mock, to prove
+    the actual pipe path still runs end to end."""
+    spawned = _patch_exec_to_fake_sh_c(monkeypatch)
+
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    server_sock, client_sock = socket.socketpair()
+    returned: list[int] = []
+
+    async def process_factory(process: asyncssh.SSHServerProcess) -> None:
+        returned.append(await _handle_process(process, "docker", "myws"))
+
+    server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
+
+    async with asyncio.timeout(30):
+        async with asyncssh.connect(
+            sock=client_sock, host="dvt-test-client", known_hosts=None, username="anyone"
+        ) as conn:
+            # No term_type= passed to create_process(): matches a plain,
+            # non-pty exec request exactly.
+            process = await conn.create_process("echo hello-from-real-ssh")
+            result = await process.wait()
+
+    assert spawned == [
+        ("docker", "exec", "-i", "myws", "sh", "-c", "echo hello-from-real-ssh")
+    ]
+    assert result.stdout == "hello-from-real-ssh\n"
+    assert result.exit_status == 3
+    assert returned == [3]
     (await server_task).close()
