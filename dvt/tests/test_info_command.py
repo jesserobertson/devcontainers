@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 from unittest.mock import MagicMock
 
@@ -40,7 +41,7 @@ def test_info_escapes_rich_markup_in_project_name(tmp_path, monkeypatch):
     _write_devcontainer_json(
         tmp_path, {"name": "[my-project]", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     monkeypatch.setattr(
         info_module,
@@ -64,7 +65,7 @@ def test_info_shows_untracked_features_when_no_sidecar(tmp_path, monkeypatch):
             "features": {"ghcr.io/jesserobertson/devcontainers/fastapi:latest": {}},
         },
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     monkeypatch.setattr(
         info_module,
@@ -97,7 +98,7 @@ def test_info_shows_tracked_feature_names_from_sidecar(tmp_path, monkeypatch):
             }
         )
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     monkeypatch.setattr(
         info_module,
@@ -118,7 +119,7 @@ def test_info_notes_when_no_runtime_reachable(tmp_path, monkeypatch):
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     monkeypatch.setattr(
         info_module,
@@ -137,7 +138,7 @@ def test_info_calls_get_client_without_podman_auto_start_or_init(tmp_path, monke
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     captured = {}
 
@@ -160,7 +161,7 @@ def test_info_reports_no_workspace_running_when_zero_matches(tmp_path, monkeypat
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     fake_handle = MagicMock(client=MagicMock())
     monkeypatch.setattr(
@@ -181,7 +182,7 @@ def test_info_ignores_non_dvt_containers_matching_the_folder(tmp_path, monkeypat
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     fake_handle = MagicMock(client=MagicMock())
     non_dvt_container = MagicMock(
@@ -207,7 +208,7 @@ def test_info_shows_live_status_for_single_matching_workspace(tmp_path, monkeypa
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     fake_handle = MagicMock(client=MagicMock())
     fake_container = MagicMock(status="running", labels={"dvt.workspace": "my-project"})
@@ -234,7 +235,7 @@ def test_info_lists_all_matches_when_multiple_workspaces_found(tmp_path, monkeyp
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
     )
-    import devtemplate.commands.info as info_module
+    info_module = importlib.import_module("devtemplate.commands.info")
 
     fake_handle = MagicMock(client=MagicMock())
     fake_containers = [

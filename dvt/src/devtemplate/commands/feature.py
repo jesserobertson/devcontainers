@@ -24,6 +24,8 @@ from devtemplate.store import (
     sync_templates,
 )
 
+__all__ = ["app"]
+
 app = typer.Typer(
     help="Add, remove, and inspect the devcontainer features dvt knows about."
 )
@@ -31,7 +33,7 @@ console = Console()
 stderr_console = Console(stderr=True)
 
 
-def _feature_ref(template: dict[str, Any]) -> str:
+def feature_ref(template: dict[str, Any]) -> str:
     features = template.get("features", {})
     return next(iter(features), "")
 
@@ -59,7 +61,7 @@ def list_features(
                         "name": name,
                         "description": template.get("description", ""),
                         "image": template.get("image", ""),
-                        "feature_ref": _feature_ref(template),
+                        "feature_ref": feature_ref(template),
                     }
                 )
             case Err(error):
@@ -106,7 +108,7 @@ IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount", "description"}
 
 
 @wrap_result
-def _add_one(
+def add_one(
     name: str, settings: Settings, devcontainer_dir: Path, target: Path
 ) -> None:
     """Layer one feature onto target's devcontainer.json. Prints its own
@@ -189,13 +191,13 @@ def add(
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
     for name in names:
-        unwrap_or_exit(_add_one(name, settings, devcontainer_dir, target), console)
+        unwrap_or_exit(add_one(name, settings, devcontainer_dir, target), console)
 
 
 @wrap_result
-def _remove_one(name: str, devcontainer_dir: Path, target: Path) -> None:
+def remove_one(name: str, devcontainer_dir: Path, target: Path) -> None:
     """Un-layer one feature previously added with 'dvt feature add'. Same
-    Result/success-printing contract as _add_one.
+    Result/success-printing contract as add_one.
     """
     if not target.exists():
         raise FileNotFoundError(f"{target} not found. Run 'dvt init' first.")
@@ -268,4 +270,4 @@ def remove(
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
     for name in names:
-        unwrap_or_exit(_remove_one(name, devcontainer_dir, target), console)
+        unwrap_or_exit(remove_one(name, devcontainer_dir, target), console)

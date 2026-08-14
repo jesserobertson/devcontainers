@@ -10,6 +10,8 @@ from rich.markup import escape
 
 from devtemplate.sidecar import write_sidecar
 
+__all__ = ["init", "DEFAULT_IMAGE"]
+
 console = Console()
 
 DEFAULT_IMAGE = "ghcr.io/jesserobertson/base-ubuntu:latest"
@@ -31,7 +33,7 @@ python = ">=3.11"
 """
 
 
-def _scaffold_pixi_toml(path: Path, name: str) -> None:
+def scaffold_pixi_toml(path: Path, name: str) -> None:
     """Write a minimal pixi.toml if the project doesn't already manage its
     own dependencies (via pixi.toml or a pyproject.toml with a [tool.pixi]
     table). Every feature's postCreateCommand runs 'pixi install', which
@@ -84,4 +86,4 @@ def init(
             f"{escape(str(sidecar_result.unwrap_err()))}[/yellow]"
         )
 
-    _scaffold_pixi_toml(path, name)
+    scaffold_pixi_toml(path, name)

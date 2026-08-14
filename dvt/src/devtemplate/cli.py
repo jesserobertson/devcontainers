@@ -16,9 +16,9 @@ from rich.markup import escape
 
 from devtemplate import __version__
 from devtemplate.cli_support import unwrap_or_exit
-from devtemplate.commands import feature
-from devtemplate.commands.info import info as info_command
-from devtemplate.commands.init import init as init_command
+from devtemplate.commands import feature_app
+from devtemplate.commands import info as info_command
+from devtemplate.commands import init as init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client
@@ -28,7 +28,7 @@ from devtemplate.workspace import resolve_existing, resolve_for_up, up_workspace
 app = typer.Typer(
     help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."
 )
-app.add_typer(feature.app, name="feature")
+app.add_typer(feature_app, name="feature")
 app.command("init")(init_command)
 app.command("info")(info_command)
 console = Console()

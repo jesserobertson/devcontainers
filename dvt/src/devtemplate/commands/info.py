@@ -13,6 +13,8 @@ from devtemplate.container import find_workspace_containers_by_folder
 from devtemplate.runtime import get_client
 from devtemplate.sidecar import load_sidecar
 
+__all__ = ["info"]
+
 console = Console()
 
 
