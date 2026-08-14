@@ -11,6 +11,6 @@
   "mounts": [
     "source=pixi-cache,target=/home/dev/.cache/pixi,type=volume"
   ],
-  "postCreateCommand": "pixi install",
+  "postCreateCommand": "mkdir -p ~/.config/pixi && printf 'detached-environments = true\\n' >> ~/.config/pixi/config.toml && pixi install",
   "remoteUser": "dev"
 }

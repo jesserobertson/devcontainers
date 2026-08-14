@@ -253,6 +253,21 @@ def test_agent_template_no_sshd_waitloop():
     assert "pgrep sshd" not in json.dumps(_template_json("agent"))
 
 
+@pytest.mark.parametrize("feature", FEATURES)
+def test_template_post_create_enables_detached_environments(feature):
+    # Every template's postCreateCommand is a plain string, and dvt's merge
+    # algorithm replaces (rather than combines) plain-string lifecycle
+    # commands outright - so `dvt feature add` silently drops whatever
+    # postCreateCommand came before it, including `dvt init`'s own
+    # detached-environments setup step (see
+    # devtemplate.commands.init.POST_CREATE_COMMAND). Without this step in
+    # every template too, `pixi install` writes .pixi/envs straight onto
+    # the bind-mounted workspace, which fails outright on Windows hosts
+    # ("Operation not permitted" copying into the mount - confirmed live
+    # against a real container, 2026-08-15).
+    assert "detached-environments = true" in _template_json(feature)["postCreateCommand"]
+
+
 # --- compose YAML ---
 
 @pytest.mark.parametrize("rel_path", [
