@@ -7,6 +7,8 @@ from __future__ import annotations
 import sys
 from typing import Protocol
 
+__all__ = ["PtyProcess", "spawn_pty_process"]
+
 
 class PtyProcess(Protocol):
     """A process attached to a real OS pseudo-terminal. Backends:

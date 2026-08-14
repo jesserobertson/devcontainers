@@ -29,6 +29,8 @@ if os.name == "posix":
     import pty  # stdlib pty module, not devtemplate.pty - see module docstring
     import termios
 
+__all__ = ["PosixPtyProcess", "spawn"]
+
 
 class PosixPtyProcess:
     def __init__(self, pid: int, master_fd: int) -> None:

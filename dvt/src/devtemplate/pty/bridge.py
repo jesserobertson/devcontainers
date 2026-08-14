@@ -17,31 +17,41 @@ import asyncssh
 if TYPE_CHECKING:
     from devtemplate.pty.spawn import PtyProcess
 
-_CHUNK = 4096
-_DRAIN_TIMEOUT = 5.0
-"""Same rationale as ssh_server.py's _BRIDGE_DRAIN_TIMEOUT: how long to wait
-for the blocking pump threads to notice their socket end closed and flush
-their last output, after the async side has finished. The threads are
-daemons, so exceeding it costs nothing beyond the lost output tail."""
+__all__ = ["bridge_to_ssh_process", "CHUNK", "DRAIN_TIMEOUT"]
 
-_CHANNEL_EVENTS = (asyncssh.misc.BreakReceived, asyncssh.misc.SignalReceived)
+CHUNK = 4096
+"""Read size for every byte pump touching a pty session - shared with
+devtemplate.sshd, whose plain-pipe session path uses the identical value
+for the identical reason (interactive terminal traffic, latency over
+throughput)."""
+
+DRAIN_TIMEOUT = 5.0
+"""How long to wait for a blocking pump thread to notice its socket end
+closed and flush its last output, after the async side has finished.
+Shared with devtemplate.sshd for the same reason as CHUNK above - both
+packages bridge blocking OS-level I/O into asyncio via a socketpair-plus-
+daemon-thread shape, and both need the same drain budget."""
+
+CHANNEL_EVENTS = (asyncssh.misc.BreakReceived, asyncssh.misc.SignalReceived)
 """Explicit SSH protocol-level signal/break requests - distinct from a
 client typing Ctrl-C, which arrives as an ordinary 0x03 byte in the data
 stream and needs no special handling here: it flows straight through to the
 container's own pty (allocated by -t) exactly like dvt ssh <name>'s
-already-working direct-exec path. Mirrors ssh_server.py's own
-_CHANNEL_EVENTS handling for these two, minus TerminalSizeChanged, which
-this bridge handles specially (see pump_client_to_pty below) rather than
-ignoring."""
+already-working direct-exec path. NOT shared with devtemplate.sshd.session's
+own CHANNEL_EVENTS despite the similar name and purpose - that one also
+includes TerminalSizeChanged (harmless to ignore on the plain-pipe path,
+which has no pty to resize), while this one deliberately excludes it
+because bridge_to_ssh_process below handles resize specially rather than
+ignoring it."""
 
 
-def _pump_pty_to_socket(pty_proc: PtyProcess, sock: socket.socket) -> None:
+def pump_pty_to_socket(pty_proc: PtyProcess, sock: socket.socket) -> None:
     """Blocking: reads pty_proc in a loop, forwarding each chunk onto sock.
     Runs in a dedicated thread since PtyProcess.read() is a blocking OS/
     ConPTY call. Ends when pty_proc.read() returns "" (process exited)."""
     try:
         while True:
-            chunk = pty_proc.read(_CHUNK)
+            chunk = pty_proc.read(CHUNK)
             if not chunk:
                 break
             sock.sendall(chunk.encode())
@@ -50,10 +60,10 @@ def _pump_pty_to_socket(pty_proc: PtyProcess, sock: socket.socket) -> None:
         pass  # peer closed first; nothing more to forward
 
 
-def _pump_socket_to_pty(sock: socket.socket, pty_proc: PtyProcess) -> None:
+def pump_socket_to_pty(sock: socket.socket, pty_proc: PtyProcess) -> None:
     """Blocking: reads sock in a loop, forwarding each chunk to
     pty_proc.write(). The other half of the same thread pair as
-    _pump_pty_to_socket. Incremental decoder for the same multi-byte-UTF-8-
+    pump_pty_to_socket. Incremental decoder for the same multi-byte-UTF-8-
     across-a-read-boundary reason as everywhere else in this codebase that
     decodes a byte stream.
 
@@ -66,7 +76,7 @@ def _pump_socket_to_pty(sock: socket.socket, pty_proc: PtyProcess) -> None:
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     try:
         while True:
-            data = sock.recv(_CHUNK)
+            data = sock.recv(CHUNK)
             if not data:
                 break
             text = decoder.decode(data)
@@ -88,10 +98,10 @@ async def bridge_to_ssh_process(
     bridge_sock.setblocking(False)
 
     reader = threading.Thread(
-        target=_pump_pty_to_socket, args=(pty_proc, pty_sock), daemon=True
+        target=pump_pty_to_socket, args=(pty_proc, pty_sock), daemon=True
     )
     writer = threading.Thread(
-        target=_pump_socket_to_pty, args=(pty_sock, pty_proc), daemon=True
+        target=pump_socket_to_pty, args=(pty_sock, pty_proc), daemon=True
     )
     reader.start()
     writer.start()
@@ -102,19 +112,19 @@ async def bridge_to_ssh_process(
         # cancellation from the finally below - a normal interactive session
         # exiting - and asyncio.CancelledError is neither asyncssh.Error nor
         # OSError, so a trailing statement would simply never run. Without
-        # the shutdown, _pump_socket_to_pty never sees EOF on its end of the
+        # the shutdown, pump_socket_to_pty never sees EOF on its end of the
         # socketpair, stays blocked in recv(), and writer.join() below burns
-        # the whole _DRAIN_TIMEOUT on every single session teardown while
+        # the whole DRAIN_TIMEOUT on every single session teardown while
         # leaking that thread.
         try:
             with contextlib.suppress(asyncssh.Error, OSError):
                 while True:
                     try:
-                        data = await process.stdin.read(_CHUNK)
+                        data = await process.stdin.read(CHUNK)
                     except asyncssh.misc.TerminalSizeChanged as exc:
                         pty_proc.resize(exc.height, exc.width)
                         continue
-                    except _CHANNEL_EVENTS:
+                    except CHANNEL_EVENTS:
                         continue
                     if not data:
                         break
@@ -127,13 +137,13 @@ async def bridge_to_ssh_process(
 
     async def pump_pty_to_client() -> None:
         # errors="replace" here is the same deliberate, accepted scope
-        # limitation as _pump_socket_to_pty's - fine for interactive
+        # limitation as pump_socket_to_pty's - fine for interactive
         # terminal output, but would corrupt a stream carrying genuinely
         # binary data. See that function's docstring for the full rationale.
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         with contextlib.suppress(asyncssh.Error, OSError):
             while True:
-                chunk = await loop.sock_recv(bridge_sock, _CHUNK)
+                chunk = await loop.sock_recv(bridge_sock, CHUNK)
                 if not chunk:
                     break
                 text = decoder.decode(chunk)
@@ -148,8 +158,8 @@ async def bridge_to_ssh_process(
         client_pump.cancel()
         with contextlib.suppress(Exception, asyncio.CancelledError):
             await client_pump
-        reader.join(_DRAIN_TIMEOUT)
-        writer.join(_DRAIN_TIMEOUT)
+        reader.join(DRAIN_TIMEOUT)
+        writer.join(DRAIN_TIMEOUT)
         for sock in (pty_sock, bridge_sock):
             with contextlib.suppress(OSError):
                 sock.close()

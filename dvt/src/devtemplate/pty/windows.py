@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING or sys.platform == "win32":
     from winpty import PtyProcess as _WinPtyProcess
 
+__all__ = ["WindowsPtyProcess", "spawn"]
+
 
 class WindowsPtyProcess:
     def __init__(self, inner: _WinPtyProcess) -> None:
