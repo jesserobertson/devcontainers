@@ -56,7 +56,7 @@ def test_merge_run_args_concatenates_without_dropping(
 def test_merge_mounts_dedup_is_a_proper_set_union(
     base: DevContainerConfig, overlay: DevContainerConfig
 ) -> None:
-    # Not "never produces duplicates": _merge_array_dedup only prevents overlay
+    # Not "never produces duplicates": merge_array_dedup only prevents overlay
     # from adding a *new* duplicate; it never cleans up duplicates base already
     # had (matching dev's original Rust behavior). base=["",""], overlay=[] is
     # a real, hypothesis-found counterexample to a naive no-duplicates claim.

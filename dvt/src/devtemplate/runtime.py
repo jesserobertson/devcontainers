@@ -29,7 +29,10 @@ class RuntimeHandle:
     machine_name: str | None = None
 
 
-def _try_docker() -> RuntimeHandle | None:
+__all__ = ["RuntimeHandle", "get_client"]
+
+
+def try_docker() -> RuntimeHandle | None:
     cli_binary = shutil.which("docker")
     if cli_binary is None:
         return None
@@ -41,7 +44,7 @@ def _try_docker() -> RuntimeHandle | None:
     return RuntimeHandle(client=client, engine="docker", cli_binary=cli_binary)
 
 
-def _default_podman_socket() -> str | None:
+def default_podman_socket() -> str | None:
     """Best-effort default rootless Podman socket path on Linux. Also wrong for
     a macOS podman-machine setup - a separate, pre-existing gap, out of scope
     for this plan (see Global Constraints)."""
@@ -51,7 +54,7 @@ def _default_podman_socket() -> str | None:
 
 
 @wrap_result
-def _resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
+def resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
     cli_binary = shutil.which("podman")
     if cli_binary is None:
         raise FileNotFoundError("podman not found on PATH")
@@ -61,7 +64,7 @@ def _resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
         ).unwrap()
     else:
         machine_name = None
-        socket_url = os.environ.get("CONTAINER_HOST") or _default_podman_socket()
+        socket_url = os.environ.get("CONTAINER_HOST") or default_podman_socket()
         if socket_url is None:
             raise RuntimeError(
                 "Podman socket not found (tried CONTAINER_HOST / default rootless path)"
@@ -76,10 +79,10 @@ def _resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
     )
 
 
-def _try_podman(
+def try_podman(
     *, auto_init: bool = False, auto_start: bool = True
 ) -> RuntimeHandle | None:
-    result = _resolve_podman(auto_init=auto_init, auto_start=auto_start)
+    result = resolve_podman(auto_init=auto_init, auto_start=auto_start)
     return result.unwrap() if result.is_ok() else None
 
 
@@ -95,17 +98,17 @@ def get_client(
     rather than the generic message "auto" falls back to on double failure."""
     if runtime == "docker":
         return nullable(
-            _try_docker(),
+            try_docker(),
             error_factory=lambda: RuntimeError(
                 "Docker not reachable (tried DOCKER_HOST / platform default)"
             ),
             return_type="result",
         )
     if runtime == "podman":
-        return _resolve_podman(
+        return resolve_podman(
             auto_init=podman_machine_auto_init, auto_start=podman_machine_auto_start
         )
-    handle = _try_docker() or _try_podman(
+    handle = try_docker() or try_podman(
         auto_init=podman_machine_auto_init, auto_start=podman_machine_auto_start
     )
     return nullable(

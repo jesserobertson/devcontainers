@@ -10,13 +10,13 @@ from typing import Any, cast
 from logerr import Ok, Result
 from logerr.utilities import wrap_result
 
-_DEFAULT_MACHINE_NAME = "dvt-machine"
-_DEFAULT_CPUS = 2
-_DEFAULT_MEMORY_MB = 4096
-_DEFAULT_DISK_GB = 100
-_NAMED_PIPE_PATTERN = re.compile(r"\\\\\.\\pipe\\(.+)$")
+DEFAULT_MACHINE_NAME = "dvt-machine"
+DEFAULT_CPUS = 2
+DEFAULT_MEMORY_MB = 4096
+DEFAULT_DISK_GB = 100
+NAMED_PIPE_PATTERN = re.compile(r"\\\\\.\\pipe\\(.+)$")
 
-_INIT_TIMEOUT_SECONDS = 600
+INIT_TIMEOUT_SECONDS = 600
 """`podman machine init` downloads and unpacks a WSL VM image on first run.
 300s was a plausible-sounding round number that a genuinely slow link can
 exceed, and exceeding it leaves a half-created machine behind plus an opaque
@@ -24,8 +24,20 @@ exceed, and exceeding it leaves a half-created machine behind plus an opaque
 for a cold image pull; it is still a bound, just one a working setup won't
 trip."""
 
+__all__ = [
+    "list_machines",
+    "inspect_machine",
+    "start_machine",
+    "init_machine",
+    "wait_until_ready",
+    "check_gpu_cdi_ready",
+    "install_nvidia_toolkit",
+    "ensure_gpu_support",
+    "ensure_machine_ready",
+]
 
-def _announce(message: str) -> None:
+
+def announce(message: str) -> None:
     """Tell the user a multi-minute blocking operation has started.
 
     On stderr, and via plain `print` rather than a `rich` Console: this module
@@ -44,7 +56,7 @@ def _announce(message: str) -> None:
 
 
 @wrap_result
-def _run_podman_json(cli_binary: str, args: list[str]) -> Any:
+def run_podman_json(cli_binary: str, args: list[str]) -> Any:
     result = subprocess.run(
         [cli_binary, *args], capture_output=True, text=True, timeout=30
     )
@@ -59,13 +71,13 @@ def _run_podman_json(cli_binary: str, args: list[str]) -> Any:
 def list_machines(cli_binary: str) -> Result[list[dict[str, Any]], Exception]:
     return cast(
         "Result[list[dict[str, Any]], Exception]",
-        _run_podman_json(cli_binary, ["machine", "list", "--format", "json"]),
+        run_podman_json(cli_binary, ["machine", "list", "--format", "json"]),
     )
 
 
 @wrap_result
 def inspect_machine(cli_binary: str, name: str) -> dict[str, Any]:
-    inspected = _run_podman_json(cli_binary, ["machine", "inspect", name]).unwrap()
+    inspected = run_podman_json(cli_binary, ["machine", "inspect", name]).unwrap()
     if (
         not isinstance(inspected, list)
         or not inspected
@@ -79,7 +91,7 @@ def inspect_machine(cli_binary: str, name: str) -> dict[str, Any]:
 
 @wrap_result
 def start_machine(cli_binary: str, name: str) -> None:
-    _announce(f"Starting Podman machine {name!r} (this can take a minute)...")
+    announce(f"Starting Podman machine {name!r} (this can take a minute)...")
     result = subprocess.run(
         [cli_binary, "machine", "start", name],
         capture_output=True,
@@ -92,7 +104,7 @@ def start_machine(cli_binary: str, name: str) -> None:
 
 @wrap_result
 def init_machine(cli_binary: str, name: str) -> None:
-    _announce(
+    announce(
         f"Initializing Podman machine {name!r} - this downloads a VM image "
         "and may take several minutes on first run..."
     )
@@ -103,15 +115,15 @@ def init_machine(cli_binary: str, name: str) -> None:
             "init",
             name,
             "--cpus",
-            str(_DEFAULT_CPUS),
+            str(DEFAULT_CPUS),
             "--memory",
-            str(_DEFAULT_MEMORY_MB),
+            str(DEFAULT_MEMORY_MB),
             "--disk-size",
-            str(_DEFAULT_DISK_GB),
+            str(DEFAULT_DISK_GB),
         ],
         capture_output=True,
         text=True,
-        timeout=_INIT_TIMEOUT_SECONDS,
+        timeout=INIT_TIMEOUT_SECONDS,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to init machine {name!r}: {result.stderr.strip()}")
@@ -131,7 +143,7 @@ def wait_until_ready(cli_binary: str, timeout_seconds: int = 60) -> None:
 
 
 @wrap_result
-def _connection_url(inspected: dict[str, Any]) -> str:
+def connection_url(inspected: dict[str, Any]) -> str:
     """Translate `podman machine inspect`'s ConnectionInfo into a docker-py
     base_url. Verified directly against a real machine: PodmanPipe.Path looks
     like '\\\\.\\pipe\\podman-devpod-machine' on Windows; docker-py expects
@@ -143,7 +155,7 @@ def _connection_url(inspected: dict[str, Any]) -> str:
         raise ValueError(f"machine inspect result has no ConnectionInfo: {inspected!r}")
     pipe = connection_info.get("PodmanPipe")
     if isinstance(pipe, dict) and isinstance(pipe.get("Path"), str):
-        match = _NAMED_PIPE_PATTERN.match(pipe["Path"])
+        match = NAMED_PIPE_PATTERN.match(pipe["Path"])
         if match:
             return f"npipe:////./pipe/{match.group(1)}"
     socket_info = connection_info.get("PodmanSocket")
@@ -155,22 +167,20 @@ def _connection_url(inspected: dict[str, Any]) -> str:
 
 
 @wrap_result
-def _inspect_and_connect(cli_binary: str, name: str) -> tuple[str, str]:
+def inspect_and_connect(cli_binary: str, name: str) -> tuple[str, str]:
     inspected = inspect_machine(cli_binary, name).unwrap()
-    url = _connection_url(inspected).unwrap()
+    url = connection_url(inspected).unwrap()
     return name, url
 
 
 @wrap_result
-def _start_and_connect(
-    cli_binary: str, name: str
-) -> Result[tuple[str, str], Exception]:
+def start_and_connect(cli_binary: str, name: str) -> Result[tuple[str, str], Exception]:
     start_machine(cli_binary, name).unwrap()
     wait_until_ready(cli_binary).unwrap()
-    return _inspect_and_connect(cli_binary, name)
+    return inspect_and_connect(cli_binary, name)
 
 
-_NVIDIA_TOOLKIT_INSTALL_COMMAND = (
+NVIDIA_TOOLKIT_INSTALL_COMMAND = (
     "sudo curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/"
     "nvidia-container-toolkit.repo -o /etc/yum.repos.d/nvidia-container-toolkit.repo "
     "&& sudo dnf install -y nvidia-container-toolkit "
@@ -201,12 +211,12 @@ def check_gpu_cdi_ready(cli_binary: str, machine_name: str) -> bool:
 
 @wrap_result
 def install_nvidia_toolkit(cli_binary: str, machine_name: str) -> None:
-    _announce(
+    announce(
         "Installing the NVIDIA Container Toolkit in Podman machine "
         f"{machine_name!r} - this may take several minutes..."
     )
     result = subprocess.run(
-        [cli_binary, "machine", "ssh", machine_name, _NVIDIA_TOOLKIT_INSTALL_COMMAND],
+        [cli_binary, "machine", "ssh", machine_name, NVIDIA_TOOLKIT_INSTALL_COMMAND],
         capture_output=True,
         text=True,
         timeout=300,
@@ -240,14 +250,14 @@ def ensure_machine_ready(
                 "No Podman machine found. Run 'podman machine init' first, "
                 "or set DVT_PODMAN_MACHINE_AUTO_INIT=true."
             )
-        init_machine(cli_binary, _DEFAULT_MACHINE_NAME).unwrap()
+        init_machine(cli_binary, DEFAULT_MACHINE_NAME).unwrap()
         if not auto_start:
             raise RuntimeError(
-                f"Machine {_DEFAULT_MACHINE_NAME!r} is not running. "
-                f"Run 'podman machine start {_DEFAULT_MACHINE_NAME}' first, "
+                f"Machine {DEFAULT_MACHINE_NAME!r} is not running. "
+                f"Run 'podman machine start {DEFAULT_MACHINE_NAME}' first, "
                 "or set DVT_PODMAN_MACHINE_AUTO_START=true."
             )
-        return _start_and_connect(cli_binary, _DEFAULT_MACHINE_NAME)
+        return start_and_connect(cli_binary, DEFAULT_MACHINE_NAME)
 
     first_machine = machines[0]
     if not isinstance(first_machine, dict) or not isinstance(
@@ -260,7 +270,7 @@ def ensure_machine_ready(
     inspected = inspect_machine(cli_binary, name).unwrap()
 
     if inspected.get("State") == "running":
-        url = _connection_url(inspected).unwrap()
+        url = connection_url(inspected).unwrap()
         return Ok((name, url))
 
     if not auto_start:
@@ -268,4 +278,4 @@ def ensure_machine_ready(
             f"Machine {name!r} is not running. Run 'podman machine start {name}' first, "
             "or set DVT_PODMAN_MACHINE_AUTO_START=true."
         )
-    return _start_and_connect(cli_binary, name)
+    return start_and_connect(cli_binary, name)

@@ -19,6 +19,18 @@ UNSUPPORTED_LIFECYCLE_FIELDS = {
 }
 SUPPORTED_LIFECYCLE_ORDER = ["postCreateCommand", "postStartCommand"]
 
+__all__ = [
+    "refuse_unsupported",
+    "resolve_workspace",
+    "compute_labels",
+    "read_stored_config",
+    "config_has_drifted",
+    "run_container",
+    "run_lifecycle_commands",
+    "find_workspace_container",
+    "find_workspace_containers_by_folder",
+]
+
 
 @wrap_result
 def refuse_unsupported(config: dict[str, Any]) -> Result[None, Exception]:
@@ -75,7 +87,7 @@ def resolve_workspace(config: dict[str, Any], project_path: Path) -> tuple[str, 
     return workspace_folder, workspace_mount
 
 
-def _encode_metadata(config: dict[str, Any]) -> str:
+def encode_metadata(config: dict[str, Any]) -> str:
     """base64(json.dumps(config)) - the exact devcontainer.metadata label value.
     Factored out of compute_labels so read_stored_config's decode side and this
     encode side stay obviously in sync."""
@@ -89,7 +101,7 @@ def compute_labels(
     Containers extension, @devcontainers/cli, devpod) uses to recognize and
     introspect a container dvt built."""
     return {
-        "devcontainer.metadata": _encode_metadata(config),
+        "devcontainer.metadata": encode_metadata(config),
         "devcontainer.local_folder": str(project_path.resolve()),
         "devcontainer.config_file": str(config_file.resolve()),
         "dvt.workspace": name,
@@ -121,7 +133,7 @@ def config_has_drifted(container: Container, config: dict[str, Any]) -> bool:
     )
 
 
-def _substitute_mount_variables(
+def substitute_mount_variables(
     mount_spec: str, project_path: Path, workspace_folder: str
 ) -> str:
     """Expand the devcontainer.json variables mount specs use in practice:
@@ -135,7 +147,7 @@ def _substitute_mount_variables(
     ).replace("${containerWorkspaceFolder}", workspace_folder)
 
 
-def _parse_mount(mount_spec: str) -> dict[str, dict[str, str]]:
+def parse_mount(mount_spec: str) -> dict[str, dict[str, str]]:
     """Parse a devcontainer.json mount string ('source=...,target=...,type=...')
     into docker-py's {source: {"bind": target, "mode": "rw"}} volumes form."""
     parts = dict(item.split("=", 1) for item in mount_spec.split(",") if "=" in item)
@@ -143,7 +155,7 @@ def _parse_mount(mount_spec: str) -> dict[str, dict[str, str]]:
 
 
 @wrap_result
-def _translate_run_args(
+def translate_run_args(
     run_args: list[str],
 ) -> Result[tuple[list[str], list[Any]], Exception]:
     """Translate devcontainer.json's runArgs into (cap_add list, device_requests
@@ -178,7 +190,7 @@ def _translate_run_args(
 # how commands actually get run inside it. Without this, images whose default CMD
 # doesn't block forever (a bare shell, most non-devcontainer base images) exit
 # immediately after `docker run -d`, before anything can exec into them.
-_KEEP_ALIVE_ENTRYPOINT = ["sleep", "infinity"]
+KEEP_ALIVE_ENTRYPOINT = ["sleep", "infinity"]
 
 
 @wrap_result
@@ -193,14 +205,14 @@ def run_container(
     workspace_folder, workspace_mount = resolve_workspace(config, project_path)
     volumes: dict[str, dict[str, str]] = {}
     for mount_spec in [workspace_mount, *config.get("mounts", [])]:
-        resolved_spec = _substitute_mount_variables(
+        resolved_spec = substitute_mount_variables(
             mount_spec, project_path, workspace_folder
         )
-        volumes.update(_parse_mount(resolved_spec))
+        volumes.update(parse_mount(resolved_spec))
 
-    cap_adds, device_requests = _translate_run_args(config.get("runArgs", [])).unwrap()
+    cap_adds, device_requests = translate_run_args(config.get("runArgs", [])).unwrap()
 
-    entrypoint = _KEEP_ALIVE_ENTRYPOINT if config.get("overrideCommand", True) else None
+    entrypoint = KEEP_ALIVE_ENTRYPOINT if config.get("overrideCommand", True) else None
 
     return client.containers.run(
         image,
