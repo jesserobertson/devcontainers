@@ -15,7 +15,7 @@ _END_MARKER = "# END dvt {name}"
 @wrap_result
 def write_ssh_config_entry(name: str, ssh_config_path: Path) -> None:
     """Write/replace a `Host <name>` block whose ProxyCommand pipes through
-    `dvt ssh --stdio <name>` - a real SSH server (ssh_server.py), not a bare
+    `dvt ssh --stdio <name>` - a real SSH server (devtemplate.sshd), not a bare
     shell. No sshd is ever installed into any image; the server runs entirely
     within the `dvt ssh --stdio` process itself."""
     remove_ssh_config_entry(name, ssh_config_path).unwrap()
@@ -56,22 +56,22 @@ def remove_ssh_config_entry(name: str, ssh_config_path: Path) -> None:
 def stdio_proxy(cli_binary: str, client: DockerClient, name: str) -> int:
     """The non-interactive pipe mode `dvt ssh --stdio <name>` runs: finds the
     container labeled dvt.workspace=name and runs a real SSH server
-    (ssh_server.run_stdio_server) bound to this process's own stdin/stdout,
+    (devtemplate.sshd.run_stdio_server) bound to this process's own stdin/stdout,
     bridged to `docker/podman exec` in that container - `-it` with a real
     host-side pty for sessions that requested one, `-i` otherwise (see
-    ssh_server's own module docstring). This is what the ProxyCommand entry
+    devtemplate.sshd's own module docstring). This is what the ProxyCommand entry
     written by write_ssh_config_entry invokes."""
     # Imported here, not at module scope, and inside the try like every
-    # other fallible statement in this codebase: ssh_server pulls in
+    # other fallible statement in this codebase: devtemplate.sshd pulls in
     # asyncssh and transitively cryptography, ~25% of
     # `import devtemplate.cli`'s startup cost, and this is the only code
     # path in the whole CLI that ever needs it.
-    from devtemplate import ssh_server
+    from devtemplate.sshd import run_stdio_server
 
     container = find_workspace_container(client, name)
     if container is None or container.name is None:
         raise ValueError(f"No workspace named {name!r} is running.")
-    return ssh_server.run_stdio_server(cli_binary, container.name)
+    return run_stdio_server(cli_binary, container.name)
 
 
 @wrap_result
@@ -84,7 +84,8 @@ def exec_interactive(cli_binary: str, client: DockerClient, name: str) -> int:
     Runs the container user's own configured shell (falling back to sh if
     $SHELL isn't set) rather than a hardcoded sh, so shell-startup hooks an
     image wires up (e.g. a pixi project's `pixi shell-hook` in .bashrc/fish's
-    conf.d) actually fire - matching ssh_server.py's bare-shell-request path.
+    conf.d) actually fire - matching devtemplate.sshd's bare-shell-request
+    path.
     """
     container = find_workspace_container(client, name)
     if container is None or container.name is None:

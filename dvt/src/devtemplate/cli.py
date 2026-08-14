@@ -106,7 +106,7 @@ def ssh(
 ) -> None:
     """SSH into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
     # In --stdio mode this process's stdout *is* the SSH byte stream the client
-    # is speaking the protocol over (see ssh_server.py), so every diagnostic has
+    # is speaking the protocol over (see devtemplate.sshd), so every diagnostic has
     # to go to stderr instead - printing one on stdout injects garbage into the
     # handshake and the user sees `kex_exchange_identification: Connection
     # closed by remote host` rather than dvt's actual message. Reachable on a

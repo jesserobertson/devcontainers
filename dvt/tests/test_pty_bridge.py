@@ -138,7 +138,7 @@ async def test_bridge_to_ssh_process_round_trips_data_both_directions():
 @pytest.mark.asyncio
 async def test_bridge_to_ssh_process_forwards_client_resize_to_the_pty():
     """A client-side window-change request must reach the real pty, not just
-    be swallowed - the same class of bug ssh_server.py's own
+    be swallowed - the same class of bug devtemplate.sshd.session's own
     TerminalSizeChanged test guards against for the non-pty path."""
     host_key = asyncssh.generate_private_key("ssh-ed25519")
     server_sock, client_sock = socket.socketpair()
@@ -180,7 +180,7 @@ async def test_bridge_to_ssh_process_forwards_client_resize_to_the_pty():
 async def test_bridge_to_ssh_process_ignores_break_and_signal_requests():
     """Regression guard matching today's behaviour (see the design spec's
     Testing section): a client-sent break or signal request must be silently
-    ignored, exactly like ssh_server.py's own non-pty path already treats
+    ignored, exactly like devtemplate.sshd.session's own non-pty path already treats
     them - *not* forwarded to the pty (there is no SSH-protocol-level
     concept for either on a real terminal; a client typing Ctrl-C instead
     arrives as an ordinary 0x03 byte, covered by the round-trip test above)

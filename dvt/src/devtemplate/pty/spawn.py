@@ -1,6 +1,6 @@
 """Spawns a process attached to a real OS pseudo-terminal, dispatching to a
 platform-specific backend. Used only by devtemplate.pty.bridge, for SSH
-sessions that requested a pty - see ssh_server.py's _handle_process."""
+sessions that requested a pty - see devtemplate.sshd.session.handle_process."""
 
 from __future__ import annotations
 

@@ -31,7 +31,7 @@ def _announce(message: str) -> None:
     On stderr, and via plain `print` rather than a `rich` Console: this module
     is otherwise pure Result-returning side-effect-isolated logic with no UI
     dependency at all, and nothing else outside `cli.py`/`commands/` in this
-    codebase constructs a Console (`ssh_server.py` sets the same precedent for
+    codebase constructs a Console (`devtemplate.sshd.server` sets the same precedent for
     a non-CLI module needing to say something). stderr keeps it clear of any
     stdout a caller may be treating as data.
 

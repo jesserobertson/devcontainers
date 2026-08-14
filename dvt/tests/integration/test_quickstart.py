@@ -106,7 +106,7 @@ def test_quickstart_cli_feature_full_lifecycle(settings, tmp_path, monkeypatch) 
       pixi.toml, kept off the workspaceMount bind mount (exercises init.py's
       pixi.toml + detached-environments fixes)
     - a real `ssh` client through the actual ~/.ssh/config ProxyCommand entry
-      `up` writes (proves the ssh_server.py bridge works against a real
+      `up` writes (proves the devtemplate.sshd bridge works against a real
       Feature-built image, not just the synthetic alpine one
       test_native_runtime_lifecycle.py uses)
     """

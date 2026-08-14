@@ -38,7 +38,7 @@ class PosixPtyProcess:
         self._master_fd = master_fd
         # Incremental so a multi-byte UTF-8 character split across two
         # os.read() calls decodes correctly instead of becoming replacement
-        # characters at the split - same reasoning as ssh_server.py's
+        # characters at the split - same reasoning as devtemplate.sshd.session's
         # existing pump_process_to_client.
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
@@ -57,7 +57,7 @@ class PosixPtyProcess:
     def write(self, data: str) -> None:
         encoded = data.encode()
         # os.write() may write fewer bytes than given; loop until it's all
-        # sent, matching the same pattern ssh_server.py's stdio bridge uses.
+        # sent, matching the same pattern devtemplate.sshd.stdio's stdio bridge uses.
         while encoded:
             encoded = encoded[os.write(self._master_fd, encoded) :]
 

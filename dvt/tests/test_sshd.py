@@ -12,7 +12,9 @@ from unittest.mock import MagicMock
 import asyncssh
 import pytest
 
-from devtemplate.ssh_server import _handle_process, _NoAuthServer, run_stdio_server
+from devtemplate.sshd import run_stdio_server
+from devtemplate.sshd.server import NoAuthServer
+from devtemplate.sshd.session import handle_process
 
 # A stand-in for `docker exec -i <name> sh`: reads everything on stdin, echoes it
 # back with a prefix, then exits non-zero so the exit-code wiring is observable.
@@ -92,7 +94,7 @@ _FAKE_SLOW_SHELL = (
 
 
 def _patch_exec_to_fake_shell(monkeypatch, expected_cmd):
-    """Redirect `_handle_process`'s docker/podman spawn to a stand-in Python
+    """Redirect `handle_process`'s docker/podman spawn to a stand-in Python
     process, so no container runtime is needed. Only the *argv* is swapped -
     a real subprocess with real OS pipes is still spawned, so the bridging
     this task exists to prove stays under test."""
@@ -109,7 +111,7 @@ def _patch_exec_to_fake_shell(monkeypatch, expected_cmd):
 
 def _patch_exec_to_fake_sh_c(monkeypatch) -> list[tuple[str, ...]]:
     """Same idea as `_patch_exec_to_fake_shell`, but the stand-in acts as
-    `sh -c` and is handed whatever command `_handle_process` decided to run.
+    `sh -c` and is handed whatever command `handle_process` decided to run.
     Returns a list that records the argv actually spawned, so the test can
     assert on it directly rather than from inside a background task."""
     real_create_subprocess_exec = asyncio.create_subprocess_exec
@@ -144,7 +146,7 @@ def _patch_stdio_to_pipe_bridge(monkeypatch, peer_sock: socket.socket) -> None:
     connected to the fake SSH client (i.e. what a real ProxyCommand's stdin/
     stdout pipes would be relaying to/from).
 
-    `_pump_stdio_to_socket` reads/writes stdio via raw fd-level `os.read`/
+    `pump_stdio_to_socket` reads/writes stdio via raw fd-level `os.read`/
     `os.write` on `sys.stdin.fileno()`/`sys.stdout.fileno()` (see its
     docstring: a real `ssh` client's `ProxyCommand` hands this process genuine
     pipes, and Python's *buffered* io over those pipes turned out to misbehave
@@ -165,7 +167,7 @@ def _patch_stdio_to_pipe_bridge(monkeypatch, peer_sock: socket.socket) -> None:
                 if not data:
                     break
                 # os.write() can write short; loop until it's all sent (see
-                # the matching comment in ssh_server._pump_stdio_to_socket).
+                # the matching comment in devtemplate.sshd.stdio.pump_stdio_to_socket).
                 while data:
                     data = data[os.write(stdin_write_fd, data) :]
         except OSError:
@@ -199,7 +201,7 @@ async def _serve(sock, host_key, process_factory) -> asyncssh.SSHServerConnectio
     client's."""
     return await asyncssh.run_server(
         sock,
-        server_factory=_NoAuthServer,
+        server_factory=NoAuthServer,
         server_host_keys=[host_key],
         process_factory=process_factory,
         gss_host=None,  # Matches run_stdio_server; see the comment there.
@@ -251,10 +253,10 @@ async def test_handle_process_bridges_a_real_subprocess_and_returns_its_exit_cod
     monkeypatch,
 ):
     """The same real-client/real-server exchange, but the server side runs the
-    *actual* `_handle_process` bridge. Only the argv translation is patched
+    *actual* `handle_process` bridge. Only the argv translation is patched
     (so no docker/podman daemon is needed) - the subprocess it spawns, its
     OS pipes, and the SSH channel are all real. Asserts both directions of
-    the byte flow and that `_handle_process` hands its subprocess's exit code
+    the byte flow and that `handle_process` hands its subprocess's exit code
     back to its caller (the wiring `run_stdio_server` depends on).
     """
     _patch_exec_to_fake_shell(
@@ -266,7 +268,7 @@ async def test_handle_process_bridges_a_real_subprocess_and_returns_its_exit_cod
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        returned.append(await _handle_process(process, "docker", "myws"))
+        returned.append(await handle_process(process, "docker", "myws"))
 
     server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
 
@@ -305,7 +307,7 @@ async def test_non_interactive_exec_request_runs_the_requested_command(monkeypat
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        returned.append(await _handle_process(process, "docker", "myws"))
+        returned.append(await handle_process(process, "docker", "myws"))
 
     server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
 
@@ -355,7 +357,7 @@ async def test_input_still_reaches_the_container_after_a_terminal_resize(monkeyp
     server_sock, client_sock = socket.socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        await _handle_process(process, "docker", "myws")
+        await handle_process(process, "docker", "myws")
 
     server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
 
@@ -393,7 +395,7 @@ async def test_client_vanishing_mid_session_still_yields_the_container_exit_code
 ):
     """A client that disappears mid-session (network drop, Gateway killed)
     surfaces on the server as `asyncssh.ConnectionLost` raised out of
-    `process.stdin.read()`. That must not escape `_handle_process`: it runs as
+    `process.stdin.read()`. That must not escape `handle_process`: it runs as
     a task awaited during teardown, so an exception there skips the exit-status
     reporting entirely and the session silently becomes a success.
 
@@ -416,7 +418,7 @@ async def test_client_vanishing_mid_session_still_yields_the_container_exit_code
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         try:
-            outcome.append(await _handle_process(process, "docker", "myws"))
+            outcome.append(await handle_process(process, "docker", "myws"))
         except BaseException as exc:  # noqa: BLE001 - recording, not handling
             outcome.append(f"raised {type(exc).__name__}")
         finally:
@@ -548,7 +550,7 @@ async def test_container_stderr_arrives_on_the_clients_stderr_not_its_stdout(
     server_sock, client_sock = socket.socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        await _handle_process(process, "docker", "myws")
+        await handle_process(process, "docker", "myws")
 
     server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
 
@@ -592,7 +594,7 @@ async def test_multibyte_utf8_split_across_read_boundaries_survives(monkeypatch)
     server_sock, client_sock = socket.socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        await _handle_process(process, "docker", "myws")
+        await handle_process(process, "docker", "myws")
 
     server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
 
@@ -620,11 +622,11 @@ async def test_multibyte_utf8_split_across_read_boundaries_survives(monkeypatch)
 @pytest.mark.asyncio
 async def test_handle_process_uses_the_pty_bridge_when_a_pty_was_requested(monkeypatch):
     """process.get_terminal_type() is asyncssh's own signal that the client
-    asked for a pty (ssh <name>, or ssh -t <name> <cmd>) - _handle_process
+    asked for a pty (ssh <name>, or ssh -t <name> <cmd>) - handle_process
     must route to the new pty bridge in that case, not the plain-pipe path.
     Only the two devtemplate.pty entry points are mocked; nothing about
     asyncssh or the branching logic itself is."""
-    import devtemplate.ssh_server as ssh_server_module
+    import devtemplate.sshd.session as session_module
 
     fake_pty_proc = object()
     spawn_calls: list[tuple[list[str], int, int]] = []
@@ -639,15 +641,15 @@ async def test_handle_process_uses_the_pty_bridge_when_a_pty_was_requested(monke
         bridge_calls.append((pty_proc, process))
         return 0
 
-    monkeypatch.setattr(ssh_server_module, "spawn_pty_process", fake_spawn)
-    monkeypatch.setattr(ssh_server_module, "bridge_to_ssh_process", fake_bridge)
+    monkeypatch.setattr(session_module, "spawn_pty_process", fake_spawn)
+    monkeypatch.setattr(session_module, "bridge_to_ssh_process", fake_bridge)
 
     fake_process = MagicMock()
     fake_process.get_terminal_type.return_value = "xterm"
     fake_process.get_terminal_size.return_value = (80, 24, 0, 0)
     fake_process.command = None
 
-    result = await ssh_server_module._handle_process(fake_process, "docker", "myws")
+    result = await session_module.handle_process(fake_process, "docker", "myws")
 
     assert result == 0
     assert spawn_calls == [
@@ -681,7 +683,7 @@ async def test_handle_process_defaults_a_dimensionless_pty_request_to_80x24(
     no-fallback policy that would kill the session with exit 255 for a client
     that did nothing wrong, so the branch substitutes the conventional
     80x24."""
-    import devtemplate.ssh_server as ssh_server_module
+    import devtemplate.sshd.session as session_module
 
     spawn_calls: list[tuple[list[str], int, int]] = []
 
@@ -692,15 +694,15 @@ async def test_handle_process_defaults_a_dimensionless_pty_request_to_80x24(
     async def fake_bridge(pty_proc, process):
         return 0
 
-    monkeypatch.setattr(ssh_server_module, "spawn_pty_process", fake_spawn)
-    monkeypatch.setattr(ssh_server_module, "bridge_to_ssh_process", fake_bridge)
+    monkeypatch.setattr(session_module, "spawn_pty_process", fake_spawn)
+    monkeypatch.setattr(session_module, "bridge_to_ssh_process", fake_bridge)
 
     fake_process = MagicMock()
     fake_process.get_terminal_type.return_value = "xterm"
     fake_process.get_terminal_size.return_value = (0, 0, 0, 0)
     fake_process.command = None
 
-    await ssh_server_module._handle_process(fake_process, "docker", "myws")
+    await session_module.handle_process(fake_process, "docker", "myws")
 
     assert spawn_calls == [
         (
@@ -736,7 +738,7 @@ async def test_non_pty_exec_session_still_uses_the_plain_pipe_path(monkeypatch):
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        returned.append(await _handle_process(process, "docker", "myws"))
+        returned.append(await handle_process(process, "docker", "myws"))
 
     server_task = asyncio.create_task(_serve(server_sock, host_key, process_factory))
 

@@ -1,7 +1,8 @@
 """Bridges a PtyProcess (devtemplate.pty.spawn) to an asyncssh
 SSHServerProcess - the pty-requesting-session counterpart to
-ssh_server.py's plain-pipe _handle_process, used only when the SSH client
-actually asked for a pty (see ssh_server.py for the branch)."""
+devtemplate.sshd.session's plain-pipe handle_process, used only when the SSH
+client actually asked for a pty (see devtemplate.sshd.session for the
+branch)."""
 
 from __future__ import annotations
 
@@ -91,8 +92,8 @@ async def bridge_to_ssh_process(
 ) -> int:
     """Bridge one opened, pty-requesting SSH session to pty_proc until
     either side ends, then return pty_proc's exit code (and report it to
-    the SSH client via process.exit(), same contract ssh_server.py's own
-    _handle_process already has for its non-pty sessions)."""
+    the SSH client via process.exit(), same contract devtemplate.sshd.session's
+    own handle_process already has for its non-pty sessions)."""
     loop = asyncio.get_running_loop()
     pty_sock, bridge_sock = socket.socketpair()
     bridge_sock.setblocking(False)

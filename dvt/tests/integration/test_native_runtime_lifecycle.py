@@ -10,7 +10,7 @@ deletes it - exercising the full native runtime path with no mocking.
 
 Also drives a real `ssh` client binary (not `dvt ssh`, not asyncssh in-process)
 through the actual `~/.ssh/config` entry `dvt up` writes, proving the
-`ProxyCommand dvt ssh --stdio <name>` bridge (ssh_server.py) genuinely works
+`ProxyCommand dvt ssh --stdio <name>` bridge (devtemplate.sshd) genuinely works
 end to end against a live container - not just the in-process asyncssh
 client/server tests. `dvt ssh <name>` (direct, without `ProxyCommand`) still
 isn't exercised here: it execs `docker`/`podman exec -it`, which requires a
@@ -61,7 +61,7 @@ def test_up_stop_delete_lifecycle(real_project: Path, monkeypatch) -> None:
         # Drive a real `ssh` client binary (not `dvt ssh`, not asyncssh
         # in-process) through the actual `~/.ssh/config` entry `up` just
         # wrote, proving the `ProxyCommand dvt ssh --stdio <name>` bridge
-        # (ssh_server.py) genuinely works end to end against a live
+        # (devtemplate.sshd) genuinely works end to end against a live
         # container. Skipped gracefully (not a test failure) if `ssh` isn't
         # on PATH - most CI runners and dev machines have it, but the whole
         # lifecycle test shouldn't depend on it.
