@@ -33,8 +33,10 @@ app.command("init")(init_command)
 app.command("info")(info_command)
 console = Console()
 
+__all__ = ["app", "main"]
 
-def _version_callback(value: bool) -> None:
+
+def version_callback(value: bool) -> None:
     if not value:
         return
     console.print(f"dvt {__version__}")
@@ -42,11 +44,11 @@ def _version_callback(value: bool) -> None:
 
 
 @app.callback()
-def _root_callback(
+def root_callback(
     version: bool = typer.Option(  # noqa: B008
         False,
         "--version",
-        callback=_version_callback,
+        callback=version_callback,
         is_eager=True,
         help="Show dvt's version and exit.",
     ),
@@ -135,7 +137,7 @@ def ssh(
     raise typer.Exit(code=exit_code)
 
 
-def _find_or_exit(client: DockerClient, name: str) -> Container:
+def find_or_exit(client: DockerClient, name: str) -> Container:
     try:
         container = find_workspace_container(client, name)
     except Exception as exc:
@@ -169,7 +171,7 @@ def stop(
     resolved_name = unwrap_or_exit(
         resolve_existing(handle.client, name, Path.cwd(), "stop"), console
     )
-    container = _find_or_exit(handle.client, resolved_name)
+    container = find_or_exit(handle.client, resolved_name)
     try:
         container.stop()
     except Exception as exc:
@@ -200,7 +202,7 @@ def delete(
     resolved_name = unwrap_or_exit(
         resolve_existing(handle.client, name, Path.cwd(), "delete"), console
     )
-    container = _find_or_exit(handle.client, resolved_name)
+    container = find_or_exit(handle.client, resolved_name)
     try:
         container.remove(force=True)
     except Exception as exc:

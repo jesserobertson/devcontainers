@@ -16,8 +16,16 @@ from devtemplate.github import fetch_template, list_template_names
 MANIFEST_KEY = "managed_templates"
 TEMPLATE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
+__all__ = [
+    "read_manifest",
+    "write_manifest",
+    "sync_templates",
+    "list_cached_templates",
+    "load_cached_template",
+]
 
-def _validate_template_name(name: str) -> Result[str, Exception]:
+
+def validate_template_name(name: str) -> Result[str, Exception]:
     # error is typed as Exception (not the more specific ValueError) so
     # Result.from_predicate infers E=Exception here, matching every caller's
     # Result[..., Exception] - lets callers propagate .unwrap_err() straight
@@ -68,7 +76,7 @@ def sync_templates(settings: Settings, client: httpx.Client) -> list[str]:
         client, settings.github_repo, settings.github_branch
     ).unwrap()
 
-    traverse_result(names, _validate_template_name).unwrap()
+    traverse_result(names, validate_template_name).unwrap()
 
     previous_names = read_manifest(settings).unwrap_or([])
 
@@ -83,7 +91,7 @@ def sync_templates(settings: Settings, client: httpx.Client) -> list[str]:
 
     removed = set(previous_names) - set(names)
     for stale_name in removed:
-        if _validate_template_name(stale_name).is_err():
+        if validate_template_name(stale_name).is_err():
             continue
         stale_dir = settings.templates_dir / stale_name
         if stale_dir.is_dir():
@@ -103,7 +111,7 @@ def list_cached_templates(settings: Settings) -> list[str]:
 
 @wrap_result
 def load_cached_template(settings: Settings, name: str) -> dict[str, Any]:
-    _validate_template_name(name).unwrap()
+    validate_template_name(name).unwrap()
     path = settings.templates_dir / name / "devcontainer.json"
     if not path.exists():
         raise FileNotFoundError(

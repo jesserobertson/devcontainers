@@ -6,7 +6,9 @@ from typing import Any
 
 import jsonschema
 
-_SCHEMA: dict[str, Any] = json.loads(
+__all__ = ["validate_devcontainer_config"]
+
+SCHEMA: dict[str, Any] = json.loads(
     resources.files("devtemplate.schemas")
     .joinpath("devContainer.base.schema.json")
     .read_text(encoding="utf-8")
@@ -28,4 +30,4 @@ def validate_devcontainer_config(data: dict[str, Any]) -> None:
         ...     print(exc.message)
         Unevaluated properties are not allowed ('notARealField' was unexpected)
     """
-    jsonschema.validate(instance=data, schema=_SCHEMA)
+    jsonschema.validate(instance=data, schema=SCHEMA)

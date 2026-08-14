@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+__all__ = ["DevContainerConfig"]
+
 FeatureOptions = dict[str, bool | int | str]
 LifecycleCommand = str | list[str] | dict[str, str | list[str]]
 

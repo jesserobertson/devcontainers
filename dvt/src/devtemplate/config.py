@@ -10,6 +10,8 @@ from logerr.utilities import execute
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+__all__ = ["Settings", "load_settings"]
+
 GITHUB_REPO_PATTERN = re.compile(r"^[\w.-]+/[\w.-]+$")
 
 

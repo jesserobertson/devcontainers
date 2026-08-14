@@ -7,8 +7,10 @@ from pathlib import Path
 from docker.client import DockerClient
 from logerr.utilities import wrap_result
 
+__all__ = ["generate_dockerfile", "build_image"]
 
-def _dockerfile_stage_name(index: int, feature_id: str) -> str:
+
+def dockerfile_stage_name(index: int, feature_id: str) -> str:
     return f"feature-{index}-{feature_id}"
 
 
@@ -42,7 +44,7 @@ def generate_dockerfile(
     lines = [f"FROM {base_image} AS stage0"]
     current_stage = "stage0"
     for index, (feature_id, context_dir, options) in enumerate(features):
-        stage_name = _dockerfile_stage_name(index, feature_id)
+        stage_name = dockerfile_stage_name(index, feature_id)
         lines.append(f"FROM {current_stage} AS {stage_name}")
         lines.append(f"COPY {context_dir}/ /tmp/dvt-feature/")
         lines.append("USER root")

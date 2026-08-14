@@ -5,6 +5,8 @@ from logerr import Result
 from rich.console import Console
 from rich.markup import escape
 
+__all__ = ["unwrap_or_exit"]
+
 
 def unwrap_or_exit[T](
     result: Result[T, Exception], console: Console, prefix: str = ""

@@ -9,6 +9,8 @@ from logerr.recipes.retry import on_err
 from logerr.utilities import execute
 from tenacity import stop_after_attempt, wait_exponential
 
+__all__ = ["list_template_names", "fetch_template"]
+
 
 @on_err(
     stop=stop_after_attempt(3),

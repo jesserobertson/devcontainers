@@ -8,8 +8,15 @@ from logerr.utilities import wrap_result
 
 from devtemplate.container import find_workspace_container
 
-_BEGIN_MARKER = "# BEGIN dvt {name}"
-_END_MARKER = "# END dvt {name}"
+__all__ = [
+    "write_ssh_config_entry",
+    "remove_ssh_config_entry",
+    "stdio_proxy",
+    "exec_interactive",
+]
+
+BEGIN_MARKER = "# BEGIN dvt {name}"
+END_MARKER = "# END dvt {name}"
 
 
 @wrap_result
@@ -20,13 +27,13 @@ def write_ssh_config_entry(name: str, ssh_config_path: Path) -> None:
     within the `dvt ssh --stdio` process itself."""
     remove_ssh_config_entry(name, ssh_config_path).unwrap()
     block = (
-        f"\n{_BEGIN_MARKER.format(name=name)}\n"
+        f"\n{BEGIN_MARKER.format(name=name)}\n"
         f"Host {name}\n"
         f"    HostName {name}\n"
         f"    ProxyCommand dvt ssh --stdio {name}\n"
         f"    StrictHostKeyChecking no\n"
         f"    UserKnownHostsFile /dev/null\n"
-        f"{_END_MARKER.format(name=name)}\n"
+        f"{END_MARKER.format(name=name)}\n"
     )
     ssh_config_path.parent.mkdir(parents=True, exist_ok=True)
     with ssh_config_path.open("a") as f:
@@ -37,7 +44,7 @@ def write_ssh_config_entry(name: str, ssh_config_path: Path) -> None:
 def remove_ssh_config_entry(name: str, ssh_config_path: Path) -> None:
     if not ssh_config_path.exists():
         return
-    begin, end = _BEGIN_MARKER.format(name=name), _END_MARKER.format(name=name)
+    begin, end = BEGIN_MARKER.format(name=name), END_MARKER.format(name=name)
     kept: list[str] = []
     skipping = False
     for line in ssh_config_path.read_text().splitlines(keepends=True):

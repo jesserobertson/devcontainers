@@ -6,6 +6,8 @@ from typing import Any
 
 from logerr.utilities import wrap_result
 
+__all__ = ["sidecar_path", "load_sidecar", "write_sidecar"]
+
 SIDECAR_FILENAME = "dvt-features.json"
 
 

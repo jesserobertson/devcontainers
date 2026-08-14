@@ -21,8 +21,8 @@ __all__ = [
     "fetch_and_extract_layer",
 ]
 
-_WWW_AUTHENTICATE_PARAM = re.compile(r'(\w+)="([^"]*)"')
-_MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
+WWW_AUTHENTICATE_PARAM = re.compile(r'(\w+)="([^"]*)"')
+MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
 
 
 def parse_feature_ref(ref: str) -> Result[tuple[str, str, str], Exception]:
@@ -59,7 +59,7 @@ def parse_feature_ref(ref: str) -> Result[tuple[str, str, str], Exception]:
 
 
 def parse_www_authenticate(header_value: str) -> Result[dict[str, str], Exception]:
-    params = dict(_WWW_AUTHENTICATE_PARAM.findall(header_value))
+    params = dict(WWW_AUTHENTICATE_PARAM.findall(header_value))
     return Result.from_predicate(
         params,
         lambda p: {"realm", "service", "scope"} <= p.keys(),
@@ -75,7 +75,7 @@ def get_token(client: httpx.Client, registry: str, repository: str, tag: str) ->
     the realm/service/scope come from whatever registry actually answered."""
     probe = client.get(
         f"https://{registry}/v2/{repository}/manifests/{tag}",
-        headers={"Accept": _MANIFEST_ACCEPT},
+        headers={"Accept": MANIFEST_ACCEPT},
     )
     if probe.status_code != 401:
         raise ValueError(
@@ -127,7 +127,7 @@ def fetch_manifest(
     non-dict manifest as a Result error rather than trusting this shape."""
     response = client.get(
         f"https://{registry}/v2/{repository}/manifests/{tag}",
-        headers={"Accept": _MANIFEST_ACCEPT, "Authorization": f"Bearer {token}"},
+        headers={"Accept": MANIFEST_ACCEPT, "Authorization": f"Bearer {token}"},
     )
     response.raise_for_status()
     return response.json()
