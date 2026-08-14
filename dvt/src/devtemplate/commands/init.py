@@ -16,13 +16,13 @@ console = Console()
 
 DEFAULT_IMAGE = "ghcr.io/jesserobertson/base-ubuntu:latest"
 
-_PIXI_DETACHED_ENVIRONMENTS_STEP = (
+PIXI_DETACHED_ENVIRONMENTS_STEP = (
     "mkdir -p ~/.config/pixi && "
     "printf 'detached-environments = true\\n' >> ~/.config/pixi/config.toml"
 )
-_POST_CREATE_COMMAND = f"{_PIXI_DETACHED_ENVIRONMENTS_STEP} && pixi install"
+POST_CREATE_COMMAND = f"{PIXI_DETACHED_ENVIRONMENTS_STEP} && pixi install"
 
-_MINIMAL_PIXI_TOML = """\
+MINIMAL_PIXI_TOML = """\
 [workspace]
 name = "{name}"
 channels = ["conda-forge"]
@@ -42,7 +42,7 @@ def scaffold_pixi_toml(path: Path, name: str) -> None:
     """
     if (path / "pixi.toml").exists() or (path / "pyproject.toml").exists():
         return
-    (path / "pixi.toml").write_text(_MINIMAL_PIXI_TOML.format(name=name))
+    (path / "pixi.toml").write_text(MINIMAL_PIXI_TOML.format(name=name))
 
 
 def init(
@@ -72,7 +72,7 @@ def init(
             "target=/workspace,type=bind,consistency=cached"
         ),
         "remoteUser": "dev",
-        "postCreateCommand": _POST_CREATE_COMMAND,
+        "postCreateCommand": POST_CREATE_COMMAND,
     }
 
     devcontainer_dir.mkdir(parents=True, exist_ok=True)
