@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from devtemplate.workspace_lookup import resolve_existing, resolve_for_up
+from devtemplate.workspace import resolve_existing, resolve_for_up
 
 
 def _fake_client_with_workspaces(names: list[str]) -> MagicMock:
@@ -47,7 +47,7 @@ def test_resolve_for_up_refuses_when_fallback_name_belongs_to_a_different_folder
         labels={"devcontainer.local_folder": "/some/other/folder"}
     )
     monkeypatch.setattr(
-        "devtemplate.workspace_lookup.find_workspace_container",
+        "devtemplate.workspace.lookup.find_workspace_container",
         lambda client, name: other_container,
     )
 
@@ -67,7 +67,7 @@ def test_resolve_for_up_reuses_fallback_name_when_it_belongs_to_this_folder(
         labels={"devcontainer.local_folder": str(tmp_path.resolve())}
     )
     monkeypatch.setattr(
-        "devtemplate.workspace_lookup.find_workspace_container",
+        "devtemplate.workspace.lookup.find_workspace_container",
         lambda client, name: own_container,
     )
 

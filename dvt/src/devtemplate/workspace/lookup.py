@@ -10,8 +10,10 @@ from devtemplate.container import (
     find_workspace_containers_by_folder,
 )
 
+__all__ = ["resolve_for_up", "resolve_existing"]
 
-def _names_by_folder(client: DockerClient, cwd: Path) -> list[str]:
+
+def names_by_folder(client: DockerClient, cwd: Path) -> list[str]:
     containers = find_workspace_containers_by_folder(client, cwd)
     return sorted(
         name
@@ -20,7 +22,7 @@ def _names_by_folder(client: DockerClient, cwd: Path) -> list[str]:
     )
 
 
-def _multiple_matches_error(command: str, names: list[str]) -> Exception:
+def multiple_matches_error(command: str, names: list[str]) -> Exception:
     return ValueError(
         f"Multiple workspaces match this folder: {', '.join(names)}. "
         f"Run 'dvt {command} <name>' with one of these."
@@ -41,11 +43,11 @@ def resolve_for_up(client: DockerClient, name: str | None, cwd: Path) -> str:
     """
     if name is not None:
         return name
-    names = _names_by_folder(client, cwd)
+    names = names_by_folder(client, cwd)
     if len(names) == 1:
         return names[0]
     if names:
-        raise _multiple_matches_error("up", names)
+        raise multiple_matches_error("up", names)
 
     fallback_name = cwd.resolve().name
     existing = find_workspace_container(client, fallback_name)
@@ -71,7 +73,7 @@ def resolve_existing(
     """
     if name is not None:
         return name
-    names = _names_by_folder(client, cwd)
+    names = names_by_folder(client, cwd)
     if len(names) == 1:
         return names[0]
     if not names:
@@ -79,4 +81,4 @@ def resolve_existing(
             "No workspace found for this folder. Specify a name, "
             "or run 'dvt up' to create one."
         )
-    raise _multiple_matches_error(command, names)
+    raise multiple_matches_error(command, names)

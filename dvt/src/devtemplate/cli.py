@@ -23,8 +23,7 @@ from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client
 from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
-from devtemplate.workspace import up_workspace
-from devtemplate.workspace_lookup import resolve_existing, resolve_for_up
+from devtemplate.workspace import resolve_existing, resolve_for_up, up_workspace
 
 app = typer.Typer(
     help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."

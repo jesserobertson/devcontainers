@@ -7,9 +7,10 @@ from unittest.mock import MagicMock
 import pytest
 from logerr import Ok
 
-from devtemplate import workspace as workspace_module
 from devtemplate.container import compute_labels
 from devtemplate.runtime import RuntimeHandle
+from devtemplate.workspace import existing as workspace_existing_module
+from devtemplate.workspace import up as workspace_module
 from devtemplate.workspace import up_workspace
 
 PROJECT_CONFIG = {
@@ -74,7 +75,7 @@ def test_up_workspace_full_build_and_run_sequence(
         lambda *a, **k: Ok(None),
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -117,7 +118,7 @@ def test_up_workspace_starts_existing_stopped_container(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -140,7 +141,7 @@ def test_up_workspace_noop_when_already_running(project, handle, settings, monke
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -165,7 +166,7 @@ def test_up_workspace_resumes_existing_even_without_devcontainer_json(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -220,7 +221,7 @@ def test_up_workspace_ensures_gpu_support_on_podman_windows(
         lambda *a, **k: Ok(None),
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -265,7 +266,7 @@ def test_up_workspace_skips_gpu_check_on_docker(project, settings, monkeypatch):
         lambda *a, **k: ensure_gpu_calls.append(1) or Ok(None),
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -327,7 +328,7 @@ def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
         lambda *a, **k: ensure_gpu_calls.append(1) or Ok(None),
     )
     monkeypatch.setattr(
-        workspace_module,
+        workspace_existing_module,
         "write_ssh_config_entry",
         lambda *a, **k: Ok(None),
     )
@@ -411,7 +412,7 @@ def test_up_workspace_rebuild_tears_down_and_rebuilds(
         workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
     )
     monkeypatch.setattr(
-        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
     )
 
     result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
@@ -447,7 +448,7 @@ def test_up_workspace_rebuild_skips_teardown_when_no_existing_container(
         workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
     )
     monkeypatch.setattr(
-        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
     )
 
     result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
@@ -487,7 +488,7 @@ def test_up_workspace_rebuild_proceeds_when_image_removal_fails(
         workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
     )
     monkeypatch.setattr(
-        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
     )
 
     result = up_workspace(handle, settings, "fastapi", project, rebuild=True)
@@ -594,7 +595,7 @@ def test_up_workspace_resumes_without_drift_check_when_folder_does_not_match(
         workspace_module, "find_workspace_container", lambda client, name: existing
     )
     monkeypatch.setattr(
-        workspace_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
     )
 
     result = up_workspace(handle, settings, "fastapi", project)
