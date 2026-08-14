@@ -16,9 +16,7 @@ from rich.markup import escape
 
 from devtemplate import __version__
 from devtemplate.cli_support import unwrap_or_exit
-from devtemplate.commands import feature_app
-from devtemplate.commands import info as info_command
-from devtemplate.commands import init as init_command
+from devtemplate.commands import feature_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client

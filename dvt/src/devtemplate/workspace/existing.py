@@ -16,6 +16,7 @@ __all__ = [
     "config_drift_error",
     "folder_mismatch_error",
     "rebuild_teardown",
+    "refresh_ssh_config",
 ]
 
 

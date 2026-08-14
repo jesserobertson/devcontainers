@@ -34,9 +34,8 @@ ordinary interactive session the first time they resized their window.
 empty read internally and never raises it here. All of these derive from
 `Exception` directly rather than `asyncssh.Error`, so they need listing
 separately from genuine protocol failures. NOT shared with
-devtemplate.pty.bridge's own CHANNEL_EVENTS - see this package's own
-Global Constraints note (in the plan this code came from) for why the two
-tuples differ."""
+devtemplate.pty.bridge's own CHANNEL_EVENTS - see that module's
+docstring for why."""
 
 
 async def handle_process(
