@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 import sys
 
 import asyncssh
 import pytest
 
+from devtemplate.net import bounded_socketpair
 from devtemplate.pty.bridge import bridge_to_ssh_process
 from devtemplate.pty.spawn import spawn_pty_process
 
@@ -98,7 +98,7 @@ async def test_bridge_to_ssh_process_round_trips_data_both_directions():
     proves the full asyncssh <-> pty bridge, not just its two halves in
     isolation."""
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         pty_proc = spawn_pty_process(
@@ -141,7 +141,7 @@ async def test_bridge_to_ssh_process_forwards_client_resize_to_the_pty():
     be swallowed - the same class of bug devtemplate.sshd.session's own
     TerminalSizeChanged test guards against for the non-pty path."""
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         pty_proc = spawn_pty_process(
@@ -188,7 +188,7 @@ async def test_bridge_to_ssh_process_ignores_break_and_signal_requests():
     then confirming the bridge is still alive and forwarding ordinary data
     afterwards."""
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         pty_proc = spawn_pty_process(
@@ -225,7 +225,7 @@ async def test_bridge_to_ssh_process_ignores_break_and_signal_requests():
 @pytest.mark.asyncio
 async def test_bridge_to_ssh_process_returns_the_pty_processs_exit_code():
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:

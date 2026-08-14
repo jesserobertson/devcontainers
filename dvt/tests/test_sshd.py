@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import asyncssh
 import pytest
 
+from devtemplate.net import bounded_socketpair
 from devtemplate.sshd import run_stdio_server
 from devtemplate.sshd.server import NoAuthServer
 from devtemplate.sshd.session import handle_process
@@ -219,7 +220,7 @@ async def test_server_and_client_exchange_bytes_over_a_real_ssh_session():
     when a real ssh client actually tried to negotiate the protocol.
     """
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         # Stand-in for the real docker-exec bridge (exercised for real by
@@ -264,7 +265,7 @@ async def test_handle_process_bridges_a_real_subprocess_and_returns_its_exit_cod
     )
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
@@ -303,7 +304,7 @@ async def test_non_interactive_exec_request_runs_the_requested_command(monkeypat
     spawned = _patch_exec_to_fake_sh_c(monkeypatch)
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
@@ -354,7 +355,7 @@ async def test_input_still_reaches_the_container_after_a_terminal_resize(monkeyp
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         await handle_process(process, "docker", "myws")
@@ -412,7 +413,7 @@ async def test_client_vanishing_mid_session_still_yields_the_container_exit_code
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
     outcome: list[object] = []
     finished = asyncio.Event()
 
@@ -459,7 +460,7 @@ async def test_run_stdio_server_bridges_stdin_stdout_to_a_real_ssh_session(monke
         monkeypatch, ("podman", "exec", "-i", "proj", "sh", "-c", 'exec "${SHELL:-sh}"')
     )
 
-    stdio_end, client_end = socket.socketpair()
+    stdio_end, client_end = bounded_socketpair()
     _patch_stdio_to_pipe_bridge(monkeypatch, stdio_end)
 
     returned: list[int] = []
@@ -500,7 +501,7 @@ async def test_run_stdio_server_reports_a_failed_session_as_non_zero(
     Nothing is patched here at all: the SSH side is real, and the spawn really
     does fail because the binary genuinely does not exist.
     """
-    stdio_end, client_end = socket.socketpair()
+    stdio_end, client_end = bounded_socketpair()
     _patch_stdio_to_pipe_bridge(monkeypatch, stdio_end)
 
     returned: list[int] = []
@@ -547,7 +548,7 @@ async def test_container_stderr_arrives_on_the_clients_stderr_not_its_stdout(
     _patch_exec_to_source(monkeypatch, _FAKE_BOTH_STREAMS_SHELL)
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         await handle_process(process, "docker", "myws")
@@ -591,7 +592,7 @@ async def test_multibyte_utf8_split_across_read_boundaries_survives(monkeypatch)
     _patch_exec_to_source(monkeypatch, _FAKE_UTF8_SHELL)
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         await handle_process(process, "docker", "myws")
@@ -734,7 +735,7 @@ async def test_non_pty_exec_session_still_uses_the_plain_pipe_path(monkeypatch):
     spawned = _patch_exec_to_fake_sh_c(monkeypatch)
 
     host_key = asyncssh.generate_private_key("ssh-ed25519")
-    server_sock, client_sock = socket.socketpair()
+    server_sock, client_sock = bounded_socketpair()
     returned: list[int] = []
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:

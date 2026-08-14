@@ -25,6 +25,7 @@ import threading
 
 import asyncssh
 
+from devtemplate.net import bounded_socketpair
 from devtemplate.pty import DRAIN_TIMEOUT
 from devtemplate.sshd.session import handle_process
 from devtemplate.sshd.stdio import pump_stdio_to_socket
@@ -119,7 +120,7 @@ def run_stdio_server(cli_binary: str, container_name: str) -> int:
         )
         await conn.wait_closed()
 
-    server_sock, stdio_sock = socket.socketpair()
+    server_sock, stdio_sock = bounded_socketpair()
     # A plain daemon thread, not `asyncio.to_thread`: the latter runs on the
     # loop's shared executor, which `asyncio.run` joins on shutdown with a
     # 300s timeout of its own - so cancelling the future would not stop the

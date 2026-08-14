@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 
 import asyncssh
 
+from devtemplate.net import bounded_socketpair
+
 if TYPE_CHECKING:
     from devtemplate.pty.spawn import PtyProcess
 
@@ -95,7 +97,7 @@ async def bridge_to_ssh_process(
     the SSH client via process.exit(), same contract devtemplate.sshd.session's
     own handle_process already has for its non-pty sessions)."""
     loop = asyncio.get_running_loop()
-    pty_sock, bridge_sock = socket.socketpair()
+    pty_sock, bridge_sock = bounded_socketpair()
     bridge_sock.setblocking(False)
 
     reader = threading.Thread(
