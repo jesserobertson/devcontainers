@@ -1,6 +1,6 @@
 {
   "id": "cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "CLI toolkit (Typer + Rich + Pydantic)",
   "description": "Installs Typer, Rich and Pydantic via pixi for building Python CLIs. Works with both base-ubuntu and base-cuda images.",
   "options": {}

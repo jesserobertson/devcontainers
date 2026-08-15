@@ -1,6 +1,6 @@
 {
   "id": "py-devtools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Python dev tooling (ruff, mypy, pytest, mkdocs)",
   "description": "Installs standard Python dev tooling via pixi: ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings. Works with both base-ubuntu and base-cuda images.",
   "options": {}
