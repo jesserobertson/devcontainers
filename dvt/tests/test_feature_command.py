@@ -198,6 +198,43 @@ def test_sync_reports_synced_feature_names(settings, monkeypatch):
     assert "agent" in result.stdout
 
 
+def test_sync_shows_a_status_spinner_while_syncing(settings, monkeypatch):
+    from logerr import Ok
+
+    sync_calls = []
+
+    def fake_sync(settings_arg, client):
+        sync_calls.append(True)
+        return Ok(["fastapi"])
+
+    monkeypatch.setattr("devtemplate.commands.feature.sync_templates", fake_sync)
+
+    entered = []
+
+    class FakeStatus:
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    captured = {}
+
+    def fake_status(message, **kwargs):
+        captured["message"] = message
+        return FakeStatus()
+
+    monkeypatch.setattr(console, "status", fake_status)
+
+    result = runner.invoke(app, ["sync"])
+
+    assert result.exit_code == 0
+    assert entered == [True]
+    assert sync_calls == [True]
+    assert "sync" in captured["message"].lower()
+
+
 def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
     # pull_feature (used by `dvt up`) caches an OCI Feature artifact forever
     # once pulled, keyed by the ref string - correct for an immutable
@@ -552,6 +589,53 @@ def test_add_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
 
     result = runner.invoke(app, ["add", "agent"])
     assert result.exit_code == 0, result.output
+
+
+def test_add_shows_a_status_spinner_while_auto_syncing(tmp_path, settings, monkeypatch):
+    from logerr import Ok
+
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    def fake_sync(settings_arg, client):
+        template_dir = settings_arg.templates_dir / "agent"
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": "agent",
+                    "features": {
+                        "ghcr.io/jesserobertson/devcontainers/agent:latest": {}
+                    },
+                }
+            )
+        )
+        return Ok(["agent"])
+
+    monkeypatch.setattr("devtemplate.commands.feature.sync_templates", fake_sync)
+
+    entered = []
+
+    class FakeStatus:
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(console, "status", lambda *a, **k: FakeStatus())
+
+    result = runner.invoke(app, ["add", "agent"])
+
+    assert result.exit_code == 0, result.output
+    assert entered == [True]
 
 
 def test_remove_reverts_solo_feature_to_pre_add_state(tmp_path, settings, monkeypatch):

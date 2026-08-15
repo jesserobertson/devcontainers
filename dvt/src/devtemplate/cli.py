@@ -18,7 +18,12 @@ from rich.console import Console
 from rich.markup import escape
 
 from devtemplate import __version__
-from devtemplate.cli_support import describe_app, emit_success, unwrap_or_exit
+from devtemplate.cli_support import (
+    describe_app,
+    emit_success,
+    unwrap_or_exit,
+    with_status,
+)
 from devtemplate.commands import feature_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
@@ -120,20 +125,22 @@ def up(
         console,
         json_output=json_output,
     )
-    if json_output:
-        result = up_workspace(
-            handle, settings, resolved_name, Path.cwd(), rebuild=rebuild
-        )
-    else:
-        with console.status("Starting workspace...", spinner="dots") as status:
-            result = up_workspace(
-                handle,
-                settings,
-                resolved_name,
-                Path.cwd(),
-                rebuild=rebuild,
-                on_stage=status.update,
-            )
+    result = with_status(
+        json_output,
+        console,
+        "Starting workspace...",
+        # up_workspace's own on_stage default is a no-op lambda, not None -
+        # passing on_stage=None outright (json_output mode has no status)
+        # would crash the first time up_workspace calls it.
+        lambda status: up_workspace(
+            handle,
+            settings,
+            resolved_name,
+            Path.cwd(),
+            rebuild=rebuild,
+            on_stage=status.update if status else (lambda _stage: None),
+        ),
+    )
     unwrap_or_exit(result, console, json_output=json_output)
     emit_success(
         json_output,
@@ -257,11 +264,12 @@ def stop(
         json_output=json_output,
     )
     container = find_or_exit(handle.client, resolved_name, json_output=json_output)
-    if json_output:
-        result = stop_container(container)
-    else:
-        with console.status(f"Stopping '{resolved_name}'...", spinner="dots"):
-            result = stop_container(container)
+    result = with_status(
+        json_output,
+        console,
+        f"Stopping '{resolved_name}'...",
+        lambda _status: stop_container(container),
+    )
     unwrap_or_exit(
         result,
         console,
@@ -304,11 +312,12 @@ def delete(
         json_output=json_output,
     )
     container = find_or_exit(handle.client, resolved_name, json_output=json_output)
-    if json_output:
-        result = delete_container(container)
-    else:
-        with console.status(f"Deleting '{resolved_name}'...", spinner="dots"):
-            result = delete_container(container)
+    result = with_status(
+        json_output,
+        console,
+        f"Deleting '{resolved_name}'...",
+        lambda _status: delete_container(container),
+    )
     unwrap_or_exit(
         result,
         console,

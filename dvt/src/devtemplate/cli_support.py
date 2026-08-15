@@ -10,10 +10,17 @@ import typer.main
 from logerr import Result
 from rich.console import Console
 from rich.markup import escape
+from rich.status import Status
 
 from devtemplate.cli_output_schemas import OUTPUT_MODELS, ErrorOutput
 
-__all__ = ["describe_app", "emit_success", "report_error", "unwrap_or_exit"]
+__all__ = [
+    "describe_app",
+    "emit_success",
+    "report_error",
+    "unwrap_or_exit",
+    "with_status",
+]
 
 
 def report_error(message: str, console: Console, *, json_output: bool = False) -> None:
@@ -67,6 +74,25 @@ def emit_success(
         print(json.dumps({"ok": True, **payload}))
     else:
         human()
+
+
+def with_status[T](
+    json_output: bool, console: Console, message: str, fn: Callable[[Status | None], T]
+) -> T:
+    """Run fn(status), showing a Rich status spinner with `message` while it
+    runs - unless json_output is set, in which case fn runs silently
+    (passed None instead of a live status) since a spinner's live ANSI
+    redraws would corrupt --json's single-line machine-readable output.
+
+    Most callers (stop, delete, feature sync/add) ignore the status
+    argument entirely - it exists for up's on_stage wiring, which needs
+    the live Status object itself (status.update) to report sub-stage
+    progress from inside up_workspace, not just a single start/end spinner.
+    """
+    if json_output:
+        return fn(None)
+    with console.status(message, spinner="dots") as status:
+        return fn(status)
 
 
 def describe_app(app: typer.Typer, *, version: str) -> dict[str, Any]:

@@ -7,13 +7,13 @@ from typing import Any
 import httpx
 import jsonschema
 import typer
-from logerr import Err, Ok
+from logerr import Err, Ok, Result
 from logerr.utilities import wrap_result
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from devtemplate.cli_support import emit_success, unwrap_or_exit
+from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
 from devtemplate.features import clear_pulled_features
 from devtemplate.merge import merge_layer, merge_layer_keys
@@ -122,8 +122,13 @@ def sync(
 
     clear_pulled_features(settings.features_dir)
 
-    with httpx.Client() as client:
-        result = sync_templates(settings, client)
+    def do_sync(_status: object) -> Result[list[str], Exception]:
+        with httpx.Client() as client:
+            return sync_templates(settings, client)
+
+    result = with_status(
+        json_output, console, "Syncing features from GitHub...", do_sync
+    )
     names = unwrap_or_exit(
         result, console, prefix="Sync failed: ", json_output=json_output
     )
@@ -228,8 +233,14 @@ def add(
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
     if not list_cached_templates(settings):
-        with httpx.Client() as client:
-            sync_result = sync_templates(settings, client)
+
+        def do_sync(_status: object) -> Result[list[str], Exception]:
+            with httpx.Client() as client:
+                return sync_templates(settings, client)
+
+        sync_result = with_status(
+            json_output, console, "Syncing features from GitHub...", do_sync
+        )
         unwrap_or_exit(
             sync_result, console, prefix="Sync failed: ", json_output=json_output
         )
