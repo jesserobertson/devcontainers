@@ -14,7 +14,7 @@ dependencies = [
     "docker>=7.0",
     "asyncssh>=2.14",
     "pywinpty>=2.0,<4; sys_platform == \"win32\"",
-    "logerr[retry] @ git+https://github.com/jesserobertson/logerr.git@cbd89bd61c7f3a2abc3f32619f0f10fb5ef1c8a8",
+    "logerr[retry]>=0.2.0,<0.3",
 ]
 
 [project.scripts]
@@ -34,9 +34,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/devtemplate"]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/devtemplate"]
