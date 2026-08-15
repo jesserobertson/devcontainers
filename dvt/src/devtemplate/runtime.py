@@ -9,7 +9,9 @@ from typing import Literal
 import docker
 from docker.client import DockerClient
 from logerr import Err, Ok, Result  # noqa: F401
+from logerr.recipes.retry import on_err
 from logerr.utilities import nullable, wrap_result
+from tenacity import stop_after_attempt, wait_exponential
 
 from devtemplate import podman_machine
 
@@ -53,6 +55,24 @@ def default_podman_socket() -> str | None:
     return f"unix:///run/user/{os.getuid()}/podman/podman.sock"
 
 
+@on_err(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+    log_attempts=True,
+)
+@wrap_result
+def ping_client(client: DockerClient) -> None:
+    """A brief retry around client.ping(): right after a Windows podman
+    machine starts, podman_machine.wait_until_ready's own readiness check
+    (a `podman ps` CLI call) can succeed slightly before the docker-
+    compatible API socket/pipe this pings is actually accepting
+    connections yet - a real race, not hypothetical. Scoped to just the
+    ping, not all of resolve_podman: ensure_machine_ready above this
+    already did its own (very different, mutating) startup work, which
+    must not be blindly retried alongside a transient ping failure."""
+    client.ping()
+
+
 @wrap_result
 def resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
     cli_binary = shutil.which("podman")
@@ -70,7 +90,7 @@ def resolve_podman(*, auto_init: bool, auto_start: bool) -> RuntimeHandle:
                 "Podman socket not found (tried CONTAINER_HOST / default rootless path)"
             )
     client = docker.DockerClient(base_url=socket_url)
-    client.ping()
+    ping_client(client).unwrap()
     return RuntimeHandle(
         client=client,
         engine="podman",

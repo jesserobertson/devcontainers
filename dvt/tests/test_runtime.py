@@ -13,6 +13,22 @@ class _FakeClient:
         return True
 
 
+class _FlakyThenOkClient:
+    """A ping() that fails once (simulating the podman-compatible API
+    socket not accepting connections yet right after machine start, even
+    though wait_until_ready's own `podman ps` check already succeeded)
+    then succeeds on every call after."""
+
+    def __init__(self) -> None:
+        self.ping_calls = 0
+
+    def ping(self):
+        self.ping_calls += 1
+        if self.ping_calls == 1:
+            raise ConnectionError("socket not accepting connections yet")
+        return True
+
+
 def test_get_client_docker_success(monkeypatch):
     monkeypatch.setattr(
         runtime_module.shutil,
@@ -69,6 +85,26 @@ def test_get_client_podman_uses_container_host(monkeypatch):
     assert result.is_ok()
     assert captured["base_url"] == "unix:///tmp/podman.sock"
     assert result.unwrap().engine == "podman"
+
+
+def test_get_client_podman_retries_past_a_transient_ping_failure(monkeypatch):
+    monkeypatch.setattr(
+        runtime_module.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name == "podman" else None,
+    )
+    monkeypatch.setattr(runtime_module.sys, "platform", "linux")
+    monkeypatch.setenv("CONTAINER_HOST", "unix:///tmp/podman.sock")
+
+    fake_client = _FlakyThenOkClient()
+    monkeypatch.setattr(
+        runtime_module.docker, "DockerClient", lambda base_url: fake_client
+    )
+
+    result = runtime_module.get_client("podman")
+
+    assert result.is_ok()
+    assert fake_client.ping_calls > 1  # the first (failing) attempt really happened
 
 
 def test_get_client_auto_falls_back_to_podman(monkeypatch):

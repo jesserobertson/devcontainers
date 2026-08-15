@@ -10,7 +10,9 @@ from typing import Any
 
 import httpx
 from logerr import Err, Ok, Result
+from logerr.recipes.retry import on_err
 from logerr.utilities import wrap_result
+from tenacity import stop_after_attempt, wait_exponential
 
 __all__ = [
     "parse_feature_ref",
@@ -67,6 +69,11 @@ def parse_www_authenticate(header_value: str) -> Result[dict[str, str], Exceptio
     )
 
 
+@on_err(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+    log_attempts=True,
+)
 @wrap_result
 def get_token(client: httpx.Client, registry: str, repository: str, tag: str) -> str:
     """Anonymous OCI Distribution auth: probe the manifest endpoint unauthenticated,
@@ -118,6 +125,11 @@ def first_layer_digest(manifest: Any, ref: str) -> Result[str, Exception]:
     return Ok(layer["digest"])
 
 
+@on_err(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+    log_attempts=True,
+)
 @wrap_result
 def fetch_manifest(
     client: httpx.Client, registry: str, repository: str, tag: str, token: str
@@ -133,6 +145,11 @@ def fetch_manifest(
     return response.json()
 
 
+@on_err(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+    log_attempts=True,
+)
 @wrap_result
 def fetch_and_extract_layer(
     client: httpx.Client,
