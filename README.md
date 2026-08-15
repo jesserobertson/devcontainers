@@ -2,6 +2,42 @@
 
 Base images and composable devcontainer features for Python development, published to `ghcr.io/jesserobertson`. All images include fish shell, starship, neovim, and pixi — with the full dotfiles setup from [jesserobertson/dotfiles](https://github.com/jesserobertson/dotfiles) baked in.
 
+## dvt: the CLI
+
+[`dvt`](dvt/) (devtemplate) is the fastest way to use this repo's features — dev-style
+named devcontainer templates, built and run directly via Docker or Podman. It fetches
+feature overlays straight from `templates/` below, scaffolds a project's
+`devcontainer.json`, layers features onto it, and gives you a build-and-`ssh`-able
+workspace, all without VS Code, [DevPod](https://devpod.sh), or the
+[`@devcontainers/cli`](https://github.com/devcontainers/cli) in between.
+
+### Install
+
+    pipx install ./dvt
+
+Requires network access to `github.com/jesserobertson/logerr` at install time (a
+dependency not yet published to PyPI, pinned to a specific commit).
+
+### Quickstart
+
+    dvt feature sync                # fetch features from templates/ on GitHub
+    dvt feature list                # see what's available
+    dvt init ./my-api               # scaffold ./my-api/.devcontainer/devcontainer.json
+    cd my-api
+    dvt feature add fastapi
+    dvt feature add agent
+    dvt up                          # build + run; tag inferred from the folder name
+    dvt info                        # image, applied features, live status
+    dvt ssh                         # exec into the running container
+    dvt stop                        # or: dvt delete
+
+`dvt up` also writes a `~/.ssh/config` entry, so plain `ssh my-api` works too once the
+workspace is running.
+
+See [`dvt/README.md`](dvt/README.md) and the [full docs](dvt/docs/content/quickstart.md)
+for the complete command reference, merge semantics, and SSH internals. `dvt` isn't
+required — everything below also works by hand with DevPod or `@devcontainers/cli`.
+
 ## Base images
 
 | Image | From | Use for |
@@ -68,9 +104,11 @@ complete, ready-to-copy `devcontainer.json` under [`templates/`](templates/) ins
 repeated block here. `marimo`'s template uses `base-ubuntu`; swap in `base-cuda` (and add
 `"runArgs": ["--gpus", "all"]`) if you want GPU-accelerated plotting backends.
 
-### Using with a CLI
+### Using with a CLI, without dvt
 
-No VS Code required. Copy a template into your project and drive it with
+[`dvt`](#dvt-the-cli) above automates all of this — scaffolding, layering features, and
+building/running via Docker or Podman directly. This is the manual path for anyone who'd
+rather not install it: copy a template into your project and drive it with
 [DevPod](https://devpod.sh) or the official
 [`@devcontainers/cli`](https://github.com/devcontainers/cli):
 
@@ -225,6 +263,7 @@ features/
   transformers/              ← ML: transformers, datasets, accelerate
   ollama/                    ← ML: OpenAI-compatible Ollama client
   agent/                     ← Agent: contained claude/pi/omp (firewall + vibe auto-mode wrapper)
+dvt/                          ← CLI: fetches templates/, scaffolds+layers devcontainer.json, builds/runs/ssh via Docker or Podman
 host-services/ollama/        ← local LLM host service (real Ollama via Docker Compose)
 .github/workflows/
   build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes
