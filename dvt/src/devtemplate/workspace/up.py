@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -63,9 +64,15 @@ def up_workspace(
     name: str,
     project_path: Path,
     rebuild: bool = False,
+    on_stage: Callable[[str], None] = lambda _stage: None,
 ) -> Container:
     """Full `dvt up` sequence: validate -> pull Features -> build -> run ->
     lifecycle commands -> SSH config. Returns the running Container.
+
+    on_stage, if given, is called with a short human-readable label before
+    each slow step (pulling Features, building the image, ...) - intended to
+    drive a CLI progress indicator so `dvt up` doesn't sit silently while
+    Docker/network calls run.
 
     Handles the re-`up` case (a workspace with this name already exists): if
     devcontainer.json is unreadable, or matches what the container was built
@@ -115,6 +122,7 @@ def up_workspace(
                     current_config = config_result.unwrap()
                     if config_has_drifted(existing, current_config):
                         raise config_drift_error(existing, current_config, name)
+            on_stage("Resuming existing workspace...")
             return resume_existing(existing, name).unwrap()
 
         # Strict: --rebuild tears the container down, so it requires an
@@ -139,6 +147,7 @@ def up_workspace(
     features_config = config.get("features", {})
     feature_refs = list(features_config.keys())
 
+    on_stage(f"Pulling {len(feature_refs)} feature(s)...")
     with httpx.Client() as http_client:
         pulled = traverse_result(
             feature_refs,
@@ -151,10 +160,12 @@ def up_workspace(
     ]
 
     if handle.machine_name is not None and "--gpus" in config.get("runArgs", []):
+        on_stage("Configuring GPU support...")
         podman_machine.ensure_gpu_support(
             handle.cli_binary, handle.machine_name
         ).unwrap()
 
+    on_stage("Building image...")
     with tempfile.TemporaryDirectory() as scratch:
         image_tag_value = build_image(
             handle.client,
@@ -166,12 +177,15 @@ def up_workspace(
             pull=rebuild,
         ).unwrap()
 
+    on_stage("Starting container...")
     container = run_container(
         handle.client, image_tag_value, config, name, project_path, config_file
     ).unwrap()
 
+    on_stage("Running lifecycle commands...")
     run_lifecycle_commands(container, config).unwrap()
 
+    on_stage("Writing SSH config...")
     refresh_ssh_config(name).unwrap()
 
     return container

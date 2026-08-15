@@ -86,6 +86,96 @@ def test_up_workspace_full_build_and_run_sequence(
     assert build_calls == [{"nocache": False, "pull": False}]
 
 
+def test_up_workspace_reports_stage_progress(project, handle, settings, monkeypatch):
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: None
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+    )
+    monkeypatch.setattr(
+        workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_container", lambda *a, **k: Ok(MagicMock())
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
+    )
+    monkeypatch.setattr(
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    stages: list[str] = []
+    result = up_workspace(handle, settings, "fastapi", project, on_stage=stages.append)
+
+    assert result.is_ok()
+    assert stages == [
+        "Pulling 1 feature(s)...",
+        "Building image...",
+        "Starting container...",
+        "Running lifecycle commands...",
+        "Writing SSH config...",
+    ]
+
+
+def test_up_workspace_resume_reports_stage_progress(
+    project, handle, settings, monkeypatch
+):
+    existing = MagicMock()
+    existing.status = "exited"
+    existing.labels = compute_labels(
+        PROJECT_CONFIG,
+        "fastapi",
+        project,
+        project / ".devcontainer" / "devcontainer.json",
+    )
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: existing
+    )
+    monkeypatch.setattr(
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    stages: list[str] = []
+    result = up_workspace(handle, settings, "fastapi", project, on_stage=stages.append)
+
+    assert result.is_ok()
+    assert stages == ["Resuming existing workspace..."]
+
+
+def test_up_workspace_without_on_stage_still_works(
+    project, handle, settings, monkeypatch
+):
+    """on_stage is optional - omitting it must not raise."""
+    monkeypatch.setattr(
+        workspace_module, "find_workspace_container", lambda client, name: None
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "pull_feature",
+        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+    )
+    monkeypatch.setattr(
+        workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_container", lambda *a, **k: Ok(MagicMock())
+    )
+    monkeypatch.setattr(
+        workspace_module, "run_lifecycle_commands", lambda *a, **k: Ok(None)
+    )
+    monkeypatch.setattr(
+        workspace_existing_module, "write_ssh_config_entry", lambda *a, **k: Ok(None)
+    )
+
+    result = up_workspace(handle, settings, "fastapi", project)
+
+    assert result.is_ok()
+
+
 def test_up_workspace_refuses_unsupported_config(
     tmp_path, handle, settings, monkeypatch
 ):

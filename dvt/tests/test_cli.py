@@ -53,7 +53,9 @@ def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: cli_module.Ok(object()),
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
+            cli_module.Ok(object())
+        ),
     )
 
     result = runner.invoke(cli_module.app, ["up", "my-project"])
@@ -84,7 +86,9 @@ def test_up_passes_podman_machine_settings_to_get_client(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: cli_module.Ok(object()),
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
+            cli_module.Ok(object())
+        ),
     )
 
     result = runner.invoke(cli_module.app, ["up", "my-project"])
@@ -114,7 +118,9 @@ def test_up_json_prints_ok_true_with_name_on_success(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: cli_module.Ok(object()),
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
+            cli_module.Ok(object())
+        ),
     )
 
     result = runner.invoke(cli_module.app, ["up", "my-project", "--json"])
@@ -137,8 +143,8 @@ def test_up_json_prints_ok_false_with_error_on_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: cli_module.Err(
-            FileNotFoundError("no devcontainer.json")
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
+            cli_module.Err(FileNotFoundError("no devcontainer.json"))
         ),
     )
 
@@ -162,8 +168,8 @@ def test_up_reports_clean_error_on_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: cli_module.Err(
-            FileNotFoundError("no devcontainer.json")
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
+            cli_module.Err(FileNotFoundError("no devcontainer.json"))
         ),
     )
 
@@ -402,7 +408,7 @@ def test_up_infers_name_from_the_single_matching_workspace(monkeypatch, tmp_path
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: (
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
             captured.update(name=name) or cli_module.Ok(object())
         ),
     )
@@ -412,6 +418,54 @@ def test_up_infers_name_from_the_single_matching_workspace(monkeypatch, tmp_path
     assert result.exit_code == 0, result.output
     assert captured["name"] == "reused-name"
     assert "reused-name" in result.output
+
+
+def test_up_drives_a_status_spinner_from_on_stage(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+
+    class FakeStatus:
+        def __init__(self):
+            self.updates: list[str] = []
+
+        def update(self, text):
+            self.updates.append(text)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    fake_status = FakeStatus()
+    monkeypatch.setattr(cli_module.console, "status", lambda *a, **k: fake_status)
+
+    captured = {}
+
+    def fake_up_workspace(handle, settings, name, path, rebuild=False, on_stage=None):
+        captured["on_stage"] = on_stage
+        on_stage("Building image...")
+        return cli_module.Ok(object())
+
+    monkeypatch.setattr(cli_module, "up_workspace", fake_up_workspace)
+
+    result = runner.invoke(cli_module.app, ["up", "my-project"])
+
+    assert result.exit_code == 0
+    assert captured["on_stage"] == fake_status.update
+    assert fake_status.updates == ["Building image..."]
 
 
 def test_up_reports_clean_error_when_multiple_workspaces_match(monkeypatch, tmp_path):
@@ -562,7 +616,7 @@ def test_up_rebuild_flag_threads_through_to_up_workspace(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: (
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
             captured.update(rebuild=rebuild) or cli_module.Ok(object())
         ),
     )
@@ -594,7 +648,7 @@ def test_up_without_rebuild_flag_threads_false_through_to_up_workspace(
     monkeypatch.setattr(
         cli_module,
         "up_workspace",
-        lambda handle, settings, name, path, rebuild=False: (
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
             captured.update(rebuild=rebuild) or cli_module.Ok(object())
         ),
     )
@@ -603,6 +657,121 @@ def test_up_without_rebuild_flag_threads_false_through_to_up_workspace(
 
     assert result.exit_code == 0
     assert captured["rebuild"] is False
+
+
+def _stub_up(monkeypatch, cli_module):
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path, rebuild=False, on_stage=None: (
+            cli_module.Ok(object())
+        ),
+    )
+
+
+def test_no_verbose_or_debug_leaves_logerr_untouched(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+    _stub_up(monkeypatch, cli_module)
+
+    configure_calls = []
+    monkeypatch.setattr(
+        cli_module.logerr, "configure", lambda **kw: configure_calls.append(kw)
+    )
+    add_calls = []
+    monkeypatch.setattr(cli_module.logger, "add", lambda *a, **kw: add_calls.append(kw))
+
+    result = runner.invoke(cli_module.app, ["up", "my-project"])
+
+    assert result.exit_code == 0
+    assert configure_calls == []
+    assert add_calls == []
+
+
+def test_verbose_flag_enables_info_level_diagnostics(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+    _stub_up(monkeypatch, cli_module)
+
+    configure_calls = []
+    monkeypatch.setattr(
+        cli_module.logerr, "configure", lambda **kw: configure_calls.append(kw)
+    )
+    add_calls = []
+    monkeypatch.setattr(cli_module.logger, "add", lambda *a, **kw: add_calls.append(kw))
+
+    result = runner.invoke(cli_module.app, ["--verbose", "up", "my-project"])
+
+    assert result.exit_code == 0
+    assert configure_calls == [{"enabled": True, "level": "INFO"}]
+    assert add_calls == [{"level": "INFO"}]
+
+
+def test_debug_flag_enables_debug_level_diagnostics(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+    _stub_up(monkeypatch, cli_module)
+
+    configure_calls = []
+    monkeypatch.setattr(
+        cli_module.logerr, "configure", lambda **kw: configure_calls.append(kw)
+    )
+    add_calls = []
+    monkeypatch.setattr(cli_module.logger, "add", lambda *a, **kw: add_calls.append(kw))
+
+    result = runner.invoke(cli_module.app, ["--debug", "up", "my-project"])
+
+    assert result.exit_code == 0
+    assert configure_calls == [{"enabled": True, "level": "DEBUG"}]
+    assert add_calls == [{"level": "DEBUG"}]
+
+
+def test_debug_takes_precedence_over_verbose(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+    _stub_up(monkeypatch, cli_module)
+
+    configure_calls = []
+    monkeypatch.setattr(
+        cli_module.logerr, "configure", lambda **kw: configure_calls.append(kw)
+    )
+    add_calls = []
+    monkeypatch.setattr(cli_module.logger, "add", lambda *a, **kw: add_calls.append(kw))
+
+    result = runner.invoke(cli_module.app, ["--debug", "--verbose", "up", "my-project"])
+
+    assert result.exit_code == 0
+    assert configure_calls == [{"enabled": True, "level": "DEBUG"}]
+    assert add_calls == [{"level": "DEBUG"}]
 
 
 def test_info_is_registered_as_a_top_level_command():

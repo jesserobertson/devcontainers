@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import logerr
@@ -70,8 +71,24 @@ def root_callback(
         is_eager=True,
         help="Print a JSON manifest of every command and its args, then exit.",
     ),
+    verbose: bool = typer.Option(  # noqa: B008
+        False,
+        "--verbose",
+        "-v",
+        help="Log INFO-level diagnostics (including logerr's Result-error "
+        "logging) to stderr.",
+    ),
+    debug: bool = typer.Option(  # noqa: B008
+        False,
+        "--debug",
+        help="Log DEBUG-level diagnostics (including logerr's Result-error "
+        "logging) to stderr. Takes precedence over --verbose.",
+    ),
 ) -> None:
-    return
+    if debug or verbose:
+        level = "DEBUG" if debug else "INFO"
+        logger.add(sys.stderr, level=level)
+        logerr.configure(enabled=True, level=level)
 
 
 @app.command()
@@ -107,11 +124,21 @@ def up(
         console,
         json_output=json_output,
     )
-    unwrap_or_exit(
-        up_workspace(handle, settings, resolved_name, Path.cwd(), rebuild=rebuild),
-        console,
-        json_output=json_output,
-    )
+    if json_output:
+        result = up_workspace(
+            handle, settings, resolved_name, Path.cwd(), rebuild=rebuild
+        )
+    else:
+        with console.status("Starting workspace...", spinner="dots") as status:
+            result = up_workspace(
+                handle,
+                settings,
+                resolved_name,
+                Path.cwd(),
+                rebuild=rebuild,
+                on_stage=status.update,
+            )
+    unwrap_or_exit(result, console, json_output=json_output)
     emit_success(
         json_output,
         {"name": resolved_name},

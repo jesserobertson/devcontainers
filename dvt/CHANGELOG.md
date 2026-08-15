@@ -12,6 +12,11 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 - `dvt info` — shows the current folder's devcontainer setup (image, applied features) and,
   best-effort, any live workspace tied to it.
+- `--verbose`/`-v` and `--debug` global flags — surface logerr's Result-error logging (and any
+  other loguru output) on stderr at INFO or DEBUG level respectively; `--debug` wins if both are
+  given. Neither is set by default, so `dvt` stays silent as before.
+- `dvt up` now shows a spinner with a live stage label (pulling Features, building the image,
+  starting the container, ...) instead of sitting silently while Docker/network calls run.
 
 ### Changed
 
