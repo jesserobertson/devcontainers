@@ -23,6 +23,8 @@ jobs:
     defaults:
       run:
         working-directory: dvt
+    env:
+      OS: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,10 +41,10 @@ jobs:
         run: pixi run -e dev test all
 
       - name: Upload coverage reports
-        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           file: dvt/coverage.xml
+          env_vars: OS
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -52,6 +54,7 @@ jobs:
         uses: codecov/test-results-action@v1
         with:
           file: dvt/junit.xml
+          flags: ${{ matrix.os }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   docs:
