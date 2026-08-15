@@ -11,18 +11,14 @@ from docker.models.containers import Container
 
 # Err/Ok are re-exported here for tests to monkeypatch fakes via
 # `cli_module.Ok(...)`/`cli_module.Err(...)` without importing logerr directly.
-from logerr import Err, Ok  # noqa: F401
+from logerr import Err, Ok, Result  # noqa: F401
+from logerr.utilities import wrap_result
 from loguru import logger
 from rich.console import Console
 from rich.markup import escape
 
 from devtemplate import __version__
-from devtemplate.cli_support import (
-    describe_app,
-    emit_success,
-    report_error,
-    unwrap_or_exit,
-)
+from devtemplate.cli_support import describe_app, emit_success, unwrap_or_exit
 from devtemplate.commands import feature_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
@@ -195,24 +191,41 @@ def ssh(
     raise typer.Exit(code=exit_code)
 
 
-def find_or_exit(
-    client: DockerClient, name: str, *, json_output: bool = False
-) -> Container:
+@wrap_result
+def find_workspace_container_result(client: DockerClient, name: str) -> Container:
+    """Result-returning wrapper (via @wrap_result) around
+    find_workspace_container: folds both
+    of its failure modes (the lookup call itself raising, and it returning
+    None for "no such workspace") into a single Err, so callers get one
+    uniform error path via unwrap_or_exit instead of a try/except plus a
+    separate None-check."""
     try:
         container = find_workspace_container(client, name)
     except Exception as exc:
-        report_error(
-            f"Failed to look up workspace '{name}': {exc}",
-            console,
-            json_output=json_output,
-        )
-        raise typer.Exit(code=1) from exc
+        raise RuntimeError(f"Failed to look up workspace '{name}': {exc}") from exc
     if container is None:
-        report_error(
-            f"No workspace named '{name}' found.", console, json_output=json_output
-        )
-        raise typer.Exit(code=1)
+        raise LookupError(f"No workspace named '{name}' found.")
     return container
+
+
+def find_or_exit(
+    client: DockerClient, name: str, *, json_output: bool = False
+) -> Container:
+    return unwrap_or_exit(
+        find_workspace_container_result(client, name), console, json_output=json_output
+    )
+
+
+@wrap_result
+def stop_container(container: Container) -> Result[None, Exception]:
+    container.stop()
+    return Ok(None)
+
+
+@wrap_result
+def delete_container(container: Container) -> Result[None, Exception]:
+    container.remove(force=True)
+    return Ok(None)
 
 
 @app.command()
@@ -244,13 +257,17 @@ def stop(
         json_output=json_output,
     )
     container = find_or_exit(handle.client, resolved_name, json_output=json_output)
-    try:
-        container.stop()
-    except Exception as exc:
-        report_error(
-            f"Failed to stop '{resolved_name}': {exc}", console, json_output=json_output
-        )
-        raise typer.Exit(code=1) from exc
+    if json_output:
+        result = stop_container(container)
+    else:
+        with console.status(f"Stopping '{resolved_name}'...", spinner="dots"):
+            result = stop_container(container)
+    unwrap_or_exit(
+        result,
+        console,
+        prefix=f"Failed to stop '{resolved_name}': ",
+        json_output=json_output,
+    )
     emit_success(
         json_output,
         {"name": resolved_name},
@@ -287,15 +304,17 @@ def delete(
         json_output=json_output,
     )
     container = find_or_exit(handle.client, resolved_name, json_output=json_output)
-    try:
-        container.remove(force=True)
-    except Exception as exc:
-        report_error(
-            f"Failed to delete '{resolved_name}': {exc}",
-            console,
-            json_output=json_output,
-        )
-        raise typer.Exit(code=1) from exc
+    if json_output:
+        result = delete_container(container)
+    else:
+        with console.status(f"Deleting '{resolved_name}'...", spinner="dots"):
+            result = delete_container(container)
+    unwrap_or_exit(
+        result,
+        console,
+        prefix=f"Failed to delete '{resolved_name}': ",
+        json_output=json_output,
+    )
     unwrap_or_exit(
         remove_ssh_config_entry(resolved_name, Path.home() / ".ssh" / "config"),
         console,

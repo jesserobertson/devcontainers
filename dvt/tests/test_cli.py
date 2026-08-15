@@ -263,6 +263,46 @@ def test_stop_stops_the_labeled_container(monkeypatch):
     assert result.exit_code == 0
 
 
+def test_stop_shows_a_status_spinner_while_stopping(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    stop_calls = []
+    fake_container = type("C", (), {"stop": lambda self: stop_calls.append(True)})()
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module, "find_workspace_container", lambda client, name: fake_container
+    )
+
+    entered = []
+
+    class FakeStatus:
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    captured = {}
+
+    def fake_status(message, **kwargs):
+        captured["message"] = message
+        return FakeStatus()
+
+    monkeypatch.setattr(cli_module.console, "status", fake_status)
+
+    result = runner.invoke(cli_module.app, ["stop", "my-project"])
+
+    assert result.exit_code == 0
+    assert entered == [True]
+    assert stop_calls == [True]
+    assert "my-project" in captured["message"]
+
+
 def test_stop_json_prints_ok_true_with_name_on_success(monkeypatch):
     import devtemplate.cli as cli_module
 
@@ -358,6 +398,51 @@ def test_delete_removes_container_and_ssh_entry(monkeypatch):
     result = runner.invoke(cli_module.app, ["delete", "my-project"])
 
     assert result.exit_code == 0
+
+
+def test_delete_shows_a_status_spinner_while_deleting(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    remove_calls = []
+    fake_container = type(
+        "C", (), {"remove": lambda self, force=True: remove_calls.append(True)}
+    )()
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module, "find_workspace_container", lambda client, name: fake_container
+    )
+    monkeypatch.setattr(
+        cli_module, "remove_ssh_config_entry", lambda name, path: cli_module.Ok(None)
+    )
+
+    entered = []
+
+    class FakeStatus:
+        def __enter__(self):
+            entered.append(True)
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    captured = {}
+
+    def fake_status(message, **kwargs):
+        captured["message"] = message
+        return FakeStatus()
+
+    monkeypatch.setattr(cli_module.console, "status", fake_status)
+
+    result = runner.invoke(cli_module.app, ["delete", "my-project"])
+
+    assert result.exit_code == 0
+    assert entered == [True]
+    assert remove_calls == [True]
+    assert "my-project" in captured["message"]
 
 
 def test_delete_json_prints_ok_true_with_name_on_success(monkeypatch):
