@@ -48,7 +48,18 @@ class WindowsPtyProcess:
             return ""
 
     def write(self, data: str) -> None:
-        self._inner.write(data)
+        try:
+            self._inner.write(data)
+        except EOFError as exc:
+            # pywinpty's own documented contract: write() raises EOFError
+            # once the pty has been torn down (the child already exited),
+            # mirroring read()'s own EOFError-on-EOF behavior above.
+            # Re-raised as OSError so callers (bridge.py's
+            # pump_socket_to_pty) can treat "the pty is gone" uniformly
+            # across backends without needing backend-specific exception
+            # handling - POSIX's os.write() already raises OSError for the
+            # identical condition natively.
+            raise OSError("Pty is closed") from exc
 
     def resize(self, rows: int, cols: int) -> None:
         self._inner.setwinsize(rows, cols)

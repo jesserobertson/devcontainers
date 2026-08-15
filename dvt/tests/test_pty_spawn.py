@@ -259,3 +259,23 @@ def test_spawn_pty_process_wait_returns_the_exit_code_windows():
         assert proc.wait() == 42
     finally:
         proc.close()
+
+
+@_windows_only
+def test_spawn_pty_process_write_after_exit_raises_oserror_windows():
+    # pywinpty's own write() raises EOFError once the pty has been torn
+    # down (the child already exited), not OSError - unlike POSIX, where
+    # os.write() on a dead pty fd already raises OSError natively (see
+    # PosixPtyProcess.write). devtemplate.pty.bridge's pump_socket_to_pty
+    # only catches OSError, on the assumption that's the one exception
+    # meaning "the pty is gone, drop this write" - reproduced for real: a
+    # client's in-flight bytes arriving just after the shell exits crashed
+    # that thread with an unhandled EOFError instead of being silently
+    # dropped like every other backend/condition.
+    proc = spawn_pty_process([sys.executable, "-c", _EXIT_WITH_CODE], rows=24, cols=80)
+    proc.wait()
+    try:
+        with pytest.raises(OSError):
+            proc.write("late data\r\n")
+    finally:
+        proc.close()
