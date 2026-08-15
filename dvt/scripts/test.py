@@ -12,7 +12,6 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.status import Status
 
 from utils import run_command
 
@@ -34,8 +33,10 @@ def unit(
         cmd.append("-v")
     if fail_fast:
         cmd.append("-x")
-    with Status("Running unit tests...", console=console, spinner="dots"):
-        run_command(cmd)
+    # No Status spinner here: pytest streams its own live progress straight
+    # to this same terminal (run_command doesn't capture output), and a
+    # second live-redrawing widget on top of that garbles both.
+    run_command(cmd)
     console.print("[green]Unit tests completed.[/green]")
 
 
@@ -53,8 +54,7 @@ def integration(
     cmd = ["pytest", "tests/", "-m", "integration"]
     if verbose:
         cmd.append("-v")
-    with Status("Running integration tests...", console=console, spinner="dots"):
-        run_command(cmd)
+    run_command(cmd)
     console.print("[green]Integration tests completed.[/green]")
 
 
@@ -71,8 +71,7 @@ def all(
     cmd = ["pytest", "tests/", "src/devtemplate/", "-m", "not integration"]
     if verbose:
         cmd.append("-v")
-    with Status("Running all tests...", console=console, spinner="dots"):
-        run_command(cmd)
+    run_command(cmd)
     console.print("[green]All tests completed.[/green]")
 
 
@@ -85,8 +84,7 @@ def fast(
     cmd = ["pytest", "tests/", "src/devtemplate/", "-m", "not slow and not integration"]
     if verbose:
         cmd.append("-v")
-    with Status("Running fast tests...", console=console, spinner="dots"):
-        run_command(cmd)
+    run_command(cmd)
     console.print("[green]Fast tests completed.[/green]")
 
 
