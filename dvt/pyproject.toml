@@ -40,7 +40,7 @@ allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/devtemplate"]
-addopts = "--cov=devtemplate --cov-report=term-missing --doctest-modules -m \"not integration\""
+addopts = "--cov=devtemplate --cov-report=term-missing --cov-report=xml --junitxml=junit.xml --doctest-modules -m \"not integration\""
 doctest_optionflags = ["ELLIPSIS", "NORMALIZE_WHITESPACE"]
 asyncio_mode = "auto"
 markers = [

@@ -38,6 +38,22 @@ jobs:
       - name: Run tests
         run: pixi run -e dev test all
 
+      - name: Upload coverage reports
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          file: dvt/coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          file: dvt/junit.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   docs:
     runs-on: ubuntu-latest
     defaults:
