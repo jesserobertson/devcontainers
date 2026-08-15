@@ -1,0 +1,100 @@
+name: Publish dvt to PyPI
+
+# Pushing a dvt-v* tag auto-builds and auto-publishes to TestPyPI - cheap
+# and fully reversible, since TestPyPI is a scratch index. Real PyPI stays
+# manual-dispatch-only: a published version number can never be reused, so
+# that one keeps a deliberate human trigger rather than firing off the same
+# tag push. Mirrors logerr's publish.yml.
+#
+# Requires this repo + this workflow to be configured as a trusted
+# publisher on PyPI first (project name: devtemplate) - see
+# https://pypi.org/manage/account/publishing/ (and the TestPyPI
+# equivalent). Nothing will publish until that's done.
+
+on:
+  push:
+    tags:
+      - "dvt-v*"
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Target repository"
+        required: true
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: dvt
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Setup pixi
+      uses: prefix-dev/setup-pixi@v0.10.1
+      with:
+        manifest-path: dvt/pyproject.toml
+        environments: dev
+
+    - name: Run full checks
+      run: pixi run -e dev check-all
+
+    - name: Build package
+      run: pixi run -e dev python -m build
+
+    - name: Check package
+      run: pixi run -e dev python -m twine check dist/*
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: dist
+        path: dvt/dist/
+
+  publish-testpypi:
+    if: github.event_name == 'push' || inputs.repository == 'testpypi'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write # required for PyPI trusted publishing
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: dist
+        path: dist/
+
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    if: github.event_name == 'workflow_dispatch' && inputs.repository == 'pypi'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # required for PyPI trusted publishing
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: dist
+        path: dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
