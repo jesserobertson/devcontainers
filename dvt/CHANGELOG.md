@@ -10,8 +10,19 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 ### Added
 
-- `dvt info` — shows the current folder's devcontainer setup (image, applied features) and,
-  best-effort, any live workspace tied to it.
+- `dvt feature add`/`remove` now accept one or more names, applied/removed in order, stopping at
+  the first failure — everything before it stays applied. A single name still behaves
+  byte-for-byte identically to before.
+- `dvt info` — shows the current folder's devcontainer setup (image, applied features and their
+  descriptions) and, best-effort, any live workspace tied to it.
+- `dvt up --rebuild` — tears down and rebuilds a workspace from scratch. `dvt up` also now
+  detects when an existing workspace's container was built from a different `devcontainer.json`
+  than what's currently on disk and refuses to resume it rather than silently resuming stale
+  config, pointing at `--rebuild`.
+- `dvt ssh` sessions that request a pty (interactive `ssh <name>`, or `ssh -t <name> <cmd>`) now
+  get a real host-side pseudo-terminal bridged through to the container, fixing a
+  missing-prompt/no-job-control gap. Non-pty exec sessions (`ssh <name> "cmd"`) are unaffected.
+- `--json` output across commands, plus a `--describe` machine-readable tool manifest.
 - `--verbose`/`-v` and `--debug` global flags — surface logerr's Result-error logging (and any
   other loguru output) on stderr at INFO or DEBUG level respectively; `--debug` wins if both are
   given. Neither is set by default, so `dvt` stays silent as before.
