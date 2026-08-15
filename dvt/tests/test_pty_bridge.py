@@ -95,6 +95,7 @@ async def _read_until(stream, marker: str, timeout: float = 10.0) -> str:
     return buf
 
 
+@pytest.mark.slow  # real spawn_pty_process() + a real asyncssh handshake, ~8s
 @pytest.mark.asyncio
 async def test_bridge_to_ssh_process_round_trips_data_both_directions():
     """Real client, real server, a real spawn_pty_process()-backed process -
@@ -138,6 +139,7 @@ async def test_bridge_to_ssh_process_round_trips_data_both_directions():
     (await server_task).close()
 
 
+@pytest.mark.slow  # real spawn_pty_process() + a real asyncssh handshake, ~8s
 @pytest.mark.asyncio
 async def test_bridge_to_ssh_process_forwards_client_resize_to_the_pty():
     """A client-side window-change request must reach the real pty, not just
@@ -179,6 +181,7 @@ async def test_bridge_to_ssh_process_forwards_client_resize_to_the_pty():
     (await server_task).close()
 
 
+@pytest.mark.slow  # real spawn_pty_process() + a real asyncssh handshake, ~8s
 @pytest.mark.asyncio
 async def test_bridge_to_ssh_process_ignores_break_and_signal_requests():
     """Regression guard matching today's behaviour (see the design spec's
@@ -225,6 +228,7 @@ async def test_bridge_to_ssh_process_ignores_break_and_signal_requests():
     (await server_task).close()
 
 
+@pytest.mark.slow  # real spawn_pty_process() + a real asyncssh handshake, ~8s
 @pytest.mark.asyncio
 async def test_bridge_to_ssh_process_returns_the_pty_processs_exit_code():
     host_key = asyncssh.generate_private_key("ssh-ed25519")

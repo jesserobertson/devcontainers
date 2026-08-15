@@ -8,6 +8,14 @@ import pytest
 
 from devtemplate.pty.spawn import spawn_pty_process
 
+# Every test here spawns a real OS process attached to a real pty
+# (pty.fork() on POSIX, pywinpty/ConPTY on Windows) via spawn_pty_process -
+# genuine process-creation + terminal-allocation overhead, not something a
+# unit test's "fast, fully mocked" definition (see conftest.py's marker
+# registration) fits: ~3s each on this Windows dev machine, dominating the
+# "unit"/"fast" tiers' total runtime out of proportion to what they add.
+pytestmark = pytest.mark.slow
+
 _posix_only = pytest.mark.skipif(
     sys.platform == "win32",
     reason="exercises the stdlib pty.fork() backend, POSIX only",
