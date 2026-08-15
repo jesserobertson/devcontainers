@@ -149,6 +149,7 @@ test = { cmd = "python scripts/test.py", description = "Testing management (unit
 docs = { cmd = "python scripts/docs.py", description = "Documentation management (serve, build, status)" }
 check-all = { cmd = "python scripts/test.py all && python scripts/quality.py check", description = "Run comprehensive checks (all tests + quality)" }
 clean = { cmd = "python scripts/test.py clean && python scripts/docs.py clean", description = "Clean all project artifacts (test, docs)" }
+install = { cmd = "pipx install --force .", description = "Reinstall the globally pipx-installed dvt from this working tree, picking up local changes" }
 
 [dependency-groups]
 dev = ["mypy>=2.3.0,<3", "types-jsonschema>=4.26.0.20260518,<5", "types-docker>=7.0"]
