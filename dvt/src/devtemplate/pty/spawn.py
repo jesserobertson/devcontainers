@@ -7,6 +7,8 @@ from __future__ import annotations
 import sys
 from typing import Protocol
 
+from logerr import Result
+
 __all__ = ["PtyProcess", "spawn_pty_process"]
 
 
@@ -24,8 +26,13 @@ class PtyProcess(Protocol):
         raises on ordinary end-of-output."""
         ...
 
-    def write(self, data: str) -> None:
-        """Write data to the process's pty. Blocks until fully sent."""
+    def write(self, data: str) -> Result[None, OSError]:
+        """Write data to the process's pty. Blocks until fully sent.
+        Returns Err(OSError) if the pty has already been torn down (the
+        process exited) rather than raising - the write-side equivalent of
+        read()'s own no-exception EOF contract above, so a caller (e.g.
+        devtemplate.pty.bridge's pump_socket_to_pty) can treat "the pty is
+        gone" uniformly across backends."""
         ...
 
     def resize(self, rows: int, cols: int) -> None:

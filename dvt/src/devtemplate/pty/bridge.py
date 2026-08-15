@@ -83,10 +83,14 @@ def pump_socket_to_pty(sock: socket.socket, pty_proc: PtyProcess) -> None:
             if not data:
                 break
             text = decoder.decode(data)
-            if text:
-                pty_proc.write(text)
+            # pty_proc.write() returns Err(OSError) once the pty is gone
+            # (see PtyProcess.write()'s contract) rather than raising - stop
+            # pumping rather than trying to write any more of the client's
+            # bytes into a pty that no longer exists.
+            if text and pty_proc.write(text).is_err():
+                break
     except OSError:
-        pass
+        pass  # the socket itself (sock.recv), not pty_proc.write - see above
 
 
 async def bridge_to_ssh_process(

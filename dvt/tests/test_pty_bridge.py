@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import sys
+import threading
 
 import asyncssh
 import pytest
+from logerr import Err, Ok
 
 from devtemplate.net import bounded_socketpair
-from devtemplate.pty.bridge import bridge_to_ssh_process
+from devtemplate.pty.bridge import bridge_to_ssh_process, pump_socket_to_pty
 from devtemplate.pty.spawn import spawn_pty_process
 
 
@@ -249,3 +252,73 @@ async def test_bridge_to_ssh_process_returns_the_pty_processs_exit_code():
     assert result.exit_status == 9
     assert returned == [9]
     (await server_task).close()
+
+
+class _FakePtyProcess:
+    """A minimal PtyProcess double whose write() fails on demand - lets
+    pump_socket_to_pty's handling of a real backend's Err(OSError) (see
+    PosixPtyProcess.write/WindowsPtyProcess.write) be exercised directly,
+    without needing a real pty or a full bridge_to_ssh_process session."""
+
+    def __init__(self, *, fail_after: int = 0) -> None:
+        self.calls: list[str] = []
+        self._fail_after = fail_after
+
+    def write(self, data: str):
+        self.calls.append(data)
+        if len(self.calls) > self._fail_after:
+            return Err(OSError("pty is closed"))
+        return Ok(None)
+
+
+def test_pump_socket_to_pty_stops_cleanly_when_write_returns_err():
+    # Reproduces the actual bug this Result-returning contract exists to
+    # fix: a write arriving after the pty is gone must make the pump
+    # thread stop, not crash it with an unhandled exception (the original
+    # report: an EOFError traceback on exiting a container shell). Doesn't
+    # assert on fake_proc.calls' exact contents - the underlying socket is
+    # a TCP loopback pair (see bounded_socketpair), which doesn't preserve
+    # message boundaries, so a single sendall() may arrive as one or more
+    # recv()s; only "at least one write was attempted, then the thread
+    # stopped" is a safe thing to assert.
+    server_sock, client_sock = bounded_socketpair()
+    fake_proc = _FakePtyProcess(fail_after=0)
+
+    thread = threading.Thread(
+        target=pump_socket_to_pty, args=(server_sock, fake_proc), daemon=True
+    )
+    thread.start()
+    try:
+        client_sock.sendall(b"late data")
+        thread.join(timeout=5)
+        assert not thread.is_alive(), (
+            "pump_socket_to_pty did not stop after write() returned Err"
+        )
+        assert fake_proc.calls, "write() was never even attempted"
+    finally:
+        client_sock.close()
+        server_sock.close()
+
+
+def test_pump_socket_to_pty_keeps_pumping_while_write_returns_ok():
+    server_sock, client_sock = bounded_socketpair()
+    fake_proc = _FakePtyProcess(fail_after=1_000_000)  # never fails
+
+    thread = threading.Thread(
+        target=pump_socket_to_pty, args=(server_sock, fake_proc), daemon=True
+    )
+    thread.start()
+    try:
+        client_sock.sendall(b"hello")
+        # EOF (not a write() failure) is the only thing that should end
+        # the loop here - shutting down the write side is what pump_pty_to_socket's
+        # own counterpart relies on in the real bridge, see bridge_to_ssh_process.
+        client_sock.shutdown(socket.SHUT_WR)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        # Joined because a single small sendall() may still arrive as more
+        # than one recv() on this backend - see the Err-path test above.
+        assert "".join(fake_proc.calls) == "hello"
+    finally:
+        client_sock.close()
+        server_sock.close()

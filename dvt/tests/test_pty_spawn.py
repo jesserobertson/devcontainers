@@ -177,10 +177,26 @@ def test_spawn_pty_process_write_reaches_the_child():
     # first-line match. See _read_until's docstring.
     proc = spawn_pty_process([sys.executable, "-c", _ECHO_ONE_LINE], rows=24, cols=80)
     try:
-        proc.write("hello\n")
+        assert proc.write("hello\n").is_ok()
         assert "echo:hello" in _read_until(proc, "echo:hello")
     finally:
         _shutdown(proc)
+
+
+@_posix_only
+def test_spawn_pty_process_write_after_close_returns_err():
+    # os.write() on a pty master fd that's already been closed raises
+    # OSError natively - devtemplate.pty.posix.write() wraps that as
+    # Err(OSError(...)) rather than letting it propagate, matching
+    # PtyProcess.write()'s Result-returning contract (see spawn.py) and
+    # the equivalent Err WindowsPtyProcess.write() returns for the
+    # identical condition on that backend.
+    proc = spawn_pty_process([sys.executable, "-c", _EXIT_WITH_CODE], rows=24, cols=80)
+    proc.wait()
+    proc.close()
+    result = proc.write("late data\n")
+    assert result.is_err()
+    assert isinstance(result.unwrap_err(), OSError)
 
 
 @_posix_only
@@ -232,7 +248,7 @@ def test_spawn_pty_process_write_reaches_the_child_windows():
     # echoes the written input back into the output stream first).
     proc = spawn_pty_process([sys.executable, "-c", _ECHO_ONE_LINE], rows=24, cols=80)
     try:
-        proc.write("hello\r\n")
+        assert proc.write("hello\r\n").is_ok()
         assert "echo:hello" in _read_until(proc, "echo:hello")
     finally:
         _shutdown(proc)
@@ -262,20 +278,22 @@ def test_spawn_pty_process_wait_returns_the_exit_code_windows():
 
 
 @_windows_only
-def test_spawn_pty_process_write_after_exit_raises_oserror_windows():
+def test_spawn_pty_process_write_after_exit_returns_err_windows():
     # pywinpty's own write() raises EOFError once the pty has been torn
-    # down (the child already exited), not OSError - unlike POSIX, where
-    # os.write() on a dead pty fd already raises OSError natively (see
-    # PosixPtyProcess.write). devtemplate.pty.bridge's pump_socket_to_pty
-    # only catches OSError, on the assumption that's the one exception
-    # meaning "the pty is gone, drop this write" - reproduced for real: a
-    # client's in-flight bytes arriving just after the shell exits crashed
-    # that thread with an unhandled EOFError instead of being silently
-    # dropped like every other backend/condition.
+    # down (the child already exited) - devtemplate.pty.windows.write()
+    # translates that into Err(OSError(...)) rather than letting it
+    # propagate, matching PtyProcess.write()'s Result-returning contract
+    # (see spawn.py) and the equivalent OSError PosixPtyProcess.write()
+    # returns as Err for the identical condition. Reproduced for real: a
+    # client's in-flight bytes arriving just after the shell exits used to
+    # crash devtemplate.pty.bridge's pump_socket_to_pty thread with an
+    # unhandled EOFError instead of being handled like every other
+    # backend/condition.
     proc = spawn_pty_process([sys.executable, "-c", _EXIT_WITH_CODE], rows=24, cols=80)
     proc.wait()
     try:
-        with pytest.raises(OSError):
-            proc.write("late data\r\n")
+        result = proc.write("late data\r\n")
+        assert result.is_err()
+        assert isinstance(result.unwrap_err(), OSError)
     finally:
         proc.close()

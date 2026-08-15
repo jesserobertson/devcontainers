@@ -8,6 +8,9 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
+from logerr import Ok, Result
+from logerr.utilities import wrap_result
+
 # Windows-only import, guarded so this module can be imported on Linux/macOS
 # (for doctest discovery by pytest) even though it won't actually be used
 # there - pywinpty is declared as a win32-only dependency in pyproject.toml,
@@ -47,19 +50,21 @@ class WindowsPtyProcess:
             # doesn't need to know which backend it's talking to.
             return ""
 
-    def write(self, data: str) -> None:
+    @wrap_result
+    def write(self, data: str) -> Result[None, OSError]:
         try:
             self._inner.write(data)
         except EOFError as exc:
             # pywinpty's own documented contract: write() raises EOFError
             # once the pty has been torn down (the child already exited),
             # mirroring read()'s own EOFError-on-EOF behavior above.
-            # Re-raised as OSError so callers (bridge.py's
-            # pump_socket_to_pty) can treat "the pty is gone" uniformly
-            # across backends without needing backend-specific exception
-            # handling - POSIX's os.write() already raises OSError for the
-            # identical condition natively.
+            # Re-raised as OSError - caught by @wrap_result and turned into
+            # Err - so callers (bridge.py's pump_socket_to_pty) can treat
+            # "the pty is gone" uniformly across backends without needing
+            # backend-specific exception handling: POSIX's os.write()
+            # already raises OSError for the identical condition natively.
             raise OSError("Pty is closed") from exc
+        return Ok(None)
 
     def resize(self, rows: int, cols: int) -> None:
         self._inner.setwinsize(rows, cols)

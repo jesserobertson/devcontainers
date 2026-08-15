@@ -9,6 +9,9 @@ import codecs
 import os
 import struct
 
+from logerr import Ok, Result
+from logerr.utilities import wrap_result
+
 # POSIX-only imports, guarded so this module can be imported on Windows
 # (for doctest discovery by pytest) even though it won't actually be used.
 # The class and function bodies below only resolve these names at call time
@@ -54,12 +57,19 @@ class PosixPtyProcess:
             return ""
         return self._decoder.decode(chunk)
 
-    def write(self, data: str) -> None:
+    @wrap_result
+    def write(self, data: str) -> Result[None, OSError]:
+        # os.write() raises OSError (EBADF/EIO) once the pty is gone - a
+        # closed master fd, or a child that's exited and been reaped -
+        # caught by @wrap_result and turned into Err, matching
+        # WindowsPtyProcess.write()'s equivalent translation of pywinpty's
+        # own EOFError.
         encoded = data.encode()
         # os.write() may write fewer bytes than given; loop until it's all
         # sent, matching the same pattern devtemplate.sshd.stdio's stdio bridge uses.
         while encoded:
             encoded = encoded[os.write(self._master_fd, encoded) :]
+        return Ok(None)
 
     def resize(self, rows: int, cols: int) -> None:
         winsize = struct.pack("HHHH", rows, cols, 0, 0)
