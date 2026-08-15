@@ -52,9 +52,9 @@ param(
     [string[]]$Images = @('base-ubuntu', 'base-cuda', 'ramalama'),
 
     [ValidateSet('cli', 'fastapi', 'huggingface', 'jax', 'marimo', 'mojo',
-                 'py-devtools', 'pytorch', 'ramalama', 'rapids', 'transformers')]
+                 'podman', 'py-devtools', 'pytorch', 'ramalama', 'rapids', 'transformers')]
     [string[]]$Features = @('cli', 'fastapi', 'huggingface', 'jax', 'marimo', 'mojo',
-                             'py-devtools', 'pytorch', 'ramalama', 'rapids', 'transformers'),
+                             'podman', 'py-devtools', 'pytorch', 'ramalama', 'rapids', 'transformers'),
 
     [string]$OutputDir = '.features-pkg'
 )

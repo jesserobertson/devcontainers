@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).parent.parent
 FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
-    "agent",
+    "agent", "podman",
 ]
 
 SU_DEV_FEATURES = [
@@ -23,7 +23,9 @@ SU_DEV_FEATURES = [
 ]
 
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
-CPU_TEMPLATE_FEATURES = ["marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama"]
+CPU_TEMPLATE_FEATURES = [
+    "marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama", "podman",
+]
 
 
 # --- per-feature parametrised checks ---

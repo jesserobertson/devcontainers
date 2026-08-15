@@ -1,0 +1,7 @@
+{
+  "id": "podman",
+  "version": "1.0.0",
+  "name": "Podman (rootless, for nested container testing)",
+  "description": "Installs rootless Podman for the dev user, configured with the vfs storage driver so it runs unmodified inside any unprivileged container - no --privileged or --device=/dev/fuse needed on the consumer's own runArgs. Includes podman-docker (a `docker` CLI shim) and podman-compose (wired up as a `docker compose` plugin shim by podman-docker's own postinst), so existing `docker`/`docker compose` invocations keep working unchanged. Works with both base-ubuntu and base-cuda images. Needs the outer engine to delegate a real subordinate UID/GID range: on a rootful engine (Docker Engine on Linux, most CI runners) nested `docker run`/`podman run` works out of the box; on an already-rootless outer engine (confirmed on Podman Machine on Windows) nesting fails with 'newuidmap: write to uid_map failed: Operation not permitted' regardless of runArgs, because no container it starts can be handed more delegation than the rootless machine session itself has.",
+  "options": {}
+}

@@ -1,0 +1,15 @@
+{
+  "name": "podman",
+  "description": "Rootless Podman inside the container, for nested container/image testing.",
+  "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/podman:latest": {}
+  },
+  "mounts": [
+    "source=pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+  ],
+  "postCreateCommand": "mkdir -p ~/.config/pixi && printf 'detached-environments = true\\n' >> ~/.config/pixi/config.toml && pixi install",
+  "remoteUser": "dev"
+}
