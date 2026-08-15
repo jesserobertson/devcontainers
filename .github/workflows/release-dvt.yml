@@ -1,0 +1,37 @@
+name: Release dvt
+
+on:
+  push:
+    tags:
+      - "dvt-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Parse version from tag
+        id: parse
+        run: |
+          version="${GITHUB_REF_NAME#dvt-v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog section
+        run: |
+          awk -v ver="${{ steps.parse.outputs.version }}" '
+            $0 ~ "^## \\[" ver "\\]" { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' dvt/CHANGELOG.md > notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "dvt v${{ steps.parse.outputs.version }}" \
+            --notes-file notes.md

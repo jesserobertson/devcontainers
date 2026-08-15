@@ -1,0 +1,40 @@
+name: Release features
+
+on:
+  push:
+    tags:
+      - "feat-*-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Parse feature name/version from tag
+        id: parse
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          name=$(echo "$tag" | sed -E 's/^feat-(.+)-v[0-9]+\.[0-9]+\.[0-9]+$/\1/')
+          version=$(echo "$tag" | sed -E 's/^feat-.+-v([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes
+        run: |
+          {
+            jq -r '.description' "features/${{ steps.parse.outputs.name }}/devcontainer-feature.json"
+            echo
+            echo "Published to \`ghcr.io/jesserobertson/${{ steps.parse.outputs.name }}:${{ steps.parse.outputs.version }}\`."
+          } > notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ steps.parse.outputs.name }} v${{ steps.parse.outputs.version }}" \
+            --notes-file notes.md
