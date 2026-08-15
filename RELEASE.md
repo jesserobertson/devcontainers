@@ -5,7 +5,7 @@ the devcontainer Features (`features/*`), and the base images (`base/`).
 Each has its own release mechanism - there's no single "cut a release for
 the whole repo" step.
 
-## dvt (the CLI, published to PyPI as `devtemplate`)
+## dvt (the CLI, published to PyPI as `dvt-cli`)
 
 1. **Bump `dvt/pyproject.toml`'s `[project] version`.** That's the only
    version string dvt has - no separate `__init__.py`/`pixi.toml` copy to
@@ -29,7 +29,7 @@ the whole repo" step.
      **TestPyPI** (cheap, reversible - no human checkpoint needed there).
 6. **Sanity-check the TestPyPI upload**:
    ```bash
-   pip install -i https://test.pypi.org/simple/ devtemplate==X.Y.Z
+   pip install -i https://test.pypi.org/simple/ dvt-cli==X.Y.Z
    ```
 7. **Publish to real PyPI manually**: GitHub → Actions → *Publish dvt to
    PyPI* → *Run workflow* → choose `pypi`. Never automatic - a published
@@ -38,7 +38,7 @@ the whole repo" step.
 
 Trusted publishing (OIDC, no token) needs registering once per environment
 at https://pypi.org/manage/account/publishing/ and the TestPyPI equivalent
-- PyPI project name `devtemplate`, Owner `jesserobertson`, Repo
+- PyPI project name `dvt-cli`, Owner `jesserobertson`, Repo
   `devcontainers`, Workflow `publish-dvt.yml`, Environment `pypi` (and
   `testpypi`).
 

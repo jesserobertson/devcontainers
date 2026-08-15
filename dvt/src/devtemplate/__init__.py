@@ -2,4 +2,4 @@ from __future__ import annotations
 
 from importlib.metadata import version
 
-__version__ = version("devtemplate")
+__version__ = version("dvt-cli")

@@ -7,7 +7,7 @@ name: Publish dvt to PyPI
 # tag push. Mirrors logerr's publish.yml.
 #
 # Requires this repo + this workflow to be configured as a trusted
-# publisher on PyPI first (project name: devtemplate) - see
+# publisher on PyPI first (project name: dvt-cli) - see
 # https://pypi.org/manage/account/publishing/ (and the TestPyPI
 # equivalent). Nothing will publish until that's done.
 

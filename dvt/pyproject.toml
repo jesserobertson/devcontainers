@@ -1,5 +1,5 @@
 [project]
-name = "devtemplate"
+name = "dvt-cli"
 version = "0.3.0"
 description = "Layered, dev-style named devcontainer templates, built and run directly via Docker or Podman"
 readme = "README.md"
@@ -117,7 +117,7 @@ channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64", "osx-64"]
 
 [tool.pixi.pypi-dependencies]
-devtemplate = { path = ".", editable = true }
+dvt-cli = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = ">=3.12,<3.15"
