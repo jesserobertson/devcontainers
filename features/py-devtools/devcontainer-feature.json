@@ -1,7 +1,7 @@
 {
   "id": "py-devtools",
-  "version": "1.1.0",
-  "name": "Python dev tooling (ruff, mypy, pytest, mkdocs)",
-  "description": "Installs standard Python dev tooling via pixi: ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings. Works with both base-ubuntu and base-cuda images.",
+  "version": "1.2.0",
+  "name": "Python dev tooling (ruff, mypy, pytest, mkdocs, helix)",
+  "description": "Installs standard Python dev tooling via pixi: ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, the Helix editor, and pyright. Also writes ~/.config/helix/languages.toml wiring Helix's Python support to ruff's native LSP (lint/format) and pyright (hover/completion/go-to-definition). Works with both base-ubuntu and base-cuda images.",
   "options": {}
 }

@@ -22,11 +22,12 @@ Composable features that install on top of a base image at container creation ti
 | `…/marimo:latest` | Data | base-ubuntu / base-cuda | Reactive notebooks and visualisation — Marimo, Altair, vega_datasets |
 | `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
 | `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
-| `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings |
+| `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, Helix editor + pyright (Helix wired to ruff's LSP + pyright out of the box) |
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
 | `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
 | `…/agent:latest` | Agent | base-ubuntu / base-cuda | Contained agents — `claude`/`pi`/`omp` CLIs, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
+| `…/podman:latest` | Dev | base-ubuntu / base-cuda | Rootless Podman for nested container/image testing — `docker`/`docker compose` CLI shims via podman-docker + podman-compose, vfs storage driver (no `--privileged` needed) |
 
 All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainers`.
 
