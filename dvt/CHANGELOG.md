@@ -8,6 +8,8 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-16
+
 ### Added
 
 - `dvt feature add`/`remove` now accept one or more names, applied/removed in order, stopping at
