@@ -1,6 +1,6 @@
 [project]
 name = "dvt-cli"
-version = "0.3.0"
+version = "0.3.1"
 description = "Layered, dev-style named devcontainer templates, built and run directly via Docker or Podman"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"

@@ -8,6 +8,14 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-16
+
+### Fixed
+
+- PyPI distribution renamed from `devtemplate` to `dvt-cli` — PyPI rejected `devtemplate` as too
+  similar to an existing project name. Only the PyPI package name changed; the `dvt` command and
+  the `devtemplate` Python module are unaffected.
+
 ## [0.3.0] - 2026-08-16
 
 ### Added
