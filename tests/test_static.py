@@ -1,7 +1,10 @@
 """Static validation: JSON structure, bash syntax, YAML — no Docker required."""
 
+import io
 import json
+import re
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -323,6 +326,115 @@ def test_dockerfile_ends_as_dev_user():
 
 def test_dockerfile_sets_pixi_home():
     assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in _dockerfile_text()
+
+
+# --- published Feature versions vs local content ---
+#
+# 2026-08-15: every feature's install.sh had drifted from what's actually
+# published on GHCR for months, because devcontainer-feature.json's
+# "version" field was never bumped alongside it. devcontainers/action's
+# publish step is version-keyed - pushing an unchanged version against an
+# already-published artifact is a silent no-op, so every CI run reported
+# success while publishing nothing new. Confirmed directly: pulling
+# ghcr.io/jesserobertson/devcontainers/py-devtools:latest fresh returned a
+# script that predated a refactor from over a month earlier. This section
+# guards against the same drift recurring: for any feature whose current
+# local version *is already published*, local content must match exactly -
+# if it doesn't, the fix is to bump the version, not to touch this test.
+
+GHCR_REGISTRY = "ghcr.io"
+GHCR_REPOSITORY_PREFIX = "jesserobertson/devcontainers"
+MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
+
+
+def _published_feature_files(feature: str, version: str) -> dict[str, str] | None:
+    """Fetch devcontainer-feature.json + install.sh as published under
+    ghcr.io/jesserobertson/devcontainers/<feature>:<version>, or None if
+    that exact version hasn't been published (a 404 manifest lookup) - the
+    expected, passing state right after bumping a version locally, before
+    it's been published by CI yet.
+
+    Raises (via pytest.skip, from the caller) rather than failing outright
+    on any other network trouble - GHCR being briefly unreachable from CI
+    is an infra concern, not evidence of a real version-drift bug.
+    """
+    import httpx
+
+    repository = f"{GHCR_REPOSITORY_PREFIX}/{feature}"
+    manifest_url = f"https://{GHCR_REGISTRY}/v2/{repository}/manifests/{version}"
+
+    with httpx.Client(timeout=15.0) as client:
+        probe = client.get(manifest_url, headers={"Accept": MANIFEST_ACCEPT})
+        if probe.status_code == 401:
+            challenge = probe.headers.get("www-authenticate")
+            if challenge is None:
+                raise RuntimeError(f"401 from {GHCR_REGISTRY} had no WWW-Authenticate header")
+            params = dict(re.findall(r'(\w+)="([^"]*)"', challenge))
+            token = client.get(
+                params["realm"],
+                params={"service": params["service"], "scope": params["scope"]},
+            ).json()["token"]
+            probe = client.get(
+                manifest_url,
+                headers={"Accept": MANIFEST_ACCEPT, "Authorization": f"Bearer {token}"},
+            )
+        else:
+            token = None
+
+        if probe.status_code == 404:
+            return None
+        probe.raise_for_status()
+        manifest = probe.json()
+        digest = manifest["layers"][0]["digest"]
+
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        blob = client.get(
+            f"https://{GHCR_REGISTRY}/v2/{repository}/blobs/{digest}",
+            headers=headers,
+            follow_redirects=True,
+        )
+        blob.raise_for_status()
+
+    with tarfile.open(fileobj=io.BytesIO(blob.content), mode="r:") as tar:
+        # Member names come back "./install.sh", not "install.sh" - lstrip
+        # the tar's own leading "./" convention, not arbitrary path chars.
+        members = {
+            m.name[2:] if m.name.startswith("./") else m.name: m
+            for m in tar.getmembers()
+        }
+        result = {}
+        for name in ("devcontainer-feature.json", "install.sh"):
+            member = members.get(name)
+            if member is None:
+                continue
+            extracted = tar.extractfile(member)
+            if extracted is not None:
+                result[name] = extracted.read().decode()
+        return result
+
+
+@pytest.mark.parametrize("feature", FEATURES)
+def test_published_feature_version_matches_local_content(feature):
+    local_version = _feature_json(feature)["version"]
+    local_install_sh = (REPO_ROOT / "features" / feature / "install.sh").read_text()
+
+    try:
+        published = _published_feature_files(feature, local_version)
+    except Exception as exc:  # noqa: BLE001 - network trouble, not a drift finding
+        pytest.skip(f"could not reach GHCR to verify {feature}:{local_version}: {exc}")
+        return
+
+    if published is None:
+        # Not published yet under this version - the expected state right
+        # after a local version bump, before CI has published it.
+        return
+
+    assert published.get("install.sh") == local_install_sh, (
+        f"features/{feature}/install.sh has changed since {feature}:{local_version} "
+        f"was published on GHCR, but the version wasn't bumped - bump "
+        f"devcontainer-feature.json's \"version\" so this actually gets republished "
+        f"(see 2026-08-15's incident above)."
+    )
 
 
 # --- helpers ---
