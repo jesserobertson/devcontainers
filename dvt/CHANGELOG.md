@@ -28,6 +28,10 @@ only. Revisit switching breaking changes to a major bump once the project reache
   given. Neither is set by default, so `dvt` stays silent as before.
 - `dvt up` now shows a spinner with a live stage label (pulling Features, building the image,
   starting the container, ...) instead of sitting silently while Docker/network calls run.
+- `dvt stop`/`delete`/`feature sync`/`feature add`'s auto-sync now also show a spinner while they
+  run, matching `up` - previously only `up` did.
+- GHCR Feature fetches (`feature sync`/`add`'s underlying pulls) and the post-machine-start podman
+  ping now retry past a transient failure instead of failing the whole command outright.
 
 ### Changed
 
