@@ -15,6 +15,7 @@ from rich.table import Table
 
 from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import Settings, load_settings
+from devtemplate.features import clear_pulled_features
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
 from devtemplate.sidecar import load_sidecar, write_sidecar
@@ -92,8 +93,19 @@ def show_feature(
 
 @app.command("sync")
 def sync() -> None:
-    """Refresh the cached feature registry from GitHub."""
+    """Refresh the cached feature registry from GitHub.
+
+    Also clears the local cache of pulled devcontainer spec Feature artifacts
+    (the OCI ref each template's "features" map points at, e.g.
+    "ghcr.io/.../py-devtools:latest") - `dvt up` caches those forever once
+    pulled once (see devtemplate.features.pull_feature), which is correct for
+    an immutable version tag but means a moved `:latest` upstream would
+    otherwise never be noticed on a machine that already pulled it. `sync` is
+    the existing "go get whatever's current" entry point, so it clears both.
+    """
     settings = unwrap_or_exit(load_settings(), console)
+
+    clear_pulled_features(settings.features_dir)
 
     with httpx.Client() as client:
         result = sync_templates(settings, client)

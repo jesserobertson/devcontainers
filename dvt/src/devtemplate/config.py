@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         return self.data_dir / "templates"
 
     @property
+    def features_dir(self) -> Path:
+        return self.data_dir / "features"
+
+    @property
     def manifest_path(self) -> Path:
         return self.data_dir / "manifest.json"
 

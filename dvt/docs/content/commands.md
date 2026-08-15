@@ -21,7 +21,10 @@ Fetches every feature from `templates/` in the configured GitHub repository (def
 `jesserobertson/devcontainers`, branch `main` — override with the `DVT_GITHUB_REPO` /
 `DVT_GITHUB_BRANCH` environment variables) into the local cache. Prunes any previously-synced
 feature that's been removed upstream; never touches a feature directory you've added by
-hand.
+hand. Also clears the local cache of pulled devcontainer spec Feature artifacts (the OCI
+ref each template's `features` map points at, e.g. `.../py-devtools:latest`) — `dvt up`
+caches those forever once pulled, so this is the only way to pick up a moved `:latest`
+upstream without deleting dvt's data directory by hand.
 
 ### `dvt feature list`
 

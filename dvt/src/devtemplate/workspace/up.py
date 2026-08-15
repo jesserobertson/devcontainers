@@ -142,7 +142,7 @@ def up_workspace(
     with httpx.Client() as http_client:
         pulled = traverse_result(
             feature_refs,
-            lambda ref: pull_feature(http_client, ref, settings.data_dir / "features"),
+            lambda ref: pull_feature(http_client, ref, settings.features_dir),
         ).unwrap()
 
     features = [

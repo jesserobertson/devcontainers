@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
 
 import httpx
@@ -14,7 +15,23 @@ from devtemplate.features.oci import (
     parse_feature_ref,
 )
 
-__all__ = ["pull_feature"]
+__all__ = ["clear_pulled_features", "pull_feature"]
+
+
+def clear_pulled_features(cache_dir: Path) -> None:
+    """Delete every OCI Feature artifact `pull_feature` has ever extracted
+    under cache_dir, so the next `dvt up` re-pulls each one from scratch.
+
+    `pull_feature` caches by sha256(ref) forever once a ref has been pulled
+    once (see its own docstring and test_pull_feature_is_cached_on_second_call)
+    - correct for an immutable version tag, but a mutable tag like `:latest`
+    (what every template in this repo references) can move upstream without
+    that ever being noticed locally. There was previously no way to force a
+    refresh short of deleting this directory by hand; `dvt feature sync`
+    calls this precisely because "go get whatever's current" is already its
+    whole purpose."""
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
 
 
 @wrap_result

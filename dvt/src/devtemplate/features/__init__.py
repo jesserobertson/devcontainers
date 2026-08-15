@@ -1,3 +1,3 @@
-from devtemplate.features.pull import pull_feature
+from devtemplate.features.pull import clear_pulled_features, pull_feature
 
-__all__ = ["pull_feature"]
+__all__ = ["clear_pulled_features", "pull_feature"]

@@ -145,6 +145,30 @@ def test_sync_reports_synced_feature_names(settings, monkeypatch):
     assert "agent" in result.stdout
 
 
+def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
+    # pull_feature (used by `dvt up`) caches an OCI Feature artifact forever
+    # once pulled, keyed by the ref string - correct for an immutable
+    # version tag, but means a moved `:latest` upstream is otherwise never
+    # noticed on a machine that already pulled it (see
+    # devtemplate.features.clear_pulled_features's docstring). `sync` is the
+    # existing "go get whatever's current" entry point, so a stale pulled
+    # artifact from a previous run must be gone by the time it returns.
+    from logerr import Ok
+
+    stale = settings.features_dir / "deadbeef"
+    stale.mkdir(parents=True)
+    (stale / "install.sh").write_text("echo stale\n")
+
+    monkeypatch.setattr(
+        "devtemplate.commands.feature.sync_templates",
+        lambda settings_arg, client: Ok(["fastapi"]),
+    )
+
+    result = runner.invoke(app, ["sync"])
+    assert result.exit_code == 0
+    assert not stale.exists()
+
+
 def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"

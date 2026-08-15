@@ -6,7 +6,7 @@ import tarfile
 
 import httpx
 
-from devtemplate.features import pull_feature
+from devtemplate.features import clear_pulled_features, pull_feature
 from devtemplate.features.oci import parse_feature_ref
 
 
@@ -111,6 +111,32 @@ def test_pull_feature_is_cached_on_second_call(tmp_path):
     assert first.is_ok() and second.is_ok()
     assert first.unwrap() == second.unwrap()
     assert call_count["n"] == calls_after_first  # no new HTTP calls on cache hit
+
+
+def test_clear_pulled_features_removes_a_cached_pull_forcing_a_refetch(tmp_path):
+    blob = _make_feature_tar()
+    call_count = {"n": 0}
+
+    def counting_handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return _registry_handler("sha256:deadbeef", blob)(request)
+
+    client = httpx.Client(transport=httpx.MockTransport(counting_handler))
+    ref = "ghcr.io/jesserobertson/devcontainers/fastapi:latest"
+
+    pull_feature(client, ref, tmp_path).unwrap()
+    calls_after_first = call_count["n"]
+
+    clear_pulled_features(tmp_path)
+
+    pull_feature(client, ref, tmp_path).unwrap()
+    assert call_count["n"] > calls_after_first  # cache miss - re-fetched over HTTP
+
+
+def test_clear_pulled_features_is_a_no_op_when_nothing_is_cached(tmp_path):
+    never_created = tmp_path / "features"
+    clear_pulled_features(never_created)  # must not raise
+    assert not never_created.exists()
 
 
 def test_pull_feature_returns_err_on_manifest_404(tmp_path):
