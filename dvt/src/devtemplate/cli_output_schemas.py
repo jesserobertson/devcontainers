@@ -20,6 +20,7 @@ __all__ = [
     "DeleteOutput",
     "ErrorOutput",
     "FeatureAddOutput",
+    "FeatureInfo",
     "FeatureListOutput",
     "FeatureRemoveOutput",
     "FeatureShowOutput",
@@ -51,11 +52,21 @@ class UpOutput(BaseModel):
     name: str
 
 
+class FeatureInfo(BaseModel):
+    """One installed feature's name plus its cached template description -
+    empty when the name isn't a cached template (e.g. an untracked feature
+    read straight from devcontainer.json's own "features" map, which is
+    keyed by OCI ref rather than dvt's template cache name)."""
+
+    name: str
+    description: str
+
+
 class ProjectInfo(BaseModel):
     name: str | None
     path: str
     image: str | None
-    features: list[str]
+    features: list[FeatureInfo]
     features_tracked: bool
 
 

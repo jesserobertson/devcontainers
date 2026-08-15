@@ -164,7 +164,7 @@ def test_info_json_reports_multiple_matches(tmp_path, monkeypatch):
     assert printed["workspace"] == {"status": "multiple", "names": ["bar", "foo"]}
 
 
-def test_info_json_marks_sidecar_tracked_features(tmp_path, monkeypatch):
+def test_info_json_marks_sidecar_tracked_features(tmp_path, monkeypatch, settings):
     monkeypatch.chdir(tmp_path)
     _write_devcontainer_json(
         tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
@@ -182,8 +182,67 @@ def test_info_json_marks_sidecar_tracked_features(tmp_path, monkeypatch):
     result = runner.invoke(app, ["info", "--json"])
 
     printed = json.loads(result.output)
-    assert printed["project"]["features"] == ["fastapi"]
+    assert printed["project"]["features"] == [{"name": "fastapi", "description": ""}]
     assert printed["project"]["features_tracked"] is True
+
+
+def test_info_json_includes_cached_feature_descriptions(
+    tmp_path, monkeypatch, settings
+):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    (tmp_path / ".devcontainer" / "dvt-features.json").write_text(
+        json.dumps({"init": {}, "applied": [{"name": "fastapi", "overlay": {}}]})
+    )
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"description": "FastAPI web framework devtools"})
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    monkeypatch.setattr(
+        info_module,
+        "get_client",
+        lambda *args, **kwargs: info_module.Err(RuntimeError("no runtime")),
+    )
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    printed = json.loads(result.output)
+    assert printed["project"]["features"] == [
+        {"name": "fastapi", "description": "FastAPI web framework devtools"}
+    ]
+
+
+def test_info_shows_feature_descriptions_in_human_output(
+    tmp_path, monkeypatch, settings
+):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    (tmp_path / ".devcontainer" / "dvt-features.json").write_text(
+        json.dumps({"init": {}, "applied": [{"name": "fastapi", "overlay": {}}]})
+    )
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"description": "FastAPI web framework devtools"})
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    monkeypatch.setattr(
+        info_module,
+        "get_client",
+        lambda *args, **kwargs: info_module.Err(RuntimeError("no runtime")),
+    )
+
+    result = runner.invoke(app, ["info"])
+
+    assert result.exit_code == 0, result.output
+    assert "fastapi" in result.output
+    assert "FastAPI web framework devtools" in result.output
 
 
 def test_info_escapes_rich_markup_in_project_name(tmp_path, monkeypatch):

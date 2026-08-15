@@ -14,6 +14,7 @@ from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_containers_by_folder
 from devtemplate.runtime import get_client
 from devtemplate.sidecar import load_sidecar
+from devtemplate.store import load_cached_template
 
 __all__ = ["info"]
 
@@ -49,6 +50,21 @@ def info(
         )
         raise typer.Exit(code=1) from exc
 
+    settings_result = load_settings()
+
+    def feature_description(name: str) -> str:
+        # Untracked feature names are raw OCI refs straight out of
+        # devcontainer.json's "features" map (e.g.
+        # "ghcr.io/.../fastapi:latest"), not dvt template-cache names, so
+        # this legitimately misses for them - not a bug, just nothing to
+        # show. Same for a tracked name that's never been synced/cached.
+        if settings_result.is_err():
+            return ""
+        template_result = load_cached_template(settings_result.unwrap(), name)
+        if template_result.is_err():
+            return ""
+        return str(template_result.unwrap().get("description", ""))
+
     applied = load_sidecar(devcontainer_dir).map(lambda s: s["applied"]).unwrap_or([])
     if applied:
         feature_names = [entry["name"] for entry in applied]
@@ -57,11 +73,16 @@ def info(
         feature_names = list(config.get("features", {}).keys())
         features_tracked = False
 
+    features = [
+        {"name": name, "description": feature_description(name)}
+        for name in feature_names
+    ]
+
     project: dict[str, Any] = {
         "name": config.get("name"),
         "path": str(Path.cwd()),
         "image": config.get("image"),
-        "features": feature_names,
+        "features": features,
         "features_tracked": features_tracked,
     }
 
@@ -70,14 +91,21 @@ def info(
             f"Project:  {escape(str(config.get('name', '?')))}  ({escape(str(Path.cwd()))})"
         )
         console.print(f"Image:    {escape(str(config.get('image', '?')))}")
-        if feature_names:
-            names = escape(", ".join(feature_names))
+        if features:
             suffix = "" if features_tracked else " (untracked)"
-            console.print(f"Features: {names}{suffix}")
+            console.print(f"Features:{suffix}")
+            for feature in features:
+                name = escape(feature["name"])
+                description = feature["description"]
+                line = (
+                    f"  - {name}: {escape(description)}"
+                    if description
+                    else f"  - {name}"
+                )
+                console.print(line)
         console.print()
         console.print(f"[{style}]{footnote}[/{style}]" if style else footnote)
 
-    settings_result = load_settings()
     if settings_result.is_err():
         emit_success(
             json_output,
