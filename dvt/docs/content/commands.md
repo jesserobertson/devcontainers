@@ -1,5 +1,30 @@
 # Command Reference
 
+## Machine-readable output
+
+`init`, `up`, `info`, `stop`, `delete`, `feature add`, `feature remove`, and `feature
+sync` all accept `--json`, printing exactly one JSON object on stdout instead of
+Rich-formatted text: `{"ok": true, ...command-specific fields}` on success, `{"ok":
+false, "error": "..."}` on failure (exit code is unaffected by `--json`). `feature
+list` keeps printing a bare JSON array on success (predates the `{"ok": ...}`
+convention) but now reports failures the same way as every other command. `feature
+show` always printed its raw JSON pass-through on success and now accepts `--json`
+too, purely so its *failure* path matches the shared convention as well. `ssh` has no
+`--json` mode: without `--stdio` it's an interactive terminal session, and `--stdio`
+is a raw SSH byte stream, not structured output.
+
+`dvt --describe` prints a JSON manifest of every command (dotted names for `feature`
+subcommands, e.g. `"feature add"`) with its description, args (name, kind, type,
+required, flags), and — for every `--json`-capable command — its output shape as real
+[JSON Schema](https://json-schema.org/) (`output.success` / `output.error`), generated
+from the Pydantic models in `devtemplate/cli_output_schemas.py`. Args are
+auto-generated from the live Typer/Click definitions and can't drift; the output
+schemas are hand-maintained (a command's JSON payload isn't recoverable from Click's
+own metadata) but cross-checked against real command output by each command's own
+`--json` tests, so drift between the two gets caught in CI. Useful for an agent or
+script that wants to discover dvt's callable surface — including validating a
+response — without parsing `--help` text or guessing at field names.
+
 ## `dvt init <path>`
 
 Scaffolds `<path>/.devcontainer/devcontainer.json` with no features yet: a base image

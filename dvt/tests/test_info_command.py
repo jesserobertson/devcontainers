@@ -4,9 +4,13 @@ import importlib
 import json
 from unittest.mock import MagicMock
 
+import jsonschema
 import typer
 from typer.testing import CliRunner
 
+from devtemplate import __version__
+from devtemplate.cli import app as real_app
+from devtemplate.cli_support import describe_app
 from devtemplate.commands.info import info
 
 app = typer.Typer()
@@ -19,6 +23,13 @@ def _noop() -> None:
 
 
 runner = CliRunner()
+
+
+def _assert_matches_declared_output_schema(command_name: str, payload: dict) -> None:
+    schema = describe_app(real_app, version=__version__)["commands"][command_name][
+        "output"
+    ]["success"]
+    jsonschema.validate(instance=payload, schema=schema)
 
 
 def _write_devcontainer_json(tmp_path, config: dict) -> None:
@@ -34,6 +45,145 @@ def test_info_refuses_when_devcontainer_json_missing(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert "dvt init" in result.output
+
+
+def test_info_json_prints_ok_false_when_devcontainer_json_missing(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "dvt init" in printed["error"]
+
+
+def test_info_json_notes_unreachable_runtime(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    monkeypatch.setattr(
+        info_module,
+        "get_client",
+        lambda *args, **kwargs: info_module.Err(RuntimeError("no runtime")),
+    )
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed["ok"] is True
+    assert printed["project"]["name"] == "my-project"
+    assert printed["project"]["image"] == "ghcr.io/x/base:latest"
+    assert printed["runtime_reachable"] is False
+    _assert_matches_declared_output_schema("info", printed)
+    assert printed["workspace"] is None
+
+
+def test_info_json_reports_not_found_when_zero_matches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    fake_handle = MagicMock(client=MagicMock())
+    monkeypatch.setattr(
+        info_module, "get_client", lambda *args, **kwargs: info_module.Ok(fake_handle)
+    )
+    monkeypatch.setattr(
+        info_module, "find_workspace_containers_by_folder", lambda client, folder: []
+    )
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed["ok"] is True
+    assert printed["runtime_reachable"] is True
+    assert printed["workspace"] == {"status": "not_found"}
+
+
+def test_info_json_reports_status_for_single_matching_workspace(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    fake_handle = MagicMock(client=MagicMock())
+    fake_container = MagicMock(status="running", labels={"dvt.workspace": "my-project"})
+    fake_container.name = "dvt-my-project"
+    monkeypatch.setattr(
+        info_module, "get_client", lambda *args, **kwargs: info_module.Ok(fake_handle)
+    )
+    monkeypatch.setattr(
+        info_module,
+        "find_workspace_containers_by_folder",
+        lambda client, folder: [fake_container],
+    )
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed["workspace"] == {
+        "status": "running",
+        "name": "my-project",
+        "container_name": "dvt-my-project",
+    }
+    _assert_matches_declared_output_schema("info", printed)
+
+
+def test_info_json_reports_multiple_matches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    fake_handle = MagicMock(client=MagicMock())
+    fake_containers = [
+        MagicMock(labels={"dvt.workspace": "bar"}),
+        MagicMock(labels={"dvt.workspace": "foo"}),
+    ]
+    monkeypatch.setattr(
+        info_module, "get_client", lambda *args, **kwargs: info_module.Ok(fake_handle)
+    )
+    monkeypatch.setattr(
+        info_module,
+        "find_workspace_containers_by_folder",
+        lambda client, folder: fake_containers,
+    )
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed["workspace"] == {"status": "multiple", "names": ["bar", "foo"]}
+
+
+def test_info_json_marks_sidecar_tracked_features(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_devcontainer_json(
+        tmp_path, {"name": "my-project", "image": "ghcr.io/x/base:latest"}
+    )
+    (tmp_path / ".devcontainer" / "dvt-features.json").write_text(
+        json.dumps({"init": {}, "applied": [{"name": "fastapi", "overlay": {}}]})
+    )
+    info_module = importlib.import_module("devtemplate.commands.info")
+    monkeypatch.setattr(
+        info_module,
+        "get_client",
+        lambda *args, **kwargs: info_module.Err(RuntimeError("no runtime")),
+    )
+
+    result = runner.invoke(app, ["info", "--json"])
+
+    printed = json.loads(result.output)
+    assert printed["project"]["features"] == ["fastapi"]
+    assert printed["project"]["features_tracked"] is True
 
 
 def test_info_escapes_rich_markup_in_project_name(tmp_path, monkeypatch):

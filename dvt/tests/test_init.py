@@ -2,13 +2,24 @@ from __future__ import annotations
 
 import json
 
+import jsonschema
 import typer
 from typer.testing import CliRunner
 
+from devtemplate import __version__
+from devtemplate.cli import app as real_app
+from devtemplate.cli_support import describe_app
 from devtemplate.commands.init import DEFAULT_IMAGE, init
 
 app = typer.Typer()
 app.command("init")(init)
+
+
+def _assert_matches_declared_output_schema(command_name: str, payload: dict) -> None:
+    schema = describe_app(real_app, version=__version__)["commands"][command_name][
+        "output"
+    ]["success"]
+    jsonschema.validate(instance=payload, schema=schema)
 
 
 @app.command("noop")
@@ -66,6 +77,33 @@ def test_init_image_option_overrides_default(tmp_path):
         (project_dir / ".devcontainer" / "devcontainer.json").read_text()
     )
     assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+def test_init_json_prints_ok_true_with_path_on_success(tmp_path):
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    target = project_dir / ".devcontainer" / "devcontainer.json"
+    assert printed == {"ok": True, "name": "my-project", "path": str(target)}
+    _assert_matches_declared_output_schema("init", printed)
+
+
+def test_init_json_prints_ok_false_when_devcontainer_json_already_exists(tmp_path):
+    project_dir = tmp_path / "my-project"
+    (project_dir / ".devcontainer").mkdir(parents=True)
+    (project_dir / ".devcontainer" / "devcontainer.json").write_text(
+        '{"name": "existing"}'
+    )
+
+    result = runner.invoke(app, ["init", str(project_dir), "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "already exists" in printed["error"]
 
 
 def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path):

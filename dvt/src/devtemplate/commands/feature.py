@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from devtemplate.cli_support import unwrap_or_exit
+from devtemplate.cli_support import emit_success, unwrap_or_exit
 from devtemplate.config import Settings, load_settings
 from devtemplate.features import clear_pulled_features
 from devtemplate.merge import merge_layer, merge_layer_keys
@@ -46,7 +46,7 @@ def list_features(
     ),
 ) -> None:
     """List every feature dvt knows about, with its description."""
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
     names = list_cached_templates(settings)
     if not names and not json_output:
@@ -83,16 +83,31 @@ def list_features(
 @app.command("show")
 def show_feature(
     name: str = typer.Argument(..., help="Cached feature name to show."),  # noqa: B008
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help='On failure, print {"ok": false, "error": ...} instead of '
+        "human-readable text. Success output is unaffected - it's always the "
+        "cached feature's raw devcontainer.json overlay.",
+    ),
 ) -> None:
     """Print a cached feature's devcontainer.json overlay."""
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
-    template = unwrap_or_exit(load_cached_template(settings, name), console)
+    template = unwrap_or_exit(
+        load_cached_template(settings, name), console, json_output=json_output
+    )
     print(json.dumps(template, indent=2))
 
 
 @app.command("sync")
-def sync() -> None:
+def sync(
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
+) -> None:
     """Refresh the cached feature registry from GitHub.
 
     Also clears the local cache of pulled devcontainer spec Feature artifacts
@@ -103,14 +118,20 @@ def sync() -> None:
     otherwise never be noticed on a machine that already pulled it. `sync` is
     the existing "go get whatever's current" entry point, so it clears both.
     """
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
     clear_pulled_features(settings.features_dir)
 
     with httpx.Client() as client:
         result = sync_templates(settings, client)
-    names = unwrap_or_exit(result, console, prefix="Sync failed: ")
-    console.print(f"Synced {len(names)} features: {', '.join(names)}")
+    names = unwrap_or_exit(
+        result, console, prefix="Sync failed: ", json_output=json_output
+    )
+    emit_success(
+        json_output,
+        {"synced": names},
+        lambda: console.print(f"Synced {len(names)} features: {', '.join(names)}"),
+    )
 
 
 # "description" is feature-registry metadata (used by 'dvt feature list'/'show'), not a
@@ -121,7 +142,12 @@ IDENTITY_FIELDS = {"name", "workspaceFolder", "workspaceMount", "description"}
 
 @wrap_result
 def add_one(
-    name: str, settings: Settings, devcontainer_dir: Path, target: Path
+    name: str,
+    settings: Settings,
+    devcontainer_dir: Path,
+    target: Path,
+    *,
+    json_output: bool = False,
 ) -> None:
     """Layer one feature onto target's devcontainer.json. Prints its own
     success message and returns Ok(None) once devcontainer.json and the
@@ -183,7 +209,8 @@ def add_one(
     sidecar["applied"].append({"name": name, "overlay": overlay})
     write_sidecar(devcontainer_dir, sidecar).unwrap()
 
-    console.print(f"Added feature '{escape(name)}' to {escape(str(target))}.")
+    if not json_output:
+        console.print(f"Added feature '{escape(name)}' to {escape(str(target))}.")
 
 
 @app.command("add")
@@ -191,23 +218,37 @@ def add(
     names: list[str] = typer.Argument(  # noqa: B008
         ..., help="Cached feature name(s) to add, applied in order."
     ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
 ) -> None:
     """Layer one or more features onto ./.devcontainer/devcontainer.json, in order."""
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
     if not list_cached_templates(settings):
         with httpx.Client() as client:
             sync_result = sync_templates(settings, client)
-        unwrap_or_exit(sync_result, console, prefix="Sync failed: ")
+        unwrap_or_exit(
+            sync_result, console, prefix="Sync failed: ", json_output=json_output
+        )
 
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
     for name in names:
-        unwrap_or_exit(add_one(name, settings, devcontainer_dir, target), console)
+        unwrap_or_exit(
+            add_one(name, settings, devcontainer_dir, target, json_output=json_output),
+            console,
+            json_output=json_output,
+        )
+    emit_success(json_output, {"added": names}, lambda: None)
 
 
 @wrap_result
-def remove_one(name: str, devcontainer_dir: Path, target: Path) -> None:
+def remove_one(
+    name: str, devcontainer_dir: Path, target: Path, *, json_output: bool = False
+) -> None:
     """Un-layer one feature previously added with 'dvt feature add'. Same
     Result/success-printing contract as add_one.
     """
@@ -269,7 +310,8 @@ def remove_one(name: str, devcontainer_dir: Path, target: Path) -> None:
     sidecar["applied"] = remaining
     write_sidecar(devcontainer_dir, sidecar).unwrap()
 
-    console.print(f"Removed feature '{escape(name)}' from {escape(str(target))}.")
+    if not json_output:
+        console.print(f"Removed feature '{escape(name)}' from {escape(str(target))}.")
 
 
 @app.command("remove")
@@ -277,9 +319,19 @@ def remove(
     names: list[str] = typer.Argument(  # noqa: B008
         ..., help="Applied feature name(s) to remove, in order."
     ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
 ) -> None:
     """Un-layer one or more features previously added with 'dvt feature add', in order."""
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
     for name in names:
-        unwrap_or_exit(remove_one(name, devcontainer_dir, target), console)
+        unwrap_or_exit(
+            remove_one(name, devcontainer_dir, target, json_output=json_output),
+            console,
+            json_output=json_output,
+        )
+    emit_success(json_output, {"removed": names}, lambda: None)

@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
+from devtemplate.cli_support import emit_success, report_error
 from devtemplate.sidecar import write_sidecar
 
 __all__ = ["init", "DEFAULT_IMAGE"]
@@ -50,6 +51,11 @@ def init(
     image: str = typer.Option(  # noqa: B008
         DEFAULT_IMAGE, help=f"Base image (default: {DEFAULT_IMAGE})."
     ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
 ) -> None:
     """Scaffold a new project's devcontainer.json with no features yet."""
     name = path.resolve().name
@@ -57,9 +63,10 @@ def init(
     devcontainer_dir = path / ".devcontainer"
     target = devcontainer_dir / "devcontainer.json"
     if target.exists():
-        console.print(
-            f"[red]{escape(str(target))} already exists.[/red] "
-            "Use 'dvt feature add' to layer onto it instead."
+        report_error(
+            f"{target} already exists. Use 'dvt feature add' to layer onto it instead.",
+            console,
+            json_output=json_output,
         )
         raise typer.Exit(code=1)
 
@@ -77,13 +84,18 @@ def init(
 
     devcontainer_dir.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(config, indent=2) + "\n")
-    console.print(f"Scaffolded {target}.")
 
     sidecar_result = write_sidecar(devcontainer_dir, {"init": config, "applied": []})
-    if sidecar_result.is_err():
+    if sidecar_result.is_err() and not json_output:
         console.print(
             "[yellow]Warning: failed to write the feature-tracking sidecar: "
             f"{escape(str(sidecar_result.unwrap_err()))}[/yellow]"
         )
 
     scaffold_pixi_toml(path, name)
+
+    emit_success(
+        json_output,
+        {"name": name, "path": str(target)},
+        lambda: console.print(f"Scaffolded {target}."),
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import logerr
@@ -15,7 +16,12 @@ from rich.console import Console
 from rich.markup import escape
 
 from devtemplate import __version__
-from devtemplate.cli_support import unwrap_or_exit
+from devtemplate.cli_support import (
+    describe_app,
+    emit_success,
+    report_error,
+    unwrap_or_exit,
+)
 from devtemplate.commands import feature_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
@@ -41,6 +47,13 @@ def version_callback(value: bool) -> None:
     raise typer.Exit()
 
 
+def describe_callback(value: bool) -> None:
+    if not value:
+        return
+    print(json.dumps(describe_app(app, version=__version__)))
+    raise typer.Exit()
+
+
 @app.callback()
 def root_callback(
     version: bool = typer.Option(  # noqa: B008
@@ -49,6 +62,13 @@ def root_callback(
         callback=version_callback,
         is_eager=True,
         help="Show dvt's version and exit.",
+    ),
+    describe: bool = typer.Option(  # noqa: B008
+        False,
+        "--describe",
+        callback=describe_callback,
+        is_eager=True,
+        help="Print a JSON manifest of every command and its args, then exit.",
     ),
 ) -> None:
     return
@@ -65,9 +85,14 @@ def up(
         "--rebuild",
         help="Force a fresh rebuild, discarding the existing container and cached image.",
     ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
 ) -> None:
     """Build and run a workspace from ./.devcontainer/devcontainer.json."""
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
     handle = unwrap_or_exit(
         get_client(
             settings.runtime,
@@ -75,18 +100,26 @@ def up(
             podman_machine_auto_start=settings.podman_machine_auto_start,
         ),
         console,
+        json_output=json_output,
     )
     resolved_name = unwrap_or_exit(
-        resolve_for_up(handle.client, name, Path.cwd()), console
+        resolve_for_up(handle.client, name, Path.cwd()),
+        console,
+        json_output=json_output,
     )
     unwrap_or_exit(
         up_workspace(handle, settings, resolved_name, Path.cwd(), rebuild=rebuild),
         console,
+        json_output=json_output,
     )
-    console.print(
-        f"[green]Workspace '{escape(resolved_name)}' is up.[/green] "
-        f"Connect with: dvt ssh {escape(resolved_name)} "
-        f"(plain 'ssh {escape(resolved_name)}' also works, via the ~/.ssh/config entry dvt just wrote)"
+    emit_success(
+        json_output,
+        {"name": resolved_name},
+        lambda: console.print(
+            f"[green]Workspace '{escape(resolved_name)}' is up.[/green] "
+            f"Connect with: dvt ssh {escape(resolved_name)} "
+            f"(plain 'ssh {escape(resolved_name)}' also works, via the ~/.ssh/config entry dvt just wrote)"
+        ),
     )
 
 
@@ -135,16 +168,22 @@ def ssh(
     raise typer.Exit(code=exit_code)
 
 
-def find_or_exit(client: DockerClient, name: str) -> Container:
+def find_or_exit(
+    client: DockerClient, name: str, *, json_output: bool = False
+) -> Container:
     try:
         container = find_workspace_container(client, name)
     except Exception as exc:
-        console.print(
-            f"[red]Failed to look up workspace '{escape(name)}': {escape(str(exc))}[/red]"
+        report_error(
+            f"Failed to look up workspace '{name}': {exc}",
+            console,
+            json_output=json_output,
         )
         raise typer.Exit(code=1) from exc
     if container is None:
-        console.print(f"[red]No workspace named '{escape(name)}' found.[/red]")
+        report_error(
+            f"No workspace named '{name}' found.", console, json_output=json_output
+        )
         raise typer.Exit(code=1)
     return container
 
@@ -155,9 +194,14 @@ def stop(
         None,
         help="Name of the workspace to stop (default: inferred from the current folder).",
     ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
 ) -> None:
     """Stop a running workspace."""
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
     handle = unwrap_or_exit(
         get_client(
             settings.runtime,
@@ -165,19 +209,26 @@ def stop(
             podman_machine_auto_start=settings.podman_machine_auto_start,
         ),
         console,
+        json_output=json_output,
     )
     resolved_name = unwrap_or_exit(
-        resolve_existing(handle.client, name, Path.cwd(), "stop"), console
+        resolve_existing(handle.client, name, Path.cwd(), "stop"),
+        console,
+        json_output=json_output,
     )
-    container = find_or_exit(handle.client, resolved_name)
+    container = find_or_exit(handle.client, resolved_name, json_output=json_output)
     try:
         container.stop()
     except Exception as exc:
-        console.print(
-            f"[red]Failed to stop '{escape(resolved_name)}': {escape(str(exc))}[/red]"
+        report_error(
+            f"Failed to stop '{resolved_name}': {exc}", console, json_output=json_output
         )
         raise typer.Exit(code=1) from exc
-    console.print(f"Stopped '{escape(resolved_name)}'.")
+    emit_success(
+        json_output,
+        {"name": resolved_name},
+        lambda: console.print(f"Stopped '{escape(resolved_name)}'."),
+    )
 
 
 @app.command()
@@ -186,9 +237,14 @@ def delete(
         None,
         help="Name of the workspace to delete (default: inferred from the current folder).",
     ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
 ) -> None:
     """Delete a workspace's container (the built image is left cached)."""
-    settings = unwrap_or_exit(load_settings(), console)
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
     handle = unwrap_or_exit(
         get_client(
             settings.runtime,
@@ -196,22 +252,33 @@ def delete(
             podman_machine_auto_start=settings.podman_machine_auto_start,
         ),
         console,
+        json_output=json_output,
     )
     resolved_name = unwrap_or_exit(
-        resolve_existing(handle.client, name, Path.cwd(), "delete"), console
+        resolve_existing(handle.client, name, Path.cwd(), "delete"),
+        console,
+        json_output=json_output,
     )
-    container = find_or_exit(handle.client, resolved_name)
+    container = find_or_exit(handle.client, resolved_name, json_output=json_output)
     try:
         container.remove(force=True)
     except Exception as exc:
-        console.print(
-            f"[red]Failed to delete '{escape(resolved_name)}': {escape(str(exc))}[/red]"
+        report_error(
+            f"Failed to delete '{resolved_name}': {exc}",
+            console,
+            json_output=json_output,
         )
         raise typer.Exit(code=1) from exc
     unwrap_or_exit(
-        remove_ssh_config_entry(resolved_name, Path.home() / ".ssh" / "config"), console
+        remove_ssh_config_entry(resolved_name, Path.home() / ".ssh" / "config"),
+        console,
+        json_output=json_output,
     )
-    console.print(f"Deleted '{escape(resolved_name)}'.")
+    emit_success(
+        json_output,
+        {"name": resolved_name},
+        lambda: console.print(f"Deleted '{escape(resolved_name)}'."),
+    )
 
 
 def main() -> None:

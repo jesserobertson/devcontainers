@@ -1,10 +1,25 @@
+import json
 from types import SimpleNamespace
 
+import jsonschema
 from typer.testing import CliRunner
 
+from devtemplate import __version__
 from devtemplate.cli import app
+from devtemplate.cli_support import describe_app
 
 runner = CliRunner()
+
+
+def _assert_matches_declared_output_schema(command_name: str, payload: dict) -> None:
+    """Validate a command's real --json output against the exact schema
+    dvt --describe publishes for it - not a hand-copied expectation, the
+    live schema a real consumer would fetch. Proves the two can't have
+    silently drifted apart."""
+    schema = describe_app(app, version=__version__)["commands"][command_name]["output"][
+        "success"
+    ]
+    jsonschema.validate(instance=payload, schema=schema)
 
 
 def _fake_handle():
@@ -79,6 +94,60 @@ def test_up_passes_podman_machine_settings_to_get_client(monkeypatch, tmp_path):
         "podman_machine_auto_init": True,
         "podman_machine_auto_start": False,
     }
+
+
+def test_up_json_prints_ok_true_with_name_on_success(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        '{"name": "x", "image": "base:latest"}'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path, rebuild=False: cli_module.Ok(object()),
+    )
+
+    result = runner.invoke(cli_module.app, ["up", "my-project", "--json"])
+
+    assert result.exit_code == 0
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "name": "my-project"}
+    _assert_matches_declared_output_schema("up", printed)
+
+
+def test_up_json_prints_ok_false_with_error_on_failure(monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "up_workspace",
+        lambda handle, settings, name, path, rebuild=False: cli_module.Err(
+            FileNotFoundError("no devcontainer.json")
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["up", "my-project", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "devcontainer.json" in printed["error"]
 
 
 def test_up_reports_clean_error_on_failure(monkeypatch, tmp_path):
@@ -188,6 +257,46 @@ def test_stop_stops_the_labeled_container(monkeypatch):
     assert result.exit_code == 0
 
 
+def test_stop_json_prints_ok_true_with_name_on_success(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    fake_container = type("C", (), {"stop": lambda self: None})()
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module, "find_workspace_container", lambda client, name: fake_container
+    )
+
+    result = runner.invoke(cli_module.app, ["stop", "my-project", "--json"])
+
+    assert result.exit_code == 0
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "name": "my-project"}
+    _assert_matches_declared_output_schema("stop", printed)
+
+
+def test_stop_json_prints_ok_false_when_not_found(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module, "find_workspace_container", lambda client, name: None
+    )
+
+    result = runner.invoke(cli_module.app, ["stop", "my-project", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+
+
 def test_stop_reports_clean_error_when_not_found(monkeypatch):
     import devtemplate.cli as cli_module
 
@@ -243,6 +352,30 @@ def test_delete_removes_container_and_ssh_entry(monkeypatch):
     result = runner.invoke(cli_module.app, ["delete", "my-project"])
 
     assert result.exit_code == 0
+
+
+def test_delete_json_prints_ok_true_with_name_on_success(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    fake_container = type("C", (), {"remove": lambda self, force=True: None})()
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module, "find_workspace_container", lambda client, name: fake_container
+    )
+    monkeypatch.setattr(
+        cli_module, "remove_ssh_config_entry", lambda name, path: cli_module.Ok(None)
+    )
+
+    result = runner.invoke(cli_module.app, ["delete", "my-project", "--json"])
+
+    assert result.exit_code == 0
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "name": "my-project"}
+    _assert_matches_declared_output_schema("delete", printed)
 
 
 def test_up_infers_name_from_the_single_matching_workspace(monkeypatch, tmp_path):

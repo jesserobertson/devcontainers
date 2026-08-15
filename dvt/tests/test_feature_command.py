@@ -2,17 +2,45 @@ from __future__ import annotations
 
 import json
 
+import jsonschema
 from typer.testing import CliRunner
 
+from devtemplate import __version__
+from devtemplate.cli import app as real_app
+from devtemplate.cli_support import describe_app
 from devtemplate.commands.feature import app, console
 
 runner = CliRunner()
+
+
+def _assert_matches_declared_output_schema(command_name: str, payload: dict) -> None:
+    schema = describe_app(real_app, version=__version__)["commands"][command_name][
+        "output"
+    ]["success"]
+    jsonschema.validate(instance=payload, schema=schema)
 
 
 def test_list_reports_no_features_when_cache_empty(settings):
     result = runner.invoke(app, ["list"])
     assert result.exit_code == 0
     assert "No cached features" in result.stdout
+
+
+def test_list_json_prints_ok_false_when_settings_fail_to_load(monkeypatch):
+    from logerr import Err
+
+    from devtemplate.commands import feature as feature_module
+
+    monkeypatch.setattr(
+        feature_module, "load_settings", lambda: Err(RuntimeError("bad config"))
+    )
+
+    result = runner.invoke(app, ["list", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "bad config" in printed["error"]
 
 
 def test_list_shows_cached_feature_name_and_description(settings):
@@ -60,6 +88,7 @@ def test_list_json_output_includes_all_fields(settings):
             "feature_ref": "ghcr.io/jesserobertson/devcontainers/fastapi:latest",
         }
     ]
+    _assert_matches_declared_output_schema("feature list", rows)
 
 
 def test_list_json_output_defaults_missing_description_to_empty_string(settings):
@@ -118,6 +147,30 @@ def test_show_refuses_cleanly_on_unknown_feature(settings):
     assert "nonexistent" in result.stdout
 
 
+def test_show_json_prints_the_raw_cached_feature_on_success(settings):
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi"})
+    )
+
+    result = runner.invoke(app, ["show", "fastapi", "--json"])
+
+    assert result.exit_code == 0
+    printed = json.loads(result.output)
+    assert printed == {"name": "fastapi"}
+    _assert_matches_declared_output_schema("feature show", printed)
+
+
+def test_show_json_prints_ok_false_on_unknown_feature(settings):
+    result = runner.invoke(app, ["show", "nonexistent", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "nonexistent" in printed["error"]
+
+
 def test_show_error_message_is_not_mangled_by_rich_markup(settings, monkeypatch):
     # Rich's color_system is fixed at Console() construction time (module import),
     # from whatever FORCE_COLOR/TTY state was live then - so in an environment that
@@ -169,6 +222,38 @@ def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
     assert not stale.exists()
 
 
+def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch):
+    from logerr import Ok
+
+    monkeypatch.setattr(
+        "devtemplate.commands.feature.sync_templates",
+        lambda settings_arg, client: Ok(["fastapi", "agent"]),
+    )
+
+    result = runner.invoke(app, ["sync", "--json"])
+
+    assert result.exit_code == 0
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "synced": ["fastapi", "agent"]}
+    _assert_matches_declared_output_schema("feature sync", printed)
+
+
+def test_sync_json_prints_ok_false_on_failure(settings, monkeypatch):
+    from logerr import Err
+
+    monkeypatch.setattr(
+        "devtemplate.commands.feature.sync_templates",
+        lambda settings_arg, client: Err(RuntimeError("network unreachable")),
+    )
+
+    result = runner.invoke(app, ["sync", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "network unreachable" in printed["error"]
+
+
 def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"
@@ -214,6 +299,48 @@ def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypa
     assert merged["runArgs"] == ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"]
     assert merged["postStartCommand"] == "sudo /usr/local/bin/init-firewall.sh"
     assert merged["waitFor"] == "postStartCommand"
+
+
+def test_add_json_prints_ok_true_with_added_names(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    template_dir = settings.templates_dir / "cli"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "cli",
+                "features": {"ghcr.io/jesserobertson/devcontainers/cli:latest": {}},
+            }
+        )
+    )
+
+    result = runner.invoke(app, ["add", "cli", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "added": ["cli"]}
+    _assert_matches_declared_output_schema("feature add", printed)
+
+
+def test_add_json_prints_ok_false_when_devcontainer_json_missing(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["add", "agent", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "dvt init" in printed["error"]
 
 
 def test_add_strips_description_field_from_template_before_merging(
@@ -466,6 +593,54 @@ def test_remove_reverts_solo_feature_to_pre_add_state(tmp_path, settings, monkey
 
     sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
     assert sidecar["applied"] == []
+
+
+def test_remove_json_prints_ok_true_with_removed_names(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+
+    template_dir = settings.templates_dir / "cli"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "cli",
+                "features": {"ghcr.io/jesserobertson/devcontainers/cli:latest": {}},
+            }
+        )
+    )
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    add_result = runner.invoke(app, ["add", "cli"])
+    assert add_result.exit_code == 0, add_result.output
+
+    result = runner.invoke(app, ["remove", "cli", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "removed": ["cli"]}
+    _assert_matches_declared_output_schema("feature remove", printed)
+
+
+def test_remove_json_prints_ok_false_when_not_tracked(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+
+    result = runner.invoke(app, ["remove", "cli", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
 
 
 def test_remove_leaves_hand_edited_field_untouched(tmp_path, settings, monkeypatch):
