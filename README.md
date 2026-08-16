@@ -59,6 +59,7 @@ Composable features that install on top of a base image at container creation ti
 | `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
 | `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
 | `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, Helix editor + pyright (Helix wired to ruff's LSP + pyright out of the box) |
+| `…/rust-devtools:latest` | Dev | base-ubuntu / base-cuda | Rust dev tooling — cargo, rustc, rust-analyzer, Helix editor (Helix's default config already pairs Rust with rust-analyzer) |
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
 | `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
@@ -259,6 +260,7 @@ features/
   fastapi/                   ← Web: FastAPI + Pydantic + Uvicorn
   cli/                       ← CLI: Typer + Rich + Pydantic
   py-devtools/               ← Dev: ruff, mypy, pytest, mkdocs
+  rust-devtools/             ← Dev: cargo, rustc, rust-analyzer, Helix
   huggingface/               ← ML: huggingface_hub, tokenizers
   transformers/              ← ML: transformers, datasets, accelerate
   ollama/                    ← ML: OpenAI-compatible Ollama client

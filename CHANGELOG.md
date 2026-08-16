@@ -12,6 +12,9 @@ For changes to the `dvt` CLI itself, see [`dvt/CHANGELOG.md`](dvt/CHANGELOG.md) 
 
 ### Added
 
+- `rust-devtools` feature - Rust toolchain (cargo, rustc) plus rust-analyzer and the Helix
+  editor, installed via pixi. Helix's own default language config already pairs Rust with
+  rust-analyzer, so unlike `py-devtools` it needs no extra `languages.toml` wiring.
 - `podman` feature - rootless Podman for nested container/image testing, with `docker`/
   `docker compose` CLI shims (podman-docker, podman-compose) so existing tooling that shells
   out to `docker` keeps working unchanged. Uses the `vfs` storage driver so it runs inside any

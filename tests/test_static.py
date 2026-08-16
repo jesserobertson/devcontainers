@@ -14,17 +14,19 @@ REPO_ROOT = Path(__file__).parent.parent
 FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
-    "agent", "podman",
+    "agent", "podman", "rust-devtools",
 ]
 
 SU_DEV_FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
+    "rust-devtools",
 ]
 
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
 CPU_TEMPLATE_FEATURES = [
     "marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama", "podman",
+    "rust-devtools",
 ]
 
 

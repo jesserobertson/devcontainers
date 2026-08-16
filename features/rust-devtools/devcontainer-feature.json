@@ -1,0 +1,7 @@
+{
+  "id": "rust-devtools",
+  "version": "1.0.0",
+  "name": "Rust dev tooling (cargo, rust-analyzer, helix)",
+  "description": "Installs the Rust toolchain (rustc, cargo) and rust-analyzer via pixi, plus the Helix editor - Helix's own default language config already pairs Rust with rust-analyzer, so no extra wiring is needed. Works with both base-ubuntu and base-cuda images.",
+  "options": {}
+}
