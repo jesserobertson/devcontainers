@@ -53,9 +53,9 @@ ENV SHELL=/home/linuxbrew/.linuxbrew/bin/fish
 RUN chsh -s /home/linuxbrew/.linuxbrew/bin/fish dev && \
     HOME=/home/dev git config --global --add safe.directory /workspace && \
     mkdir -p /home/dev/.config/fish/conf.d && \
-    printf 'if status is-interactive\n    eval (pixi shell-hook --manifest-path /workspace/pixi.toml --shell fish)\nend\n' \
+    printf 'if status is-interactive\n    if test -f /workspace/pixi.toml; or test -f /workspace/pyproject.toml\n        eval (pixi shell-hook --manifest-path /workspace --shell fish)\n    end\nend\n' \
     > /home/dev/.config/fish/conf.d/project-pixi.fish && \
-    echo 'eval "$(pixi shell-hook --manifest-path /workspace/pixi.toml --shell bash)"' >> /home/dev/.bashrc && \
+    echo 'if [ -f /workspace/pixi.toml ] || [ -f /workspace/pyproject.toml ]; then eval "$(pixi shell-hook --manifest-path /workspace --shell bash)"; fi' >> /home/dev/.bashrc && \
     chown -R dev:dev /home/dev
 
 WORKDIR /workspace
