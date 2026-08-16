@@ -6,10 +6,10 @@ Templates are fetched from [jesserobertson/devcontainers](https://github.com/jes
 
 ## Install
 
-    pipx install ./dvt
+    pipx install dvt-cli
 
-Requires network access to `github.com/jesserobertson/logerr` at install time (a
-dependency not yet published to PyPI, pinned to a specific commit).
+For a local checkout instead (e.g. to track `main`), use `pipx install ./dvt` from the
+repo root.
 
 ## Usage
 
@@ -23,6 +23,9 @@ dependency not yet published to PyPI, pinned to a specific commit).
     dvt info                        # from inside my-project - no name needed
 
 ## Development
+
+`dvt` is developed inside the [jesserobertson/devcontainers](https://github.com/jesserobertson/devcontainers)
+monorepo, at `dvt/`. Clone that repo and run the commands below from `dvt/`.
 
 The pixi `default` environment (what `pixi run` uses) carries `pytest` and
 `hypothesis` for the dev loop. A separate `runtime` environment
