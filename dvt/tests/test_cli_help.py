@@ -50,3 +50,8 @@ def test_top_level_command_names_have_no_project_or_template_subgroups():
     assert "template" not in names
     assert "init" in names
     assert "feature" in names
+
+
+def test_image_is_registered_as_a_top_level_command_group():
+    names = set(root.commands.keys())
+    assert "image" in names

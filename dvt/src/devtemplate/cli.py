@@ -24,7 +24,7 @@ from devtemplate.cli_support import (
     unwrap_or_exit,
     with_status,
 )
-from devtemplate.commands import feature_app, info_command, init_command
+from devtemplate.commands import feature_app, image_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.runtime import get_client
@@ -35,6 +35,7 @@ app = typer.Typer(
     help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."
 )
 app.add_typer(feature_app, name="feature")
+app.add_typer(image_app, name="image")
 app.command("init")(init_command)
 app.command("info")(info_command)
 console = Console()
