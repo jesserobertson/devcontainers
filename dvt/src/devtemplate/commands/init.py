@@ -8,7 +8,9 @@ import typer
 from rich.console import Console
 from rich.markup import escape
 
-from devtemplate.cli_support import emit_success, report_error
+from devtemplate.cli_support import emit_success, report_error, unwrap_or_exit
+from devtemplate.config import load_settings
+from devtemplate.images import resolve_image_ref
 from devtemplate.sidecar import write_sidecar
 
 __all__ = ["init", "DEFAULT_IMAGE"]
@@ -51,6 +53,12 @@ def init(
     image: str = typer.Option(  # noqa: B008
         DEFAULT_IMAGE, help=f"Base image (default: {DEFAULT_IMAGE})."
     ),
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched image name instead of prompting.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -70,9 +78,18 @@ def init(
         )
         raise typer.Exit(code=1)
 
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+    resolved_image = unwrap_or_exit(
+        resolve_image_ref(
+            image, settings, assume_yes=assume_yes, interactive=not json_output
+        ),
+        console,
+        json_output=json_output,
+    )
+
     config: dict[str, Any] = {
         "name": name,
-        "image": image,
+        "image": resolved_image,
         "workspaceFolder": "/workspace",
         "workspaceMount": (
             "source=${localWorkspaceFolder},"

@@ -31,7 +31,7 @@ def _noop() -> None:
 runner = CliRunner()
 
 
-def test_init_scaffolds_devcontainer_json_with_defaults(tmp_path):
+def test_init_scaffolds_devcontainer_json_with_defaults(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(app, ["init", str(project_dir)])
@@ -59,7 +59,7 @@ def test_init_help_text_mentions_default_image():
     assert DEFAULT_IMAGE in result.output
 
 
-def test_init_image_option_overrides_default(tmp_path):
+def test_init_image_option_overrides_default(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(
@@ -79,7 +79,7 @@ def test_init_image_option_overrides_default(tmp_path):
     assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
 
 
-def test_init_json_prints_ok_true_with_path_on_success(tmp_path):
+def test_init_json_prints_ok_true_with_path_on_success(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(app, ["init", str(project_dir), "--json"])
@@ -124,7 +124,7 @@ def test_init_refuses_to_overwrite_existing_devcontainer_json(tmp_path):
     )
 
 
-def test_init_derives_name_from_target_directory(tmp_path):
+def test_init_derives_name_from_target_directory(tmp_path, settings):
     project_dir = tmp_path / "my-actual-project"
 
     result = runner.invoke(app, ["init", str(project_dir)])
@@ -136,7 +136,7 @@ def test_init_derives_name_from_target_directory(tmp_path):
     assert written["name"] == "my-actual-project"
 
 
-def test_init_scaffolds_pixi_toml_when_absent(tmp_path):
+def test_init_scaffolds_pixi_toml_when_absent(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(app, ["init", str(project_dir)])
@@ -150,7 +150,7 @@ def test_init_scaffolds_pixi_toml_when_absent(tmp_path):
     assert '"linux-64"' in content
 
 
-def test_init_does_not_overwrite_existing_pixi_toml(tmp_path):
+def test_init_does_not_overwrite_existing_pixi_toml(tmp_path, settings):
     project_dir = tmp_path / "my-project"
     project_dir.mkdir(parents=True)
     (project_dir / "pixi.toml").write_text('[project]\nname = "already-here"\n')
@@ -163,7 +163,7 @@ def test_init_does_not_overwrite_existing_pixi_toml(tmp_path):
     ).read_text() == '[project]\nname = "already-here"\n'
 
 
-def test_init_does_not_write_pixi_toml_when_pyproject_toml_exists(tmp_path):
+def test_init_does_not_write_pixi_toml_when_pyproject_toml_exists(tmp_path, settings):
     project_dir = tmp_path / "my-project"
     project_dir.mkdir(parents=True)
     (project_dir / "pyproject.toml").write_text('[tool.pixi.project]\nname = "x"\n')
@@ -174,7 +174,7 @@ def test_init_does_not_write_pixi_toml_when_pyproject_toml_exists(tmp_path):
     assert not (project_dir / "pixi.toml").exists()
 
 
-def test_init_writes_sidecar_with_init_block(tmp_path):
+def test_init_writes_sidecar_with_init_block(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 
     result = runner.invoke(app, ["init", str(project_dir)])
@@ -186,3 +186,132 @@ def test_init_writes_sidecar_with_init_block(tmp_path):
     assert sidecar["applied"] == []
     assert sidecar["init"]["image"] == DEFAULT_IMAGE
     assert "pixi install" in sidecar["init"]["postCreateCommand"]
+
+
+def _write_image_registry(settings, images):
+    settings.images_dir.mkdir(parents=True, exist_ok=True)
+    for image in images:
+        (settings.images_dir / f"{image['name']}.json").write_text(json.dumps(image))
+
+
+def test_init_image_resolves_alias_via_cached_registry(tmp_path, settings):
+    _write_image_registry(
+        settings,
+        [
+            {
+                "name": "base-cuda",
+                "description": "",
+                "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+                "aliases": ["cuda"],
+            }
+        ],
+    )
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--image", "cuda"])
+
+    assert result.exit_code == 0, result.output
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+def test_init_image_resolves_close_typo_with_confirm(tmp_path, settings, monkeypatch):
+    _write_image_registry(
+        settings,
+        [
+            {
+                "name": "base-cuda",
+                "description": "",
+                "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+                "aliases": [],
+            }
+        ],
+    )
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--image", "bas-cuda"])
+
+    assert result.exit_code == 0, result.output
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+def test_init_image_declining_confirm_writes_nothing(tmp_path, settings, monkeypatch):
+    _write_image_registry(
+        settings,
+        [
+            {
+                "name": "base-cuda",
+                "description": "",
+                "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+                "aliases": [],
+            }
+        ],
+    )
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--image", "bas-cuda"])
+
+    assert result.exit_code == 1
+    assert not (project_dir / ".devcontainer" / "devcontainer.json").exists()
+
+
+def test_init_image_yes_flag_skips_the_prompt(tmp_path, settings, monkeypatch):
+    _write_image_registry(
+        settings,
+        [
+            {
+                "name": "base-cuda",
+                "description": "",
+                "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+                "aliases": [],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+    )
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(
+        app, ["init", str(project_dir), "--image", "bas-cuda", "--yes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+def test_init_image_json_mode_fails_with_suggestion_no_hang(tmp_path, settings, monkeypatch):
+    _write_image_registry(
+        settings,
+        [
+            {
+                "name": "base-cuda",
+                "description": "",
+                "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+                "aliases": [],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+    )
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(
+        app, ["init", str(project_dir), "--image", "bas-cuda", "--json"]
+    )
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "base-cuda" in printed["error"]
