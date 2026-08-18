@@ -79,6 +79,11 @@ def _greet_app():
         for name in names:
             print(f"hello {name}")
 
+    @app.command("noop")
+    def _noop() -> None:
+        """No-op command to prevent Typer single-command collapse in tests."""
+        pass
+
     return app
 
 
@@ -117,4 +122,40 @@ def test_fuzzy_argument_resolves_every_item_in_a_multi_value_argument():
     result = runner.invoke(_greet_app(), ["greet", "alice", "bob"])
     assert result.exit_code == 0, result.output
     assert "hello alice" in result.output
+    assert "hello bob" in result.output
+
+
+def test_fuzzy_argument_collision_candidate_named_after_command():
+    """Test that a candidate legitimately named 'greet' (the command name) is
+    NOT silently dropped. This guards against regressions of the func.__name__
+    workaround bug where ['greet', 'alice'] would incorrectly skip 'greet'."""
+
+    def _collision_app():
+        app = typer.Typer()
+        console = Console()
+
+        @app.command("greet")
+        @fuzzy_argument(
+            "names",
+            candidates_fn=lambda settings: ["greet", "bob"],  # "greet" is a real candidate
+            label="person",
+            console=console,
+        )
+        def greet(
+            names: list[str] = typer.Argument(..., help="Name(s) to greet."),
+            json_output: bool = typer.Option(False, "--json", help="JSON mode."),
+        ) -> None:
+            for name in names:
+                print(f"hello {name}")
+
+        @app.command("noop")
+        def _noop() -> None:
+            pass
+
+        return app
+
+    # Invoke the proper way (command name NOT in the list, since noop ensures Group)
+    result = runner.invoke(_collision_app(), ["greet", "greet", "bob"])
+    assert result.exit_code == 0, result.output
+    assert "hello greet" in result.output
     assert "hello bob" in result.output

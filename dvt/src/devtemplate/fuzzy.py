@@ -105,11 +105,6 @@ def fuzzy_argument(
                 return unwrap_or_exit(result, console, json_output=json_output)
 
             raw = kwargs.get(param)
-            # If raw is a list and first element is the function name (which can
-            # happen when typer includes the command name in arguments), skip it
-            if isinstance(raw, list) and len(raw) > 0 and raw[0] == func.__name__:
-                raw = raw[1:]
-
             kwargs[param] = (
                 [resolve_one(value) for value in raw]
                 if isinstance(raw, list)
