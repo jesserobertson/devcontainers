@@ -50,3 +50,71 @@ def test_non_interactive_close_match_fails_with_suggestion_no_prompt(monkeypatch
     result = resolve_or_confirm("fastpi", ["fastapi", "agent"], label="feature", interactive=False)
     assert result.is_err()
     assert "fastapi" in str(result.unwrap_err())
+
+
+import typer
+from typer.testing import CliRunner
+from rich.console import Console
+
+from devtemplate.fuzzy import fuzzy_argument
+
+runner = CliRunner()
+
+
+def _greet_app():
+    app = typer.Typer()
+    console = Console()
+
+    @app.command("greet")
+    @fuzzy_argument(
+        "names",
+        candidates_fn=lambda settings: ["alice", "bob"],
+        label="person",
+        console=console,
+    )
+    def greet(
+        names: list[str] = typer.Argument(..., help="Name(s) to greet."),
+        json_output: bool = typer.Option(False, "--json", help="JSON mode."),
+    ) -> None:
+        for name in names:
+            print(f"hello {name}")
+
+    return app
+
+
+def test_fuzzy_argument_exact_match_runs_unchanged():
+    result = runner.invoke(_greet_app(), ["greet", "alice"])
+    assert result.exit_code == 0, result.output
+    assert "hello alice" in result.output
+
+
+def test_fuzzy_argument_injects_yes_flag_into_help():
+    result = runner.invoke(_greet_app(), ["greet", "--help"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0
+    assert "--yes" in result.output
+    assert "-y" in result.output
+
+
+def test_fuzzy_argument_prompts_and_resolves_on_confirm():
+    result = runner.invoke(_greet_app(), ["greet", "alise"], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert "hello alice" in result.output
+
+
+def test_fuzzy_argument_yes_flag_skips_prompt():
+    result = runner.invoke(_greet_app(), ["greet", "alise", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "hello alice" in result.output
+
+
+def test_fuzzy_argument_json_mode_fails_with_suggestion_no_hang():
+    result = runner.invoke(_greet_app(), ["greet", "alise", "--json"])
+    assert result.exit_code == 1
+    assert "alice" in result.output
+
+
+def test_fuzzy_argument_resolves_every_item_in_a_multi_value_argument():
+    result = runner.invoke(_greet_app(), ["greet", "alice", "bob"])
+    assert result.exit_code == 0, result.output
+    assert "hello alice" in result.output
+    assert "hello bob" in result.output

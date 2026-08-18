@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import difflib
+import functools
+import inspect
+from typing import Any, Callable
 
 import typer
 from logerr import Err, Ok, Result
+from rich.console import Console
 
-__all__ = ["resolve_or_confirm"]
+from devtemplate.cli_support import unwrap_or_exit
+from devtemplate.config import Settings, load_settings
+
+__all__ = ["fuzzy_argument", "resolve_or_confirm"]
 
 
 def resolve_or_confirm(
@@ -47,3 +54,72 @@ def resolve_or_confirm(
             if typer.confirm(f"No {label} named '{query}'. Did you mean '{match}'?"):
                 return Ok(match)
             return Err(ValueError(f"Aborted: no {label} named {query!r}."))
+
+
+def fuzzy_argument(
+    param: str,
+    *,
+    candidates_fn: Callable[[Settings], list[str]],
+    label: str,
+    console: Console,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator for a typer command: fuzzy-resolve `param`'s value (a str,
+    or a list[str] for a multi-value argument) against candidates_fn(settings)
+    before the wrapped function runs, and inject a standardized --yes/-y
+    option (kwarg `assume_yes`) into its signature so every command using
+    this decorator gets the same flag name, message format, and exit
+    behavior. On no match (or a declined confirmation) this exits via
+    unwrap_or_exit before the wrapped function is ever called - it only
+    ever sees an already-resolved name (or list of names).
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        original_sig = inspect.signature(func)
+        yes_param = inspect.Parameter(
+            "assume_yes",
+            inspect.Parameter.KEYWORD_ONLY,
+            default=typer.Option(
+                False,
+                "--yes",
+                "-y",
+                help=f"Auto-accept a fuzzy-matched {label} name instead of prompting.",
+            ),
+            annotation=bool,
+        )
+
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            assume_yes = kwargs.pop("assume_yes", False)
+            json_output = kwargs.get("json_output", False)
+            settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+            candidates = candidates_fn(settings)
+
+            def resolve_one(value: str) -> str:
+                result = resolve_or_confirm(
+                    value,
+                    candidates,
+                    label=label,
+                    assume_yes=assume_yes,
+                    interactive=not json_output,
+                )
+                return unwrap_or_exit(result, console, json_output=json_output)
+
+            raw = kwargs.get(param)
+            # If raw is a list and first element is the function name (which can
+            # happen when typer includes the command name in arguments), skip it
+            if isinstance(raw, list) and len(raw) > 0 and raw[0] == func.__name__:
+                raw = raw[1:]
+
+            kwargs[param] = (
+                [resolve_one(value) for value in raw]
+                if isinstance(raw, list)
+                else resolve_one(raw)
+            )
+            return func(*args, **kwargs)
+
+        wrapper.__signature__ = original_sig.replace(
+            parameters=[*original_sig.parameters.values(), yes_param]
+        )
+        return wrapper
+
+    return decorator
