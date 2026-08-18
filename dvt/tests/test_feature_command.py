@@ -179,9 +179,9 @@ def test_show_error_message_is_not_mangled_by_rich_markup(settings, monkeypatch)
     # actual rendered text, not ANSI-interleaved bytes.
     monkeypatch.setattr(console, "no_color", True)
 
-    result = runner.invoke(app, ["show", ".."])
+    result = runner.invoke(app, ["show", "[red]hacked[/red]"])
     assert result.exit_code == 1
-    assert "[a-z0-9][a-z0-9-]" in result.stdout
+    assert "[red]hacked[/red]" in result.stdout
 
 
 def test_sync_reports_synced_feature_names(settings, monkeypatch):
@@ -1084,7 +1084,13 @@ def test_add_stops_on_first_failure_leaving_earlier_successes_applied(
 
     assert result.exit_code == 1
     assert "Added feature 'py-devtools'" in result.output
-    assert "No cached feature named" in result.output
+    # Resolution now fails one step earlier than it used to - at
+    # resolve_or_confirm (no cache entry close enough to fuzzy-match
+    # "typo-name"), not at add_one's/load_cached_template's uncached-name
+    # check - so the message text is resolve_or_confirm's, not
+    # load_cached_template's. Control flow (py-devtools already applied
+    # before the failure) is unchanged.
+    assert "No feature named" in result.output
     assert "typo-name" in result.output
     assert "Added feature 'marimo'" not in result.output
 
@@ -1161,7 +1167,12 @@ def test_remove_stops_on_first_failure_leaving_earlier_removals_applied(
 
     assert result.exit_code == 1
     assert "Removed feature 'py-devtools'" in result.output
-    assert "is not tracked for this project" in result.output
+    # "never-added" isn't close enough to fuzzy-match either cached template
+    # name, so resolve_or_confirm rejects it before remove_one's own
+    # not-tracked check ever runs - message text is resolve_or_confirm's,
+    # not remove_one's. Control flow (py-devtools already removed before the
+    # failure, marimo never reached) is unchanged.
+    assert "No feature named" in result.output
     assert "Removed feature 'marimo'" not in result.output
 
     sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
@@ -1202,3 +1213,89 @@ def test_remove_same_name_twice_in_one_invocation_fails_on_the_second(
 
     sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
     assert sidecar["applied"] == []
+
+
+def test_show_fuzzy_resolves_a_close_typo(settings, monkeypatch):
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi"})
+    )
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+
+    result = runner.invoke(app, ["show", "fastpi"])
+    assert result.exit_code == 0, result.output
+    assert "fastapi" in result.stdout
+
+
+def test_show_yes_flag_skips_the_prompt(settings, monkeypatch):
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi"})
+    )
+    monkeypatch.setattr(
+        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+    )
+
+    result = runner.invoke(app, ["show", "fastpi", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "fastapi" in result.stdout
+
+
+def test_show_json_mode_with_typo_fails_with_suggestion_no_hang(settings, monkeypatch):
+    settings.templates_dir.mkdir(parents=True)
+    (settings.templates_dir / "fastapi").mkdir()
+    (settings.templates_dir / "fastapi" / "devcontainer.json").write_text(
+        json.dumps({"name": "fastapi"})
+    )
+    monkeypatch.setattr(
+        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+    )
+
+    result = runner.invoke(app, ["show", "fastpi", "--json"])
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "fastapi" in printed["error"]
+
+
+def test_add_fuzzy_resolves_a_close_typo(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"name": "agent"}))
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+
+    result = runner.invoke(app, ["add", "agnt"])
+
+    assert result.exit_code == 0, result.output
+    assert "Added feature 'agent'" in result.output
+
+
+def test_remove_fuzzy_resolves_a_close_typo(tmp_path, settings, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"name": "agent"}))
+    runner.invoke(app, ["add", "agent"])
+
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+    result = runner.invoke(app, ["remove", "agnt"])
+
+    assert result.exit_code == 0, result.output
+    assert "Removed feature 'agent'" in result.output

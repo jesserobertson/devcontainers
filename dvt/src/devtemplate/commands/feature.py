@@ -16,6 +16,7 @@ from rich.table import Table
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
 from devtemplate.features import clear_pulled_features
+from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
 from devtemplate.sidecar import load_sidecar, write_sidecar
@@ -81,6 +82,7 @@ def list_features(
 
 
 @app.command("show")
+@fuzzy_argument("name", candidates_fn=list_cached_templates, label="feature", console=console)
 def show_feature(
     name: str = typer.Argument(..., help="Cached feature name to show."),  # noqa: B008
     json_output: bool = typer.Option(  # noqa: B008
@@ -223,6 +225,12 @@ def add(
     names: list[str] = typer.Argument(  # noqa: B008
         ..., help="Cached feature name(s) to add, applied in order."
     ),
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched feature name instead of prompting.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -247,13 +255,26 @@ def add(
 
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
-    for name in names:
-        unwrap_or_exit(
-            add_one(name, settings, devcontainer_dir, target, json_output=json_output),
+    resolved_names: list[str] = []
+    for raw_name in names:
+        resolved = unwrap_or_exit(
+            resolve_or_confirm(
+                raw_name,
+                list_cached_templates(settings),
+                label="feature",
+                assume_yes=assume_yes,
+                interactive=not json_output,
+            ),
             console,
             json_output=json_output,
         )
-    emit_success(json_output, {"added": names}, lambda: None)
+        unwrap_or_exit(
+            add_one(resolved, settings, devcontainer_dir, target, json_output=json_output),
+            console,
+            json_output=json_output,
+        )
+        resolved_names.append(resolved)
+    emit_success(json_output, {"added": resolved_names}, lambda: None)
 
 
 @wrap_result
@@ -330,6 +351,12 @@ def remove(
     names: list[str] = typer.Argument(  # noqa: B008
         ..., help="Applied feature name(s) to remove, in order."
     ),
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched feature name instead of prompting.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -337,12 +364,26 @@ def remove(
     ),
 ) -> None:
     """Un-layer one or more features previously added with 'dvt feature add', in order."""
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
-    for name in names:
-        unwrap_or_exit(
-            remove_one(name, devcontainer_dir, target, json_output=json_output),
+    resolved_names: list[str] = []
+    for raw_name in names:
+        resolved = unwrap_or_exit(
+            resolve_or_confirm(
+                raw_name,
+                list_cached_templates(settings),
+                label="feature",
+                assume_yes=assume_yes,
+                interactive=not json_output,
+            ),
             console,
             json_output=json_output,
         )
-    emit_success(json_output, {"removed": names}, lambda: None)
+        unwrap_or_exit(
+            remove_one(resolved, devcontainer_dir, target, json_output=json_output),
+            console,
+            json_output=json_output,
+        )
+        resolved_names.append(resolved)
+    emit_success(json_output, {"removed": resolved_names}, lambda: None)
