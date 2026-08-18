@@ -3,7 +3,8 @@ from __future__ import annotations
 import difflib
 import functools
 import inspect
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import typer
 from logerr import Err, Ok, Result

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from devtemplate.fuzzy import resolve_or_confirm
+import typer
+from rich.console import Console
+from typer.testing import CliRunner
+
+from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 
 
 def test_exact_match_passes_through_with_no_prompt(monkeypatch):
@@ -52,12 +56,6 @@ def test_non_interactive_close_match_fails_with_suggestion_no_prompt(monkeypatch
     assert "fastapi" in str(result.unwrap_err())
 
 
-import typer
-from typer.testing import CliRunner
-from rich.console import Console
-
-from devtemplate.fuzzy import fuzzy_argument
-
 runner = CliRunner()
 
 
@@ -73,7 +71,7 @@ def _greet_app():
         console=console,
     )
     def greet(
-        names: list[str] = typer.Argument(..., help="Name(s) to greet."),
+        names: list[str] = typer.Argument(..., help="Name(s) to greet."),  # noqa: B008
         json_output: bool = typer.Option(False, "--json", help="JSON mode."),
     ) -> None:
         for name in names:
@@ -142,7 +140,7 @@ def test_fuzzy_argument_collision_candidate_named_after_command():
             console=console,
         )
         def greet(
-            names: list[str] = typer.Argument(..., help="Name(s) to greet."),
+            names: list[str] = typer.Argument(..., help="Name(s) to greet."),  # noqa: B008
             json_output: bool = typer.Option(False, "--json", help="JSON mode."),
         ) -> None:
             for name in names:

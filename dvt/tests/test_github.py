@@ -1,6 +1,11 @@
 import httpx
 
-from devtemplate.github import fetch_image_metadata, fetch_template, list_image_names, list_template_names
+from devtemplate.github import (
+    fetch_image_metadata,
+    fetch_template,
+    list_image_names,
+    list_template_names,
+)
 
 
 def test_list_template_names_returns_only_directories():
