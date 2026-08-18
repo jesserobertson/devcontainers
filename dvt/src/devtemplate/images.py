@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import difflib
 import json
 import re
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
-from logerr import Result
+from logerr import Err, Ok, Result
 from logerr.itertools import traverse_result
 from logerr.utilities import wrap_result
 
 from devtemplate.config import Settings
+from devtemplate.fuzzy import resolve_or_confirm
 from devtemplate.github import fetch_image_metadata, list_image_names
 
 IMAGE_MANIFEST_KEY = "managed_images"
@@ -23,6 +25,7 @@ __all__ = [
     "list_cached_images",
     "load_cached_image",
     "read_image_manifest",
+    "resolve_image_ref",
     "sync_images",
     "update_image_file",
     "validate_image_name",
@@ -180,3 +183,58 @@ def delete_image_file(repo_root: Path, name: str) -> Path:
         raise FileNotFoundError(f"{path} does not exist.")
     path.unlink()
     return path
+
+
+def resolve_image_ref(
+    query: str,
+    settings: Settings,
+    *,
+    assume_yes: bool = False,
+    interactive: bool = True,
+) -> Result[str, Exception]:
+    """Resolve an --image argument to a full OCI ref.
+
+    Exact match against a cached image's own ref, or its name/alias,
+    resolves with no prompt. A close (but not exact) match to a name/alias
+    goes through resolve_or_confirm - propagating a declined confirmation
+    or a non-interactive suggestion as a real Err, since the user (or the
+    fuzzy match itself) has something specific to say about it. An empty
+    cache, or a query with no close match at all, passes the query through
+    unchanged - this only ever helps resolve a name/alias dvt already
+    knows about, it never blocks a literal ref that used to work.
+    """
+    names = list_cached_images(settings)
+    if not names:
+        return Ok(query)
+
+    images: list[dict[str, Any]] = []
+    for name in names:
+        match load_cached_image(settings, name):
+            case Ok(metadata):
+                images.append(metadata)
+            case Err(_):
+                continue
+
+    if any(query == image.get("ref") for image in images):
+        return Ok(query)
+
+    lookup: dict[str, str] = {}
+    for image in images:
+        lookup[image["name"]] = image["ref"]
+        for alias in image.get("aliases", []):
+            lookup[alias] = image["ref"]
+
+    if query in lookup:
+        return Ok(lookup[query])
+
+    if not difflib.get_close_matches(query, sorted(lookup), n=1, cutoff=0.6):
+        return Ok(query)
+
+    resolved = resolve_or_confirm(
+        query, sorted(lookup), label="image", assume_yes=assume_yes, interactive=interactive
+    )
+    match resolved:
+        case Ok(matched_key):
+            return Ok(lookup[matched_key])
+        case Err(error):
+            return Err(error)

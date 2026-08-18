@@ -10,6 +10,7 @@ from devtemplate.images import (
     list_cached_images,
     load_cached_image,
     read_image_manifest,
+    resolve_image_ref,
     sync_images,
     update_image_file,
 )
@@ -219,3 +220,81 @@ def test_delete_image_file_refuses_when_missing(tmp_path):
     result = delete_image_file(tmp_path, "nonexistent")
     assert result.is_err()
     assert isinstance(result.unwrap_err(), FileNotFoundError)
+
+
+def _write_image(settings, name, ref, aliases=None):
+    settings.images_dir.mkdir(parents=True, exist_ok=True)
+    (settings.images_dir / f"{name}.json").write_text(
+        json.dumps(
+            {"name": name, "description": "", "ref": ref, "aliases": aliases or []}
+        )
+    )
+
+
+def test_resolve_image_ref_passthrough_on_empty_cache(settings):
+    result = resolve_image_ref("anything", settings)
+    assert result.is_ok()
+    assert result.unwrap() == "anything"
+
+
+def test_resolve_image_ref_exact_ref_passes_through(settings):
+    _write_image(settings, "base-ubuntu", "ghcr.io/x/base-ubuntu:latest")
+    result = resolve_image_ref("ghcr.io/x/base-ubuntu:latest", settings)
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-ubuntu:latest"
+
+
+def test_resolve_image_ref_exact_name_resolves_to_ref(settings):
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+    result = resolve_image_ref("base-cuda", settings)
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
+
+
+def test_resolve_image_ref_exact_alias_resolves_to_ref(settings):
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest", aliases=["cuda", "gpu"])
+    result = resolve_image_ref("cuda", settings)
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
+
+
+def test_resolve_image_ref_no_close_match_passes_through_as_literal(settings):
+    _write_image(settings, "base-ubuntu", "ghcr.io/x/base-ubuntu:latest")
+    result = resolve_image_ref("myregistry.example.com/custom:latest", settings)
+    assert result.is_ok()
+    assert result.unwrap() == "myregistry.example.com/custom:latest"
+
+
+def test_resolve_image_ref_close_typo_confirmed_yes_resolves(settings, monkeypatch):
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+    result = resolve_image_ref("bas-cuda", settings)
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
+
+
+def test_resolve_image_ref_close_typo_confirmed_no_returns_err(settings, monkeypatch):
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+    result = resolve_image_ref("bas-cuda", settings)
+    assert result.is_err()
+
+
+def test_resolve_image_ref_assume_yes_skips_prompt(settings, monkeypatch):
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+    monkeypatch.setattr(
+        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+    )
+    result = resolve_image_ref("bas-cuda", settings, assume_yes=True)
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
+
+
+def test_resolve_image_ref_non_interactive_close_typo_fails_with_suggestion(settings, monkeypatch):
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+    monkeypatch.setattr(
+        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+    )
+    result = resolve_image_ref("bas-cuda", settings, interactive=False)
+    assert result.is_err()
+    assert "base-cuda" in str(result.unwrap_err())
