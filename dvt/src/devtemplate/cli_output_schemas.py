@@ -25,9 +25,12 @@ __all__ = [
     "FeatureRemoveOutput",
     "FeatureShowOutput",
     "FeatureSyncOutput",
+    "ImageCreateOutput",
+    "ImageDeleteOutput",
     "ImageListOutput",
     "ImageShowOutput",
     "ImageSyncOutput",
+    "ImageUpdateOutput",
     "InfoOutput",
     "InitOutput",
     "ProjectInfo",
@@ -133,6 +136,24 @@ class ImageSyncOutput(BaseModel):
     synced: list[str]
 
 
+class ImageCreateOutput(BaseModel):
+    ok: Literal[True]
+    name: str
+    path: str
+
+
+class ImageUpdateOutput(BaseModel):
+    ok: Literal[True]
+    name: str
+    path: str
+
+
+class ImageDeleteOutput(BaseModel):
+    ok: Literal[True]
+    name: str
+    path: str
+
+
 OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "init": InitOutput,
     "up": UpOutput,
@@ -147,6 +168,9 @@ OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "image list": ImageListOutput,
     "image show": ImageShowOutput,
     "image sync": ImageSyncOutput,
+    "image create": ImageCreateOutput,
+    "image update": ImageUpdateOutput,
+    "image delete": ImageDeleteOutput,
 }
 """Keyed the same way describe_app keys its "commands" dict (dotted names
 for feature subcommands), so devtemplate.cli_support._describe_command can

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import typer
@@ -12,7 +13,15 @@ from rich.table import Table
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import load_settings
 from devtemplate.fuzzy import fuzzy_argument
-from devtemplate.images import list_cached_images, load_cached_image, sync_images
+from devtemplate.images import (
+    create_image_file,
+    delete_image_file,
+    find_repo_root,
+    list_cached_images,
+    load_cached_image,
+    sync_images,
+    update_image_file,
+)
 
 __all__ = ["app"]
 
@@ -103,3 +112,116 @@ def show_image(
         load_cached_image(settings, name), console, json_output=json_output
     )
     print(json.dumps(image, indent=2))
+
+
+@app.command("create")
+def create(
+    name: str = typer.Argument(..., help="New image name."),  # noqa: B008
+    ref: str = typer.Option(  # noqa: B008
+        ..., "--ref", help="Full OCI ref, e.g. ghcr.io/jesserobertson/base-ubuntu:latest."
+    ),
+    description: str = typer.Option(  # noqa: B008
+        ..., "--description", help="Short human-readable description."
+    ),
+    alias: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--alias",
+        help="Alternate name(s) this image can be resolved by (repeatable).",
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
+) -> None:
+    """Write images/<name>.json in the current repo checkout.
+
+    Doesn't publish to GitHub - commit and push (or open a PR) yourself.
+    """
+    repo_root = unwrap_or_exit(
+        find_repo_root(Path.cwd()), console, json_output=json_output
+    )
+    path = unwrap_or_exit(
+        create_image_file(repo_root, name, ref=ref, description=description, aliases=alias),
+        console,
+        json_output=json_output,
+    )
+    emit_success(
+        json_output,
+        {"name": name, "path": str(path)},
+        lambda: console.print(
+            f"Wrote {escape(str(path))}. This only changed your local checkout - "
+            "commit and push (or open a PR) to publish it."
+        ),
+    )
+
+
+@app.command("update")
+@fuzzy_argument("name", candidates_fn=list_cached_images, label="image", console=console)
+def update(
+    name: str = typer.Argument(..., help="Cached image name to update."),  # noqa: B008
+    ref: str | None = typer.Option(None, "--ref", help="New OCI ref."),  # noqa: B008
+    description: str | None = typer.Option(  # noqa: B008
+        None, "--description", help="New description."
+    ),
+    alias: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--alias",
+        help="New alias list (repeatable; replaces the existing list entirely).",
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
+) -> None:
+    """Edit fields on images/<name>.json in the current repo checkout.
+
+    Doesn't publish to GitHub - commit and push (or open a PR) yourself.
+    """
+    repo_root = unwrap_or_exit(
+        find_repo_root(Path.cwd()), console, json_output=json_output
+    )
+    path = unwrap_or_exit(
+        update_image_file(repo_root, name, ref=ref, description=description, aliases=alias),
+        console,
+        json_output=json_output,
+    )
+    emit_success(
+        json_output,
+        {"name": name, "path": str(path)},
+        lambda: console.print(
+            f"Updated {escape(str(path))}. This only changed your local checkout - "
+            "commit and push (or open a PR) to publish it."
+        ),
+    )
+
+
+@app.command("delete")
+@fuzzy_argument("name", candidates_fn=list_cached_images, label="image", console=console)
+def delete(
+    name: str = typer.Argument(..., help="Cached image name to delete."),  # noqa: B008
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
+) -> None:
+    """Remove images/<name>.json from the current repo checkout.
+
+    Doesn't publish to GitHub - commit and push (or open a PR) yourself.
+    """
+    repo_root = unwrap_or_exit(
+        find_repo_root(Path.cwd()), console, json_output=json_output
+    )
+    path = unwrap_or_exit(
+        delete_image_file(repo_root, name), console, json_output=json_output
+    )
+    emit_success(
+        json_output,
+        {"name": name, "path": str(path)},
+        lambda: console.print(
+            f"Removed {escape(str(path))}. This only changed your local checkout - "
+            "commit and push (or open a PR) to publish it."
+        ),
+    )
