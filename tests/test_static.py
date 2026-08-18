@@ -441,6 +441,33 @@ def test_published_feature_version_matches_local_content(feature):
     )
 
 
+# --- images/ registry ---
+
+IMAGES = ["base-ubuntu", "base-cuda"]
+
+
+@pytest.mark.parametrize("image", IMAGES)
+def test_image_json_has_required_fields(image):
+    data = _image_json(image)
+    for field in ("name", "description", "ref", "aliases"):
+        assert field in data, f"missing field '{field}' in {image}"
+
+
+@pytest.mark.parametrize("image", IMAGES)
+def test_image_json_name_matches_filename(image):
+    assert _image_json(image)["name"] == image
+
+
+def test_base_ubuntu_ref_matches_cpu_templates():
+    assert (
+        _image_json("base-ubuntu")["ref"] == "ghcr.io/jesserobertson/base-ubuntu:latest"
+    )
+
+
+def test_base_cuda_ref_matches_gpu_templates():
+    assert _image_json("base-cuda")["ref"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
 # --- helpers ---
 
 def _feature_json(feature: str) -> dict:
@@ -458,4 +485,9 @@ def _yaml(rel_path: str) -> dict:
 
 def _template_json(feature: str) -> dict:
     path = REPO_ROOT / "templates" / feature / "devcontainer.json"
+    return json.loads(path.read_text())
+
+
+def _image_json(image: str) -> dict:
+    path = REPO_ROOT / "images" / f"{image}.json"
     return json.loads(path.read_text())

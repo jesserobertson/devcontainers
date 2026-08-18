@@ -1,0 +1,6 @@
+{
+  "name": "base-ubuntu",
+  "description": "Ubuntu 24.04 devcontainer base with fish, homebrew, pixi, and dev CLI tooling.",
+  "ref": "ghcr.io/jesserobertson/base-ubuntu:latest",
+  "aliases": ["ubuntu", "default"]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "base-cuda",
+  "description": "CUDA-enabled devcontainer base for GPU workloads.",
+  "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+  "aliases": ["cuda", "gpu"]
+}
