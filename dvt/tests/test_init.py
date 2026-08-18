@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import jsonschema
+import pytest
 import typer
 from typer.testing import CliRunner
 
@@ -13,6 +14,23 @@ from devtemplate.commands.init import DEFAULT_IMAGE, init
 
 app = typer.Typer()
 app.command("init")(init)
+
+
+@pytest.fixture(autouse=True)
+def _no_network_image_sync(monkeypatch):
+    """Every test in this file now indirectly triggers init's best-effort
+    image-cache auto-sync as a side effect (Fix 5) - default it to a fast,
+    no-op Ok([]) so pre-existing tests that don't care about image sync stay
+    hermetic, matching this codebase's established convention of never
+    hitting real network in unit tests. Tests that DO care about sync
+    behavior override this with their own monkeypatch.setattr call.
+    """
+    from logerr import Ok
+
+    monkeypatch.setattr(
+        "devtemplate.commands.init.sync_images",
+        lambda settings_arg, client: Ok([]),
+    )
 
 
 def _assert_matches_declared_output_schema(command_name: str, payload: dict) -> None:
