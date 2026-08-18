@@ -81,7 +81,9 @@ def sync_images(settings: Settings, client: httpx.Client) -> list[str]:
         metadata = fetch_image_metadata(
             client, settings.github_repo, settings.github_branch, name
         ).unwrap()
-        (settings.images_dir / f"{name}.json").write_text(json.dumps(metadata, indent=2))
+        (settings.images_dir / f"{name}.json").write_text(
+            json.dumps(metadata, indent=2)
+        )
 
     removed = set(previous_names) - set(names)
     for stale_name in removed:
@@ -144,7 +146,12 @@ def create_image_file(
         raise FileExistsError(
             f"{path} already exists. Use 'dvt image update {name}' to change it."
         )
-    metadata = {"name": name, "description": description, "ref": ref, "aliases": aliases}
+    metadata = {
+        "name": name,
+        "description": description,
+        "ref": ref,
+        "aliases": aliases,
+    }
     path.write_text(json.dumps(metadata, indent=2) + "\n")
     return path
 
@@ -210,9 +217,9 @@ def resolve_image_ref(
     images: list[dict[str, Any]] = []
     for name in names:
         match load_cached_image(settings, name):
-            case Ok(metadata):
+            case Ok(metadata) if isinstance(metadata, dict):
                 images.append(metadata)
-            case Err(_):
+            case Ok(_) | Err(_):
                 continue
 
     if any(query == image.get("ref") for image in images):
@@ -220,9 +227,14 @@ def resolve_image_ref(
 
     lookup: dict[str, str] = {}
     for image in images:
-        lookup[image["name"]] = image["ref"]
+        name_value = image.get("name")
+        ref_value = image.get("ref")
+        if not isinstance(name_value, str) or not isinstance(ref_value, str):
+            continue
+        lookup[name_value] = ref_value
         for alias in image.get("aliases", []):
-            lookup[alias] = image["ref"]
+            if isinstance(alias, str):
+                lookup[alias] = ref_value
 
     if query in lookup:
         return Ok(lookup[query])
@@ -231,10 +243,16 @@ def resolve_image_ref(
         return Ok(query)
 
     resolved = resolve_or_confirm(
-        query, sorted(lookup), label="image", assume_yes=assume_yes, interactive=interactive
+        query,
+        sorted(lookup),
+        label="image",
+        assume_yes=assume_yes,
+        interactive=interactive,
     )
     match resolved:
         case Ok(matched_key):
             return Ok(lookup[matched_key])
         case Err(error):
             return Err(error)
+        case _:
+            raise AssertionError("unreachable")

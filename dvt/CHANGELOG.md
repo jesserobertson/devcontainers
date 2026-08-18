@@ -8,6 +8,21 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 ## [Unreleased]
 
+### Added
+
+- `dvt image` — a new command group (`sync`, `list`, `show`, `create`, `update`,
+  `delete`) for managing the base images dvt knows about, mirroring `dvt feature`'s
+  sync/list/show shape. `create`/`update`/`delete` edit `images/*.json` directly in a
+  checkout of the devcontainers repo (must be run from inside one); `sync`/`list`/`show`
+  work from the local synced cache.
+- `dvt init --image` now accepts a cached image's name or alias, not just a literal OCI
+  ref, and auto-syncs the image cache first if it's empty (best-effort — a failed sync
+  never blocks `init`, which has never required network access).
+- Fuzzy name matching on `dvt feature add`/`remove`/`show` and `dvt image
+  show`/`update`/`delete`: a mistyped name gets a "Did you mean X?" prompt (`--yes`/`-y`
+  to auto-accept), and fails with a suggestion instead of hanging in non-interactive/
+  `--json` contexts.
+
 ## [0.3.1] - 2026-08-16
 
 ### Fixed

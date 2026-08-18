@@ -12,7 +12,7 @@ from rich.table import Table
 
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import load_settings
-from devtemplate.fuzzy import fuzzy_argument
+from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 from devtemplate.images import (
     create_image_file,
     delete_image_file,
@@ -97,7 +97,9 @@ def list_images(
 
 
 @app.command("show")
-@fuzzy_argument("name", candidates_fn=list_cached_images, label="image", console=console)
+@fuzzy_argument(
+    "name", candidates_fn=list_cached_images, label="image", console=console
+)
 def show_image(
     name: str = typer.Argument(..., help="Cached image name to show."),  # noqa: B008
     json_output: bool = typer.Option(  # noqa: B008
@@ -118,7 +120,9 @@ def show_image(
 def create(
     name: str = typer.Argument(..., help="New image name."),  # noqa: B008
     ref: str = typer.Option(  # noqa: B008
-        ..., "--ref", help="Full OCI ref, e.g. ghcr.io/jesserobertson/base-ubuntu:latest."
+        ...,
+        "--ref",
+        help="Full OCI ref, e.g. ghcr.io/jesserobertson/base-ubuntu:latest.",
     ),
     description: str = typer.Option(  # noqa: B008
         ..., "--description", help="Short human-readable description."
@@ -142,7 +146,9 @@ def create(
         find_repo_root(Path.cwd()), console, json_output=json_output
     )
     path = unwrap_or_exit(
-        create_image_file(repo_root, name, ref=ref, description=description, aliases=alias),
+        create_image_file(
+            repo_root, name, ref=ref, description=description, aliases=alias
+        ),
         console,
         json_output=json_output,
     )
@@ -157,7 +163,6 @@ def create(
 
 
 @app.command("update")
-@fuzzy_argument("name", candidates_fn=list_cached_images, label="image", console=console)
 def update(
     name: str = typer.Argument(..., help="Cached image name to update."),  # noqa: B008
     ref: str | None = typer.Option(None, "--ref", help="New OCI ref."),  # noqa: B008
@@ -168,6 +173,12 @@ def update(
         None,
         "--alias",
         help="New alias list (repeatable; replaces the existing list entirely).",
+    ),
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched image name instead of prompting.",
     ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
@@ -182,14 +193,35 @@ def update(
     repo_root = unwrap_or_exit(
         find_repo_root(Path.cwd()), console, json_output=json_output
     )
+    images_dir = repo_root / "images"
+    candidates = (
+        sorted(p.stem for p in images_dir.glob("*.json")) if images_dir.exists() else []
+    )
+    resolved_name = (
+        name
+        if not candidates
+        else unwrap_or_exit(
+            resolve_or_confirm(
+                name,
+                candidates,
+                label="image",
+                assume_yes=assume_yes,
+                interactive=not json_output,
+            ),
+            console,
+            json_output=json_output,
+        )
+    )
     path = unwrap_or_exit(
-        update_image_file(repo_root, name, ref=ref, description=description, aliases=alias),
+        update_image_file(
+            repo_root, resolved_name, ref=ref, description=description, aliases=alias
+        ),
         console,
         json_output=json_output,
     )
     emit_success(
         json_output,
-        {"name": name, "path": str(path)},
+        {"name": resolved_name, "path": str(path)},
         lambda: console.print(
             f"Updated {escape(str(path))}. This only changed your local checkout - "
             "commit and push (or open a PR) to publish it."
@@ -198,9 +230,14 @@ def update(
 
 
 @app.command("delete")
-@fuzzy_argument("name", candidates_fn=list_cached_images, label="image", console=console)
 def delete(
     name: str = typer.Argument(..., help="Cached image name to delete."),  # noqa: B008
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched image name instead of prompting.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
@@ -214,12 +251,31 @@ def delete(
     repo_root = unwrap_or_exit(
         find_repo_root(Path.cwd()), console, json_output=json_output
     )
+    images_dir = repo_root / "images"
+    candidates = (
+        sorted(p.stem for p in images_dir.glob("*.json")) if images_dir.exists() else []
+    )
+    resolved_name = (
+        name
+        if not candidates
+        else unwrap_or_exit(
+            resolve_or_confirm(
+                name,
+                candidates,
+                label="image",
+                assume_yes=assume_yes,
+                interactive=not json_output,
+            ),
+            console,
+            json_output=json_output,
+        )
+    )
     path = unwrap_or_exit(
-        delete_image_file(repo_root, name), console, json_output=json_output
+        delete_image_file(repo_root, resolved_name), console, json_output=json_output
     )
     emit_success(
         json_output,
-        {"name": name, "path": str(path)},
+        {"name": resolved_name, "path": str(path)},
         lambda: console.print(
             f"Removed {escape(str(path))}. This only changed your local checkout - "
             "commit and push (or open a PR) to publish it."

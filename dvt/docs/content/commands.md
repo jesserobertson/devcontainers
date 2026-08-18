@@ -2,14 +2,15 @@
 
 ## Machine-readable output
 
-`init`, `up`, `info`, `stop`, `delete`, `feature add`, `feature remove`, and `feature
-sync` all accept `--json`, printing exactly one JSON object on stdout instead of
-Rich-formatted text: `{"ok": true, ...command-specific fields}` on success, `{"ok":
-false, "error": "..."}` on failure (exit code is unaffected by `--json`). `feature
-list` keeps printing a bare JSON array on success (predates the `{"ok": ...}`
-convention) but now reports failures the same way as every other command. `feature
-show` always printed its raw JSON pass-through on success and now accepts `--json`
-too, purely so its *failure* path matches the shared convention as well. `ssh` has no
+`init`, `up`, `info`, `stop`, `delete`, `feature add`, `feature remove`, `feature
+sync`, `image sync`, `image create`, `image update`, and `image delete` all accept
+`--json`, printing exactly one JSON object on stdout instead of Rich-formatted text:
+`{"ok": true, ...command-specific fields}` on success, `{"ok": false, "error": "..."}`
+on failure (exit code is unaffected by `--json`). `feature list` and `image list` keep
+printing a bare JSON array on success (predates the `{"ok": ...}` convention) but
+report failures the same way as every other command. `feature show` and `image show`
+always printed their raw JSON pass-through on success and now accept `--json` too,
+purely so their *failure* path matches the shared convention as well. `ssh` has no
 `--json` mode: without `--stdio` it's an interactive terminal session, and `--stdio`
 is a raw SSH byte stream, not structured output.
 
@@ -82,6 +83,70 @@ that feature's overlay touched — anything else in the file, including manual e
 since, is left untouched. Refuses (exit 1, nothing written) if `<name>` isn't tracked in
 `.devcontainer/dvt-features.json` (never added via `dvt feature add`, or the file predates
 it), or if the recomputed result would fail schema validation.
+
+## `dvt image`
+
+### `dvt image sync`
+
+Fetches every `images/<name>.json` from the configured GitHub repository (same
+`DVT_GITHUB_REPO` / `DVT_GITHUB_BRANCH` override as `dvt feature sync`) into the local
+cache. Prunes any previously-synced image that's been removed upstream; never touches
+an image file you've added by hand.
+
+### `dvt image list`
+
+Lists cached images with their description and OCI ref. `--json` prints the same data
+as a JSON array instead of a table, for scripting.
+
+### `dvt image show <name>`
+
+Prints a cached image's raw metadata (name, description, ref, aliases).
+
+### `dvt image create <name> --ref <ref> --description <text> [--alias <alias> ...]`
+
+Writes `images/<name>.json` in the current repo checkout — unlike `sync`/`list`/`show`,
+which operate on the local XDG cache, `create`/`update`/`delete` edit the source repo
+directly and must be run from inside a checkout of the devcontainers repo (refuses,
+exit 1, if `.git` can't be found in the current directory or any parent). `--alias` is
+repeatable, for every alternate name the image should also resolve by (see `dvt init
+--image` below). Doesn't publish to GitHub or affect the local cache — commit and push
+(or open a PR) yourself, then `dvt image sync` to pick it up locally like anyone else
+would.
+
+### `dvt image update <name> [--ref <ref>] [--description <text>] [--alias <alias> ...]`
+
+Edits fields on `images/<name>.json` in the current repo checkout. Only the fields you
+pass are changed; `--alias`, if passed, replaces the existing alias list entirely
+rather than appending to it. `<name>` resolves against the images already present in
+the repo checkout's `images/` directory (not the synced cache), so this works on an
+image you just `create`d even if it's never been synced. Same "local checkout only"
+caveat as `create`.
+
+### `dvt image delete <name>`
+
+Removes `images/<name>.json` from the current repo checkout. Same name resolution and
+"local checkout only" caveats as `update`.
+
+## `dvt init --image <alias-or-ref>`
+
+`--image` accepts either a literal OCI ref or a cached image's name/alias (see `dvt
+image list`). If the local image cache is empty, `init` auto-syncs it first —
+best-effort: a failed sync (e.g. offline) is silently ignored, `--image` still works
+with a literal ref, and `init` has never required network access. Unlike `dvt feature
+add`'s auto-sync, a sync failure here is never fatal.
+
+## Fuzzy name matching
+
+`dvt feature add`/`remove`/`show` and `dvt image show`/`update`/`delete` all
+fuzzy-match the name you pass against the relevant set of known names (the template/
+image cache for `add`/`show`, the project's own applied features for `remove`, the repo
+checkout's `images/` directory for `update`/`delete`). An exact match is used with no
+prompt. A close-but-not-exact match (a typo) prints "No `<label>` named '...'. Did you
+mean '...'?" and asks to confirm; `--yes`/`-y` skips the prompt and accepts the closest
+match automatically. In non-interactive contexts — `--json`, or anywhere a prompt can't
+be answered — a close match is reported as a suggestion inside the error instead of
+prompting, so a script never hangs waiting on an unanswerable question. No match at all
+is a plain error listing every known name.
 
 ## `dvt info`
 

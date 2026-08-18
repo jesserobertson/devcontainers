@@ -1009,6 +1009,37 @@ def test_remove_refuses_untracked_feature_name_when_sidecar_exists_for_other_fea
     assert (devcontainer_dir / "dvt-features.json").read_text() == pre_remove_sidecar
 
 
+def test_remove_still_works_after_the_template_leaves_the_cache(
+    tmp_path, settings, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    template_dir = settings.templates_dir / "agent"
+    template_dir.mkdir(parents=True)
+    (template_dir / "devcontainer.json").write_text(json.dumps({"name": "agent"}))
+
+    add_result = runner.invoke(app, ["add", "agent"])
+    assert add_result.exit_code == 0, add_result.output
+
+    # Simulate the template being pruned from the cache (e.g. removed
+    # upstream, then 'dvt feature sync') - the sidecar still says it's
+    # applied, and remove must still be able to act on that.
+    import shutil
+
+    shutil.rmtree(template_dir)
+
+    remove_result = runner.invoke(app, ["remove", "agent"])
+
+    assert remove_result.exit_code == 0, remove_result.output
+    assert "Removed feature 'agent'" in remove_result.output
+
+
 def test_remove_refuses_when_devcontainer_json_missing(tmp_path, settings, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["remove", "agent"])
@@ -1235,7 +1266,8 @@ def test_show_yes_flag_skips_the_prompt(settings, monkeypatch):
         json.dumps({"name": "fastapi"})
     )
     monkeypatch.setattr(
-        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")),
     )
 
     result = runner.invoke(app, ["show", "fastpi", "--yes"])
@@ -1250,7 +1282,8 @@ def test_show_json_mode_with_typo_fails_with_suggestion_no_hang(settings, monkey
         json.dumps({"name": "fastapi"})
     )
     monkeypatch.setattr(
-        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")),
     )
 
     result = runner.invoke(app, ["show", "fastpi", "--json"])

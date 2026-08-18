@@ -59,6 +59,64 @@ def test_init_help_text_mentions_default_image():
     assert DEFAULT_IMAGE in result.output
 
 
+def test_init_image_auto_syncs_when_cache_empty(tmp_path, settings, monkeypatch):
+    from logerr import Ok
+
+    def fake_sync(settings_arg, client):
+        images_dir = settings_arg.images_dir
+        images_dir.mkdir(parents=True, exist_ok=True)
+        (images_dir / "base-cuda.json").write_text(
+            json.dumps(
+                {
+                    "name": "base-cuda",
+                    "description": "",
+                    "ref": "ghcr.io/jesserobertson/base-cuda:latest",
+                    "aliases": ["cuda"],
+                }
+            )
+        )
+        return Ok(["base-cuda"])
+
+    monkeypatch.setattr("devtemplate.commands.init.sync_images", fake_sync)
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--image", "cuda"])
+
+    assert result.exit_code == 0, result.output
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+def test_init_image_sync_failure_is_non_fatal_and_falls_through(
+    tmp_path, settings, monkeypatch
+):
+    from logerr import Err
+
+    def fake_sync(settings_arg, client):
+        return Err(RuntimeError("network unreachable"))
+
+    monkeypatch.setattr("devtemplate.commands.init.sync_images", fake_sync)
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(project_dir),
+            "--image",
+            "ghcr.io/jesserobertson/base-cuda:latest",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
 def test_init_image_option_overrides_default(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 
@@ -275,7 +333,8 @@ def test_init_image_yes_flag_skips_the_prompt(tmp_path, settings, monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")),
     )
     project_dir = tmp_path / "my-project"
 
@@ -290,7 +349,9 @@ def test_init_image_yes_flag_skips_the_prompt(tmp_path, settings, monkeypatch):
     assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
 
 
-def test_init_image_json_mode_fails_with_suggestion_no_hang(tmp_path, settings, monkeypatch):
+def test_init_image_json_mode_fails_with_suggestion_no_hang(
+    tmp_path, settings, monkeypatch
+):
     _write_image_registry(
         settings,
         [
@@ -303,7 +364,8 @@ def test_init_image_json_mode_fails_with_suggestion_no_hang(tmp_path, settings, 
         ],
     )
     monkeypatch.setattr(
-        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")),
     )
     project_dir = tmp_path / "my-project"
 

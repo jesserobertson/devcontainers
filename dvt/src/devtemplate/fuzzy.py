@@ -41,7 +41,9 @@ def resolve_or_confirm(
     match matches:
         case []:
             known = ", ".join(sorted(candidates)) or "(none cached)"
-            return Err(ValueError(f"No {label} named {query!r}. Known {label}s: {known}"))
+            return Err(
+                ValueError(f"No {label} named {query!r}. Known {label}s: {known}")
+            )
         case [match, *_]:
             if assume_yes:
                 return Ok(match)
@@ -55,6 +57,8 @@ def resolve_or_confirm(
             if typer.confirm(f"No {label} named '{query}'. Did you mean '{match}'?"):
                 return Ok(match)
             return Err(ValueError(f"Aborted: no {label} named {query!r}."))
+        case _:
+            raise AssertionError("unreachable")
 
 
 def fuzzy_argument(
@@ -105,7 +109,7 @@ def fuzzy_argument(
                 )
                 return unwrap_or_exit(result, console, json_output=json_output)
 
-            raw = kwargs.get(param)
+            raw = kwargs[param]
             kwargs[param] = (
                 [resolve_one(value) for value in raw]
                 if isinstance(raw, list)
@@ -113,7 +117,7 @@ def fuzzy_argument(
             )
             return func(*args, **kwargs)
 
-        wrapper.__signature__ = original_sig.replace(
+        wrapper.__signature__ = original_sig.replace(  # type: ignore[attr-defined]
             parameters=[*original_sig.parameters.values(), yes_param]
         )
         return wrapper

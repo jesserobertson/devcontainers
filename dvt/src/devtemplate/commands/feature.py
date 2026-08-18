@@ -82,7 +82,9 @@ def list_features(
 
 
 @app.command("show")
-@fuzzy_argument("name", candidates_fn=list_cached_templates, label="feature", console=console)
+@fuzzy_argument(
+    "name", candidates_fn=list_cached_templates, label="feature", console=console
+)
 def show_feature(
     name: str = typer.Argument(..., help="Cached feature name to show."),  # noqa: B008
     json_output: bool = typer.Option(  # noqa: B008
@@ -269,7 +271,9 @@ def add(
             json_output=json_output,
         )
         unwrap_or_exit(
-            add_one(resolved, settings, devcontainer_dir, target, json_output=json_output),
+            add_one(
+                resolved, settings, devcontainer_dir, target, json_output=json_output
+            ),
             console,
             json_output=json_output,
         )
@@ -346,6 +350,21 @@ def remove_one(
         console.print(f"Removed feature '{escape(name)}' from {escape(str(target))}.")
 
 
+def _applied_feature_names(devcontainer_dir: Path) -> list[str]:
+    """Candidates for remove's fuzzy resolution: the project's own currently-
+    applied feature names (what remove actually operates on), not the full
+    template cache - unlike add, remove must keep working for a feature whose
+    template has since left the cache (e.g. pruned upstream). Returns [] on
+    any read/parse failure (missing sidecar, corrupt JSON) so the caller can
+    fall back to remove_one's own well-established "not tracked" error
+    instead of a generic fuzzy-match error.
+    """
+    sidecar = load_sidecar(devcontainer_dir)
+    if sidecar.is_err():
+        return []
+    return [entry["name"] for entry in sidecar.unwrap()["applied"]]
+
+
 @app.command("remove")
 def remove(
     names: list[str] = typer.Argument(  # noqa: B008
@@ -364,21 +383,25 @@ def remove(
     ),
 ) -> None:
     """Un-layer one or more features previously added with 'dvt feature add', in order."""
-    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
     resolved_names: list[str] = []
     for raw_name in names:
-        resolved = unwrap_or_exit(
-            resolve_or_confirm(
-                raw_name,
-                list_cached_templates(settings),
-                label="feature",
-                assume_yes=assume_yes,
-                interactive=not json_output,
-            ),
-            console,
-            json_output=json_output,
+        candidates = _applied_feature_names(devcontainer_dir)
+        resolved = (
+            raw_name
+            if not candidates
+            else unwrap_or_exit(
+                resolve_or_confirm(
+                    raw_name,
+                    candidates,
+                    label="feature",
+                    assume_yes=assume_yes,
+                    interactive=not json_output,
+                ),
+                console,
+                json_output=json_output,
+            )
         )
         unwrap_or_exit(
             remove_one(resolved, devcontainer_dir, target, json_output=json_output),

@@ -9,7 +9,12 @@ from logerr.recipes.retry import on_err
 from logerr.utilities import execute
 from tenacity import stop_after_attempt, wait_exponential
 
-__all__ = ["fetch_image_metadata", "fetch_template", "list_image_names", "list_template_names"]
+__all__ = [
+    "fetch_image_metadata",
+    "fetch_template",
+    "list_image_names",
+    "list_template_names",
+]
 
 
 @on_err(

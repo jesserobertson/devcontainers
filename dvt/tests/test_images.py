@@ -23,7 +23,9 @@ def _client(handler):
 def test_sync_writes_images_and_manifest(settings):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/contents/images"):
-            return httpx.Response(200, json=[{"name": "base-ubuntu.json", "type": "file"}])
+            return httpx.Response(
+                200, json=[{"name": "base-ubuntu.json", "type": "file"}]
+            )
         return httpx.Response(
             200,
             json={"name": "base-ubuntu", "ref": "ghcr.io/x/base-ubuntu:latest"},
@@ -37,7 +39,10 @@ def test_sync_writes_images_and_manifest(settings):
 
     loaded = load_cached_image(settings, "base-ubuntu")
     assert loaded.is_ok()
-    assert loaded.unwrap() == {"name": "base-ubuntu", "ref": "ghcr.io/x/base-ubuntu:latest"}
+    assert loaded.unwrap() == {
+        "name": "base-ubuntu",
+        "ref": "ghcr.io/x/base-ubuntu:latest",
+    }
 
     manifest = read_image_manifest(settings)
     assert manifest.is_ok()
@@ -50,13 +55,17 @@ def test_sync_does_not_touch_custom_image_files(settings):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/contents/images"):
-            return httpx.Response(200, json=[{"name": "base-ubuntu.json", "type": "file"}])
+            return httpx.Response(
+                200, json=[{"name": "base-ubuntu.json", "type": "file"}]
+            )
         return httpx.Response(200, json={"name": "base-ubuntu"})
 
     result = sync_images(settings, _client(handler))
 
     assert result.is_ok()
-    assert (settings.images_dir / "my-custom.json").read_text() == '{"name": "my-custom"}'
+    assert (
+        settings.images_dir / "my-custom.json"
+    ).read_text() == '{"name": "my-custom"}'
     assert "my-custom" not in read_image_manifest(settings).unwrap()
 
 
@@ -99,7 +108,9 @@ def test_sync_prunes_images_removed_upstream(settings):
 
     def handler_v2(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/contents/images"):
-            return httpx.Response(200, json=[{"name": "base-ubuntu.json", "type": "file"}])
+            return httpx.Response(
+                200, json=[{"name": "base-ubuntu.json", "type": "file"}]
+            )
         return httpx.Response(200, json={"name": "base-ubuntu"})
 
     second = sync_images(settings, _client(handler_v2))
@@ -252,7 +263,9 @@ def test_resolve_image_ref_exact_name_resolves_to_ref(settings):
 
 
 def test_resolve_image_ref_exact_alias_resolves_to_ref(settings):
-    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest", aliases=["cuda", "gpu"])
+    _write_image(
+        settings, "base-cuda", "ghcr.io/x/base-cuda:latest", aliases=["cuda", "gpu"]
+    )
     result = resolve_image_ref("cuda", settings)
     assert result.is_ok()
     assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
@@ -283,18 +296,44 @@ def test_resolve_image_ref_close_typo_confirmed_no_returns_err(settings, monkeyp
 def test_resolve_image_ref_assume_yes_skips_prompt(settings, monkeypatch):
     _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
     monkeypatch.setattr(
-        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")),
     )
     result = resolve_image_ref("bas-cuda", settings, assume_yes=True)
     assert result.is_ok()
     assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
 
 
-def test_resolve_image_ref_non_interactive_close_typo_fails_with_suggestion(settings, monkeypatch):
+def test_resolve_image_ref_non_interactive_close_typo_fails_with_suggestion(
+    settings, monkeypatch
+):
     _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
     monkeypatch.setattr(
-        "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt"))
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")),
     )
     result = resolve_image_ref("bas-cuda", settings, interactive=False)
     assert result.is_err()
     assert "base-cuda" in str(result.unwrap_err())
+
+
+def test_resolve_image_ref_skips_cached_entry_missing_ref_field(settings):
+    settings.images_dir.mkdir(parents=True)
+    (settings.images_dir / "broken.json").write_text(json.dumps({"name": "broken"}))
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+
+    result = resolve_image_ref("base-cuda", settings)
+
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
+
+
+def test_resolve_image_ref_skips_cached_entry_that_is_not_a_json_object(settings):
+    settings.images_dir.mkdir(parents=True)
+    (settings.images_dir / "broken.json").write_text(json.dumps(["not", "a", "dict"]))
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+
+    result = resolve_image_ref("base-cuda", settings)
+
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"

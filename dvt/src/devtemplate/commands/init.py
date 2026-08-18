@@ -4,13 +4,20 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import typer
+from logerr import Result
 from rich.console import Console
 from rich.markup import escape
 
-from devtemplate.cli_support import emit_success, report_error, unwrap_or_exit
+from devtemplate.cli_support import (
+    emit_success,
+    report_error,
+    unwrap_or_exit,
+    with_status,
+)
 from devtemplate.config import load_settings
-from devtemplate.images import resolve_image_ref
+from devtemplate.images import list_cached_images, resolve_image_ref, sync_images
 from devtemplate.sidecar import write_sidecar
 
 __all__ = ["init", "DEFAULT_IMAGE"]
@@ -79,6 +86,19 @@ def init(
         raise typer.Exit(code=1)
 
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+
+    if not list_cached_images(settings):
+
+        def do_sync(_status: object) -> Result[list[str], Exception]:
+            with httpx.Client() as client:
+                return sync_images(settings, client)
+
+        # Best-effort: dvt init has never required network access and must keep
+        # working offline with a literal --image ref (its historical behavior).
+        # A sync failure here is silently discarded - resolve_image_ref below
+        # falls through to its own empty-cache passthrough either way.
+        with_status(json_output, console, "Syncing images from GitHub...", do_sync)
+
     resolved_image = unwrap_or_exit(
         resolve_image_ref(
             image, settings, assume_yes=assume_yes, interactive=not json_output

@@ -238,6 +238,33 @@ def test_update_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settin
     assert written["description"] == "new"
 
 
+def test_update_works_on_an_image_just_created_with_no_prior_sync(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    create_result = runner.invoke(
+        app,
+        [
+            "create",
+            "my-image",
+            "--ref",
+            "ghcr.io/x/my-image:latest",
+            "--description",
+            "d",
+        ],
+    )
+    assert create_result.exit_code == 0, create_result.output
+
+    update_result = runner.invoke(
+        app, ["update", "my-image", "--description", "new description"]
+    )
+
+    assert update_result.exit_code == 0, update_result.output
+    written = json.loads((tmp_path / "images" / "my-image.json").read_text())
+    assert written["description"] == "new description"
+
+
 def test_delete_removes_the_repo_local_file(tmp_path, monkeypatch, settings):
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
