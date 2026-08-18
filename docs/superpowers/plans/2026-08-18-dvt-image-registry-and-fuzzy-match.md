@@ -1645,10 +1645,18 @@ def test_create_fails_outside_a_git_checkout(tmp_path, monkeypatch):
 
 
 def test_update_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settings):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".git").mkdir()
-    (tmp_path / "images").mkdir()
-    (tmp_path / "images" / "base-ubuntu.json").write_text(
+    # repo_dir is a SUBdirectory of tmp_path, not tmp_path itself: the settings
+    # fixture points settings.images_dir at tmp_path/"images" (data_dir == tmp_path),
+    # so a repo root directly at tmp_path would make repo_dir/"images" collide with
+    # settings.images_dir on disk - update's fuzzy-resolved <name> argument needs
+    # both directories to exist independently (the XDG cache for name resolution,
+    # the repo checkout for the actual file being edited).
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    monkeypatch.chdir(repo_dir)
+    (repo_dir / ".git").mkdir()
+    (repo_dir / "images").mkdir()
+    (repo_dir / "images" / "base-ubuntu.json").write_text(
         json.dumps(
             {"name": "base-ubuntu", "description": "old", "ref": "x", "aliases": []}
         )
@@ -1663,29 +1671,33 @@ def test_update_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settin
     result = runner.invoke(app, ["update", "base-ubuntu", "--description", "new"])
 
     assert result.exit_code == 0, result.output
-    written = json.loads((tmp_path / "images" / "base-ubuntu.json").read_text())
+    written = json.loads((repo_dir / "images" / "base-ubuntu.json").read_text())
     assert written["description"] == "new"
 
 
 def test_delete_removes_the_repo_local_file(tmp_path, monkeypatch, settings):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".git").mkdir()
-    (tmp_path / "images").mkdir()
-    (tmp_path / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    monkeypatch.chdir(repo_dir)
+    (repo_dir / ".git").mkdir()
+    (repo_dir / "images").mkdir()
+    (repo_dir / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
     settings.images_dir.mkdir(parents=True)
     (settings.images_dir / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
 
     result = runner.invoke(app, ["delete", "base-ubuntu"])
 
     assert result.exit_code == 0, result.output
-    assert not (tmp_path / "images" / "base-ubuntu.json").exists()
+    assert not (repo_dir / "images" / "base-ubuntu.json").exists()
 
 
 def test_delete_json_prints_ok_true_with_path(tmp_path, monkeypatch, settings):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".git").mkdir()
-    (tmp_path / "images").mkdir()
-    (tmp_path / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    monkeypatch.chdir(repo_dir)
+    (repo_dir / ".git").mkdir()
+    (repo_dir / "images").mkdir()
+    (repo_dir / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
     settings.images_dir.mkdir(parents=True)
     (settings.images_dir / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
 
@@ -2141,7 +2153,9 @@ Use `candidates_fn=_template_names_with_auto_sync` on `add`'s (not `remove`'s - 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pixi run pytest tests/test_feature_command.py -v`
-Expected: PASS (all tests, including the pre-existing `test_add_auto_syncs_when_cache_empty` and `test_add_shows_a_status_spinner_while_auto_syncing` - the latter's spinner assertion should still hold since `with_status`'s console.status usage is untouched; re-check its `entered == [True]` assertion still passes given auto-sync now runs inside `_template_names_with_auto_sync` with no `with_status` wrapper around it. If that spinner test fails because the spinner no longer shows during auto-sync, that's an acceptable, expected behavior change for this task - update the test's expectation to `entered == []` and note in the test why the spinner moved: fuzzy resolution's own settings/candidate lookup now happens before `add`'s body starts, outside the status-spinner scope, so a spinner covering it needs to move into `_template_names_with_auto_sync` instead of assuming it. Prefer the minimal fix: wrap the `sync_templates` call in `_template_names_with_auto_sync` with `console.status("Syncing features from GitHub...", spinner="dots")` directly, so the observable behavior (a spinner during auto-sync) is preserved even though the code path moved.)
+Expected: PASS (all tests, EXCEPT `test_add_shows_a_status_spinner_while_auto_syncing`, which needs a one-line expectation update - see below - as part of this same step, not a follow-up).
+
+**Ruling on the spinner test (settled during planning, not left for the implementer to improvise):** `candidates_fn`'s contract is fixed at `Callable[[Settings], list[str]]` (Task 2, reused unchanged by every other caller - `list_cached_templates`, `list_cached_images`) and deliberately does not receive `json_output`. `_template_names_with_auto_sync` therefore must NOT wrap its `sync_templates` call in `console.status(...)` - with no `json_output` visibility it cannot suppress that spinner under `--json`, and an unconditional spinner there would corrupt `--json`'s single-line machine-readable output on a first-ever `dvt feature add` (the empty-cache, auto-sync path). Losing the spinner for this one rare path (first-run auto-sync) is the correct, smaller trade-off. Update `test_add_shows_a_status_spinner_while_auto_syncing` (already in `dvt/tests/test_feature_command.py`) to assert `entered == []` instead of `entered == [True]`, and add a one-line comment above the assertion explaining why: auto-sync now runs inside `fuzzy_argument`'s candidate lookup, before `add`'s own body (and its `with_status`-wrapped spinner) ever starts.
 
 - [ ] **Step 5: Commit**
 
