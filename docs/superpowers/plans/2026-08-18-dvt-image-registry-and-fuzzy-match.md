@@ -2068,13 +2068,17 @@ Expected: FAIL — a plain typo currently produces a flat "No cached feature nam
 
 - [ ] **Step 3: Write the implementation**
 
+**Design correction found during implementation (not the original plan text — read this before writing code):** the first draft of this task decorated `add`/`remove` with `fuzzy_argument` the same way as `show`. That breaks two existing, already-shipped guarantees: (a) `add`/`remove` apply their `names` list one at a time and — on a failure partway through — stop *but keep whatever was already applied before the failure*; `fuzzy_argument` resolves the *entire* list eagerly before the command body ever runs, so a bad name anywhere in the list now aborts before any name is applied, even ones listed earlier that would have succeeded. (b) `test_show_error_message_is_not_mangled_by_rich_markup` (a pre-existing test) breaks because fuzzy resolution now intercepts an invalid name *before* `load_cached_template`'s own regex-validation error (which happens to contain `[...]` characters the test was actually checking Rich-escaping against) ever runs.
+
+The fix: `show` (single name, no partial-apply concern) keeps using `fuzzy_argument` exactly as before. `add`/`remove` (multi-name, apply-one-at-a-time-and-keep-earlier-successes) do NOT use the decorator — they call `resolve_or_confirm` directly, once per name, *inside* their existing per-name loop, immediately before that name is applied/removed. This preserves the exact original control flow and stop-on-first-failure-keep-earlier-successes contract, with fuzzy resolution added at the point each name is actually used.
+
 In `dvt/src/devtemplate/commands/feature.py`, add the import:
 
 ```python
-from devtemplate.fuzzy import fuzzy_argument
+from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 ```
 
-Decorate the three commands (add `@fuzzy_argument(...)` directly above each `@app.command(...)`-decorated function, i.e. between the two decorators so it runs closer to the function):
+`show` — decorate as originally planned (add `@fuzzy_argument(...)` directly above `@app.command("show")`'s function, between the two decorators so it runs closer to the function):
 
 ```python
 @app.command("show")
@@ -2092,28 +2096,77 @@ def show_feature(
     ...  # body unchanged
 ```
 
+`add` and `remove` — NO `fuzzy_argument` decorator. Add a `--yes`/`-y` option directly to each (mirroring the decorator's own flag name/help text, since they no longer get it injected automatically), and resolve each name via `resolve_or_confirm` inside the existing per-name loop:
+
 ```python
 @app.command("add")
-@fuzzy_argument("names", candidates_fn=list_cached_templates, label="feature", console=console)
 def add(
     names: list[str] = typer.Argument(  # noqa: B008
         ..., help="Cached feature name(s) to add, applied in order."
     ),
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched feature name instead of prompting.",
+    ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
         "--json",
         help="Print machine-readable JSON instead of human-readable text.",
     ),
 ) -> None:
-    ...  # body unchanged
+    """Layer one or more features onto ./.devcontainer/devcontainer.json, in order."""
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+
+    if not list_cached_templates(settings):
+
+        def do_sync(_status: object) -> Result[list[str], Exception]:
+            with httpx.Client() as client:
+                return sync_templates(settings, client)
+
+        sync_result = with_status(
+            json_output, console, "Syncing features from GitHub...", do_sync
+        )
+        unwrap_or_exit(
+            sync_result, console, prefix="Sync failed: ", json_output=json_output
+        )
+
+    devcontainer_dir = Path(".devcontainer")
+    target = devcontainer_dir / "devcontainer.json"
+    resolved_names: list[str] = []
+    for raw_name in names:
+        resolved = unwrap_or_exit(
+            resolve_or_confirm(
+                raw_name,
+                list_cached_templates(settings),
+                label="feature",
+                assume_yes=assume_yes,
+                interactive=not json_output,
+            ),
+            console,
+            json_output=json_output,
+        )
+        unwrap_or_exit(
+            add_one(resolved, settings, devcontainer_dir, target, json_output=json_output),
+            console,
+            json_output=json_output,
+        )
+        resolved_names.append(resolved)
+    emit_success(json_output, {"added": resolved_names}, lambda: None)
 ```
 
 ```python
 @app.command("remove")
-@fuzzy_argument("names", candidates_fn=list_cached_templates, label="feature", console=console)
 def remove(
     names: list[str] = typer.Argument(  # noqa: B008
         ..., help="Applied feature name(s) to remove, in order."
+    ),
+    assume_yes: bool = typer.Option(  # noqa: B008
+        False,
+        "--yes",
+        "-y",
+        help="Auto-accept a fuzzy-matched feature name instead of prompting.",
     ),
     json_output: bool = typer.Option(  # noqa: B008
         False,
@@ -2121,41 +2174,58 @@ def remove(
         help="Print machine-readable JSON instead of human-readable text.",
     ),
 ) -> None:
-    ...  # body unchanged
+    """Un-layer one or more features previously added with 'dvt feature add', in order."""
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+    devcontainer_dir = Path(".devcontainer")
+    target = devcontainer_dir / "devcontainer.json"
+    resolved_names: list[str] = []
+    for raw_name in names:
+        resolved = unwrap_or_exit(
+            resolve_or_confirm(
+                raw_name,
+                list_cached_templates(settings),
+                label="feature",
+                assume_yes=assume_yes,
+                interactive=not json_output,
+            ),
+            console,
+            json_output=json_output,
+        )
+        unwrap_or_exit(
+            remove_one(resolved, devcontainer_dir, target, json_output=json_output),
+            console,
+            json_output=json_output,
+        )
+        resolved_names.append(resolved)
+    emit_success(json_output, {"removed": resolved_names}, lambda: None)
 ```
 
-Note: `add`'s existing auto-sync-when-cache-empty logic runs *inside* the function body, which now only runs *after* `fuzzy_argument` has already tried to resolve `names` against whatever the cache looked like at call time. This plan's existing test `test_add_auto_syncs_when_cache_empty` (already in the file, unmodified) covers the empty-cache case: with an empty cache, `list_cached_templates` returns `[]`, so `resolve_or_confirm` has no candidates to match against and its `case []` branch fires immediately with `Err` naming zero known features - `fuzzy_argument`'s wrapper then calls `unwrap_or_exit` on that `Err` and exits *before* `add`'s own body (and its auto-sync) ever runs. Confirm this is still what that existing test expects by running it explicitly:
+Note this restores `add`'s original auto-sync block completely unchanged (verbatim, in its original position, with its original `with_status` spinner) — since `add`/`remove` no longer route through `fuzzy_argument`'s `candidates_fn` mechanism at all, there is no auto-sync/fuzzy-resolution ordering conflict to solve, and no `_template_names_with_auto_sync` helper is needed. `test_add_auto_syncs_when_cache_empty` and `test_add_shows_a_status_spinner_while_auto_syncing` (both pre-existing, unmodified) should pass completely unchanged — this design does not touch that behavior at all, unlike the first-draft approach.
 
-Run: `pixi run pytest tests/test_feature_command.py::test_add_auto_syncs_when_cache_empty -v`
+`{"added": resolved_names}`/`{"removed": resolved_names}` report the *resolved* (canonical, post-typo-correction) names, not the raw argument values — more useful to a `--json` consumer than echoing back a typo that got corrected. This doesn't affect any existing test (none of them exercise fuzzy resolution together with `--json`), but is a deliberate, small design choice worth calling out.
 
-If it now fails (because fuzzy resolution exits before auto-sync gets a chance to run), that's a real regression this task must not ship - see the note below.
-
-**Resolving the auto-sync conflict:** `add`'s auto-sync-on-empty-cache behavior and `fuzzy_argument`'s "resolve before the body runs" behavior both need the *same* pre-check (is the cache empty?), and they need to happen in the right order: auto-sync first, *then* fuzzy resolution. Move the auto-sync check out of `add`'s body and into a small wrapper so it runs before `fuzzy_argument`'s resolution, by re-ordering the decorators so auto-sync's own check happens outside `fuzzy_argument` entirely: keep `add`'s existing auto-sync block exactly as it is in the function body, but change `add`'s `candidates_fn` to a small local function that performs the same auto-sync-if-empty check before returning the candidate list:
+**Fixing the pre-existing Rich-markup test.** `test_show_error_message_is_not_mangled_by_rich_markup` (already in `dvt/tests/test_feature_command.py`, predates this whole plan) invokes `runner.invoke(app, ["show", ".."])` and asserts the invalid-name regex pattern (`"[a-z0-9][a-z0-9-]"`, from `load_cached_template`'s own validation error) survives Rich-escaping in the output. With `show` now going through `fuzzy_argument` first, `".."` never reaches `load_cached_template` at all — `resolve_or_confirm` intercepts it first with its own error (`No feature named '..'. Known features: ...`), which contains no bracket characters, so the original assertion no longer has anything meaningful to check. Replace the test's body (keep the name) with an invocation that still exercises the same underlying concern — Rich markup embedded in *user-controlled* input must not corrupt the CLI's error output — through the new path:
 
 ```python
-def _template_names_with_auto_sync(settings: Settings) -> list[str]:
-    """candidates_fn for add/remove's fuzzy_argument: auto-syncs once if the
-    cache is empty (same trigger add's own body already used to run before
-    this decorator existed), so a first-ever 'dvt feature add <name>' still
-    works without a prior explicit 'dvt feature sync' - fuzzy resolution
-    now runs *after* this, not before it.
-    """
-    names = list_cached_templates(settings)
-    if names:
-        return names
-    with httpx.Client() as client:
-        synced = sync_templates(settings, client)
-    return synced.unwrap_or([])
+def test_show_error_message_is_not_mangled_by_rich_markup(settings, monkeypatch):
+    # Rich's color_system is fixed at Console() construction time (module import),
+    # from whatever FORCE_COLOR/TTY state was live then - so in an environment that
+    # sets FORCE_COLOR, styled segments get ANSI codes even when writing to
+    # CliRunner's non-tty buffer. Force no_color directly so this test checks the
+    # actual rendered text, not ANSI-interleaved bytes.
+    monkeypatch.setattr(console, "no_color", True)
+
+    result = runner.invoke(app, ["show", "[red]hacked[/red]"])
+    assert result.exit_code == 1
+    assert "[red]hacked[/red]" in result.stdout
 ```
 
-Use `candidates_fn=_template_names_with_auto_sync` on `add`'s (not `remove`'s - removing only ever targets already-applied features, which by definition were already synced) `@fuzzy_argument(...)` line, and delete the now-redundant auto-sync block from inside `add`'s own body (the `if not list_cached_templates(settings): ...` block right after `settings = unwrap_or_exit(...)`).
+This directly tests the scenario `escape()` exists to guard against: a query the user typed containing literal Rich markup syntax (embedded via `resolve_or_confirm`'s `{query!r}` in its no-match error message) must render as inert plain text in the CLI's error output, not be interpreted as styling tags that hide or corrupt the message.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pixi run pytest tests/test_feature_command.py -v`
-Expected: PASS (all tests, EXCEPT `test_add_shows_a_status_spinner_while_auto_syncing`, which needs a one-line expectation update - see below - as part of this same step, not a follow-up).
-
-**Ruling on the spinner test (settled during planning, not left for the implementer to improvise):** `candidates_fn`'s contract is fixed at `Callable[[Settings], list[str]]` (Task 2, reused unchanged by every other caller - `list_cached_templates`, `list_cached_images`) and deliberately does not receive `json_output`. `_template_names_with_auto_sync` therefore must NOT wrap its `sync_templates` call in `console.status(...)` - with no `json_output` visibility it cannot suppress that spinner under `--json`, and an unconditional spinner there would corrupt `--json`'s single-line machine-readable output on a first-ever `dvt feature add` (the empty-cache, auto-sync path). Losing the spinner for this one rare path (first-run auto-sync) is the correct, smaller trade-off. Update `test_add_shows_a_status_spinner_while_auto_syncing` (already in `dvt/tests/test_feature_command.py`) to assert `entered == []` instead of `entered == [True]`, and add a one-line comment above the assertion explaining why: auto-sync now runs inside `fuzzy_argument`'s candidate lookup, before `add`'s own body (and its `with_status`-wrapped spinner) ever starts.
+Expected: PASS (every test in the file, including all pre-existing ones — `test_add_auto_syncs_when_cache_empty`, `test_add_shows_a_status_spinner_while_auto_syncing`, `test_add_stops_on_first_failure_leaving_earlier_successes_applied`, `test_remove_stops_on_first_failure_leaving_earlier_removals_applied` — completely unmodified and unaffected by this design, plus the corrected `test_show_error_message_is_not_mangled_by_rich_markup` above).
 
 - [ ] **Step 5: Commit**
 
