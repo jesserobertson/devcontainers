@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     def manifest_path(self) -> Path:
         return self.data_dir / "manifest.json"
 
+    @property
+    def images_dir(self) -> Path:
+        return self.data_dir / "images"
+
+    @property
+    def image_manifest_path(self) -> Path:
+        return self.data_dir / "image_manifest.json"
+
 
 def load_settings() -> Result[Settings, Exception]:
     """Construct Settings, wrapping any validation failure (e.g. a malformed

@@ -22,6 +22,8 @@ def test_settings_paths_derive_from_data_dir(settings, tmp_path):
     assert settings.data_dir == tmp_path
     assert settings.templates_dir == tmp_path / "templates"
     assert settings.manifest_path == tmp_path / "manifest.json"
+    assert settings.images_dir == tmp_path / "images"
+    assert settings.image_manifest_path == tmp_path / "image_manifest.json"
 
 
 @pytest.mark.parametrize(
