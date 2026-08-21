@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import jsonschema
+import pytest
 from typer.testing import CliRunner
 
 from devtemplate import __version__
@@ -11,6 +12,24 @@ from devtemplate.cli_support import describe_app
 from devtemplate.commands.feature import app, console
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _no_network_template_sync(monkeypatch):
+    """Every test in this file that reaches 'add's auto-sync-on-empty-cache
+    block (an empty settings.templates_dir plus no explicit mock) would
+    otherwise make a real GitHub API call - default it to a fast, no-op
+    Ok([]) so these stay hermetic, matching devtemplate.commands.init's
+    equivalent fixture (test_init.py) and this codebase's convention of
+    never hitting real network in unit tests. Tests that DO care about sync
+    behavior override this with their own monkeypatch.setattr call.
+    """
+    from logerr import Ok
+
+    monkeypatch.setattr(
+        "devtemplate.commands.feature.sync_templates",
+        lambda settings_arg, client: Ok([]),
+    )
 
 
 def _assert_matches_declared_output_schema(command_name: str, payload: dict) -> None:
@@ -370,7 +389,23 @@ def test_add_json_prints_ok_true_with_added_names(tmp_path, settings, monkeypatc
 def test_add_json_prints_ok_false_when_devcontainer_json_missing(
     tmp_path, settings, monkeypatch
 ):
+    from logerr import Ok
+
     monkeypatch.chdir(tmp_path)
+
+    def fake_sync(settings_arg, client):
+        # Override the file's default no-op sync mock: this test needs
+        # "agent" to actually resolve as a known template (so add_one is
+        # reached and raises its own "run dvt init" error), not just "sync
+        # succeeded with nothing" - list_cached_templates reads the
+        # filesystem, not sync_templates's return value, so the fake
+        # template file has to actually be written.
+        template_dir = settings_arg.templates_dir / "agent"
+        template_dir.mkdir(parents=True)
+        (template_dir / "devcontainer.json").write_text(json.dumps({"name": "agent"}))
+        return Ok(["agent"])
+
+    monkeypatch.setattr("devtemplate.commands.feature.sync_templates", fake_sync)
 
     result = runner.invoke(app, ["add", "agent", "--json"])
 
@@ -1044,6 +1079,48 @@ def test_remove_refuses_when_devcontainer_json_missing(tmp_path, settings, monke
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["remove", "agent"])
     assert result.exit_code == 1
+
+
+def test_applied_feature_names_returns_empty_list_when_applied_is_not_a_list(
+    tmp_path,
+):
+    # Regression test: a hand-corrupted sidecar (e.g. "applied" isn't a
+    # list) must not crash remove's fuzzy candidate lookup - it should
+    # degrade to an empty candidate list, same as a missing sidecar.
+    from devtemplate.commands.feature import _applied_feature_names
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "dvt-features.json").write_text(
+        json.dumps({"init": {}, "applied": "not-a-list"})
+    )
+
+    assert _applied_feature_names(devcontainer_dir) == []
+
+
+def test_applied_feature_names_skips_malformed_entries(tmp_path):
+    # A mix of a valid entry alongside several malformed ones (not a dict,
+    # missing "name", "name" not a string) - only the valid entry survives,
+    # nothing raises.
+    from devtemplate.commands.feature import _applied_feature_names
+
+    devcontainer_dir = tmp_path / ".devcontainer"
+    devcontainer_dir.mkdir()
+    (devcontainer_dir / "dvt-features.json").write_text(
+        json.dumps(
+            {
+                "init": {},
+                "applied": [
+                    {"name": "agent", "overlay": {}},
+                    "not-a-dict",
+                    {"overlay": {}},
+                    {"name": 123, "overlay": {}},
+                ],
+            }
+        )
+    )
+
+    assert _applied_feature_names(devcontainer_dir) == ["agent"]
 
 
 def test_add_multiple_names_applies_all_in_order(tmp_path, settings, monkeypatch):

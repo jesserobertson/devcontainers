@@ -164,7 +164,11 @@ def create(
 
 @app.command("update")
 def update(
-    name: str = typer.Argument(..., help="Cached image name to update."),  # noqa: B008
+    name: str = typer.Argument(  # noqa: B008
+        ...,
+        help="Image name to update, resolved against the current repo "
+        "checkout's images/ directory (not the synced cache).",
+    ),
     ref: str | None = typer.Option(None, "--ref", help="New OCI ref."),  # noqa: B008
     description: str | None = typer.Option(  # noqa: B008
         None, "--description", help="New description."
@@ -231,7 +235,11 @@ def update(
 
 @app.command("delete")
 def delete(
-    name: str = typer.Argument(..., help="Cached image name to delete."),  # noqa: B008
+    name: str = typer.Argument(  # noqa: B008
+        ...,
+        help="Image name to delete, resolved against the current repo "
+        "checkout's images/ directory (not the synced cache).",
+    ),
     assume_yes: bool = typer.Option(  # noqa: B008
         False,
         "--yes",

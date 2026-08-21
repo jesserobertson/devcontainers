@@ -39,6 +39,14 @@ directory name. Refuses (exit 1, nothing written) if
 `pixi.toml` or a `pyproject.toml` with a `[tool.pixi]` table) — every feature's
 `postCreateCommand` runs `pixi install`, which needs one to install from.
 
+`--image` accepts either a literal OCI ref or a cached image's name/alias (see `dvt
+image list`). If the local image cache is empty, `init` auto-syncs it first —
+best-effort: a failed sync (e.g. offline) is silently ignored, `--image` still works
+with a literal ref, and `init` has never required network access. Unlike `dvt feature
+add`'s auto-sync, a sync failure here is never fatal. The sync is skipped entirely when
+`--image` already looks like a literal ref (contains `/` or `:`), so a normal `dvt init`
+with the default image never pays for a network round-trip.
+
 ## `dvt feature`
 
 ### `dvt feature sync`
@@ -126,14 +134,6 @@ caveat as `create`.
 
 Removes `images/<name>.json` from the current repo checkout. Same name resolution and
 "local checkout only" caveats as `update`.
-
-## `dvt init --image <alias-or-ref>`
-
-`--image` accepts either a literal OCI ref or a cached image's name/alias (see `dvt
-image list`). If the local image cache is empty, `init` auto-syncs it first —
-best-effort: a failed sync (e.g. offline) is silently ignored, `--image` still works
-with a literal ref, and `init` has never required network access. Unlike `dvt feature
-add`'s auto-sync, a sync failure here is never fatal.
 
 ## Fuzzy name matching
 

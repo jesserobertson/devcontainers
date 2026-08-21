@@ -232,9 +232,11 @@ def resolve_image_ref(
         if not isinstance(name_value, str) or not isinstance(ref_value, str):
             continue
         lookup[name_value] = ref_value
-        for alias in image.get("aliases", []):
-            if isinstance(alias, str):
-                lookup[alias] = ref_value
+        aliases = image.get("aliases", [])
+        if isinstance(aliases, list):
+            for alias in aliases:
+                if isinstance(alias, str):
+                    lookup[alias] = ref_value
 
     if query in lookup:
         return Ok(lookup[query])

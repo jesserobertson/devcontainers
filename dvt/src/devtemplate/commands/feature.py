@@ -362,7 +362,14 @@ def _applied_feature_names(devcontainer_dir: Path) -> list[str]:
     sidecar = load_sidecar(devcontainer_dir)
     if sidecar.is_err():
         return []
-    return [entry["name"] for entry in sidecar.unwrap()["applied"]]
+    applied = sidecar.unwrap().get("applied")
+    if not isinstance(applied, list):
+        return []
+    return [
+        name
+        for entry in applied
+        if isinstance(entry, dict) and isinstance(name := entry.get("name"), str)
+    ]
 
 
 @app.command("remove")

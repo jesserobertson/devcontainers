@@ -87,7 +87,11 @@ def init(
 
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
-    if not list_cached_images(settings):
+    # "/" or ":" means `image` already looks like a literal OCI ref (every
+    # real ref has one or both; a bare name/alias has neither) - skip the
+    # sync entirely so a normal `dvt init` (default image, or an explicit
+    # literal ref) never pays for a network round-trip it doesn't need.
+    if "/" not in image and ":" not in image and not list_cached_images(settings):
 
         def do_sync(_status: object) -> Result[list[str], Exception]:
             with httpx.Client() as client:

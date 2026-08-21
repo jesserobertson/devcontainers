@@ -337,3 +337,23 @@ def test_resolve_image_ref_skips_cached_entry_that_is_not_a_json_object(settings
 
     assert result.is_ok()
     assert result.unwrap() == "ghcr.io/x/base-cuda:latest"
+
+
+def test_resolve_image_ref_ignores_a_non_list_aliases_field(settings):
+    settings.images_dir.mkdir(parents=True)
+    (settings.images_dir / "broken.json").write_text(
+        json.dumps(
+            {
+                "name": "broken",
+                "description": "",
+                "ref": "ghcr.io/x/broken:latest",
+                "aliases": "not-a-list",
+            }
+        )
+    )
+    _write_image(settings, "base-cuda", "ghcr.io/x/base-cuda:latest")
+
+    result = resolve_image_ref("base-cuda", settings)
+
+    assert result.is_ok()
+    assert result.unwrap() == "ghcr.io/x/base-cuda:latest"

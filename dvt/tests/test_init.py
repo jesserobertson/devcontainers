@@ -135,6 +135,27 @@ def test_init_image_sync_failure_is_non_fatal_and_falls_through(
     assert written["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
 
 
+def test_init_skips_auto_sync_when_image_is_already_a_literal_ref(
+    tmp_path, settings, monkeypatch
+):
+    # A literal ref (contains "/" or ":") never needs alias resolution, so
+    # init must never pay for a network round-trip to resolve it - including
+    # the default (unset --image), which is already a literal ref.
+    def fail_if_called(settings_arg, client):
+        raise AssertionError("sync_images should not be called for a literal ref")
+
+    monkeypatch.setattr("devtemplate.commands.init.sync_images", fail_if_called)
+    project_dir = tmp_path / "my-project"
+
+    result = runner.invoke(app, ["init", str(project_dir)])
+
+    assert result.exit_code == 0, result.output
+    written = json.loads(
+        (project_dir / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert written["image"] == DEFAULT_IMAGE
+
+
 def test_init_image_option_overrides_default(tmp_path, settings):
     project_dir = tmp_path / "my-project"
 

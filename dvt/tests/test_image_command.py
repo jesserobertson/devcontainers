@@ -239,7 +239,7 @@ def test_update_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settin
 
 
 def test_update_works_on_an_image_just_created_with_no_prior_sync(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, settings
 ):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
