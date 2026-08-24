@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+import httpx
 import logerr
 import typer
 from docker.client import DockerClient
@@ -27,8 +28,11 @@ from devtemplate.cli_support import (
 from devtemplate.commands import feature_app, image_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
+from devtemplate.features import clear_pulled_features
+from devtemplate.images import sync_images
 from devtemplate.runtime import get_client
 from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
+from devtemplate.store import sync_templates
 from devtemplate.workspace import resolve_existing, resolve_for_up, up_workspace
 
 app = typer.Typer(
@@ -91,6 +95,53 @@ def root_callback(
         level = "DEBUG" if debug else "INFO"
         logger.add(sys.stderr, level=level)
         logerr.configure(enabled=True, level=level)
+
+
+@app.command()
+def sync(
+    json_output: bool = typer.Option(  # noqa: B008
+        False,
+        "--json",
+        help="Print machine-readable JSON instead of human-readable text.",
+    ),
+) -> None:
+    """Refresh the cached feature and image registries from GitHub.
+
+    Also clears the local cache of pulled devcontainer spec Feature artifacts
+    (the OCI ref each template's "features" map points at, e.g.
+    "ghcr.io/.../py-devtools:latest") - `dvt up` caches those forever once
+    pulled once (see devtemplate.features.pull_feature), which is correct for
+    an immutable version tag but means a moved `:latest` upstream would
+    otherwise never be noticed on a machine that already pulled it. `sync` is
+    the existing "go get whatever's current" entry point, so it clears both.
+    """
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+
+    clear_pulled_features(settings.features_dir)
+
+    @wrap_result
+    def do_sync(_status: object) -> dict[str, list[str]]:
+        with httpx.Client() as client:
+            features = sync_templates(settings, client).unwrap()
+            images = sync_images(settings, client).unwrap()
+        return {"features": features, "images": images}
+
+    result = with_status(
+        json_output, console, "Syncing features and images from GitHub...", do_sync
+    )
+    synced = unwrap_or_exit(
+        result, console, prefix="Sync failed: ", json_output=json_output
+    )
+    emit_success(
+        json_output,
+        synced,
+        lambda: console.print(
+            f"Synced {len(synced['features'])} features: "
+            f"{', '.join(synced['features'])}\n"
+            f"Synced {len(synced['images'])} images: "
+            f"{', '.join(synced['images'])}"
+        ),
+    )
 
 
 @app.command()

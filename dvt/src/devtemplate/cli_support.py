@@ -84,7 +84,7 @@ def with_status[T](
     (passed None instead of a live status) since a spinner's live ANSI
     redraws would corrupt --json's single-line machine-readable output.
 
-    Most callers (stop, delete, feature sync/add) ignore the status
+    Most callers (stop, delete, sync, feature add) ignore the status
     argument entirely - it exists for up's on_stage wiring, which needs
     the live Status object itself (status.update) to report sub-stage
     progress from inside up_workspace, not just a single start/end spinner.

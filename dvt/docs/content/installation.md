@@ -38,7 +38,7 @@ All settings are environment variables, prefixed `DVT_`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DVT_GITHUB_REPO` | `jesserobertson/devcontainers` | Repo `dvt feature sync` fetches `templates/` from, as `owner/repo` |
+| `DVT_GITHUB_REPO` | `jesserobertson/devcontainers` | Repo `dvt sync` fetches `templates/`/`images/` from, as `owner/repo` |
 | `DVT_GITHUB_BRANCH` | `main` | Branch within that repo |
 | `DVT_RUNTIME` | `auto` | Container runtime for `up`/`ssh`/`stop`/`delete`: `auto` (prefer Docker, fall back to Podman), `docker`, or `podman` |
 | `DVT_PODMAN_MACHINE_AUTO_START` | `true` | Auto-start a stopped Podman machine — see [below](#podman-on-windows) |

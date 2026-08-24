@@ -203,113 +203,6 @@ def test_show_error_message_is_not_mangled_by_rich_markup(settings, monkeypatch)
     assert "[red]hacked[/red]" in result.stdout
 
 
-def test_sync_reports_synced_feature_names(settings, monkeypatch):
-    from logerr import Ok
-
-    monkeypatch.setattr(
-        "devtemplate.commands.feature.sync_templates",
-        lambda settings_arg, client: Ok(["fastapi", "agent"]),
-    )
-
-    result = runner.invoke(app, ["sync"])
-    assert result.exit_code == 0
-    assert "fastapi" in result.stdout
-    assert "agent" in result.stdout
-
-
-def test_sync_shows_a_status_spinner_while_syncing(settings, monkeypatch):
-    from logerr import Ok
-
-    sync_calls = []
-
-    def fake_sync(settings_arg, client):
-        sync_calls.append(True)
-        return Ok(["fastapi"])
-
-    monkeypatch.setattr("devtemplate.commands.feature.sync_templates", fake_sync)
-
-    entered = []
-
-    class FakeStatus:
-        def __enter__(self):
-            entered.append(True)
-            return self
-
-        def __exit__(self, *exc_info):
-            return False
-
-    captured = {}
-
-    def fake_status(message, **kwargs):
-        captured["message"] = message
-        return FakeStatus()
-
-    monkeypatch.setattr(console, "status", fake_status)
-
-    result = runner.invoke(app, ["sync"])
-
-    assert result.exit_code == 0
-    assert entered == [True]
-    assert sync_calls == [True]
-    assert "sync" in captured["message"].lower()
-
-
-def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
-    # pull_feature (used by `dvt up`) caches an OCI Feature artifact forever
-    # once pulled, keyed by the ref string - correct for an immutable
-    # version tag, but means a moved `:latest` upstream is otherwise never
-    # noticed on a machine that already pulled it (see
-    # devtemplate.features.clear_pulled_features's docstring). `sync` is the
-    # existing "go get whatever's current" entry point, so a stale pulled
-    # artifact from a previous run must be gone by the time it returns.
-    from logerr import Ok
-
-    stale = settings.features_dir / "deadbeef"
-    stale.mkdir(parents=True)
-    (stale / "install.sh").write_text("echo stale\n")
-
-    monkeypatch.setattr(
-        "devtemplate.commands.feature.sync_templates",
-        lambda settings_arg, client: Ok(["fastapi"]),
-    )
-
-    result = runner.invoke(app, ["sync"])
-    assert result.exit_code == 0
-    assert not stale.exists()
-
-
-def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch):
-    from logerr import Ok
-
-    monkeypatch.setattr(
-        "devtemplate.commands.feature.sync_templates",
-        lambda settings_arg, client: Ok(["fastapi", "agent"]),
-    )
-
-    result = runner.invoke(app, ["sync", "--json"])
-
-    assert result.exit_code == 0
-    printed = json.loads(result.output)
-    assert printed == {"ok": True, "synced": ["fastapi", "agent"]}
-    _assert_matches_declared_output_schema("feature sync", printed)
-
-
-def test_sync_json_prints_ok_false_on_failure(settings, monkeypatch):
-    from logerr import Err
-
-    monkeypatch.setattr(
-        "devtemplate.commands.feature.sync_templates",
-        lambda settings_arg, client: Err(RuntimeError("network unreachable")),
-    )
-
-    result = runner.invoke(app, ["sync", "--json"])
-
-    assert result.exit_code == 1
-    printed = json.loads(result.output)
-    assert printed["ok"] is False
-    assert "network unreachable" in printed["error"]
-
-
 def test_add_merges_into_existing_devcontainer_json(tmp_path, settings, monkeypatch):
     monkeypatch.chdir(tmp_path)
     devcontainer_dir = tmp_path / ".devcontainer"
@@ -1063,7 +956,7 @@ def test_remove_still_works_after_the_template_leaves_the_cache(
     assert add_result.exit_code == 0, add_result.output
 
     # Simulate the template being pruned from the cache (e.g. removed
-    # upstream, then 'dvt feature sync') - the sidecar still says it's
+    # upstream, then 'dvt sync') - the sidecar still says it's
     # applied, and remove must still be able to act on that.
     import shutil
 

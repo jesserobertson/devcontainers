@@ -107,58 +107,14 @@ def test_show_fuzzy_resolves_a_close_typo(settings, monkeypatch):
     assert "base-cuda" in result.stdout
 
 
-def test_sync_reports_synced_image_names(settings, monkeypatch):
-    from logerr import Ok
-
-    monkeypatch.setattr(
-        "devtemplate.commands.image.sync_images",
-        lambda settings_arg, client: Ok(["base-cuda", "base-ubuntu"]),
-    )
-
-    result = runner.invoke(app, ["sync"])
-    assert result.exit_code == 0
-    assert "base-cuda" in result.stdout
-    assert "base-ubuntu" in result.stdout
-
-
-def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch):
-    from logerr import Ok
-
-    monkeypatch.setattr(
-        "devtemplate.commands.image.sync_images",
-        lambda settings_arg, client: Ok(["base-cuda"]),
-    )
-
-    result = runner.invoke(app, ["sync", "--json"])
-    assert result.exit_code == 0
-    printed = json.loads(result.output)
-    assert printed == {"ok": True, "synced": ["base-cuda"]}
-    _assert_matches_declared_output_schema("image sync", printed)
-
-
-def test_sync_json_prints_ok_false_on_failure(settings, monkeypatch):
-    from logerr import Err
-
-    monkeypatch.setattr(
-        "devtemplate.commands.image.sync_images",
-        lambda settings_arg, client: Err(RuntimeError("network unreachable")),
-    )
-
-    result = runner.invoke(app, ["sync", "--json"])
-    assert result.exit_code == 1
-    printed = json.loads(result.output)
-    assert printed["ok"] is False
-    assert "network unreachable" in printed["error"]
-
-
-def test_create_writes_images_json_in_repo_root(tmp_path, monkeypatch):
+def test_set_writes_images_json_in_repo_root(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
     result = runner.invoke(
         app,
         [
-            "create",
+            "set",
             "base-ubuntu",
             "--ref",
             "ghcr.io/jesserobertson/base-ubuntu:latest",
@@ -179,41 +135,49 @@ def test_create_writes_images_json_in_repo_root(tmp_path, monkeypatch):
     }
 
 
-def test_create_json_prints_ok_true_with_path(tmp_path, monkeypatch):
+def test_set_json_prints_ok_true_with_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
 
     result = runner.invoke(
         app,
-        ["create", "base-ubuntu", "--ref", "x", "--description", "y", "--json"],
+        ["set", "base-ubuntu", "--ref", "x", "--description", "y", "--json"],
     )
 
     assert result.exit_code == 0, result.output
     printed = json.loads(result.output)
     assert printed["ok"] is True
     assert printed["name"] == "base-ubuntu"
-    _assert_matches_declared_output_schema("image create", printed)
+    _assert_matches_declared_output_schema("image set", printed)
 
 
-def test_create_fails_outside_a_git_checkout(tmp_path, monkeypatch):
+def test_set_fails_outside_a_git_checkout(tmp_path, monkeypatch):
     lonely = tmp_path / "no-git-here"
     lonely.mkdir()
     monkeypatch.chdir(lonely)
 
     result = runner.invoke(
-        app, ["create", "base-ubuntu", "--ref", "x", "--description", "y"]
+        app, ["set", "base-ubuntu", "--ref", "x", "--description", "y"]
     )
 
     assert result.exit_code == 1
 
 
-def test_update_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settings):
+def test_set_new_image_without_ref_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+
+    result = runner.invoke(app, ["set", "base-ubuntu", "--description", "y"])
+
+    assert result.exit_code == 1
+
+
+def test_set_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settings):
     # repo_dir is a SUBdirectory of tmp_path, not tmp_path itself: the settings
     # fixture points settings.images_dir at tmp_path/"images" (data_dir == tmp_path),
     # so a repo root directly at tmp_path would make repo_dir/"images" collide with
-    # settings.images_dir on disk - update's fuzzy-resolved <name> argument needs
-    # both directories to exist independently (the XDG cache for name resolution,
-    # the repo checkout for the actual file being edited).
+    # settings.images_dir on disk - set's fuzzy-resolved <name> argument is checked
+    # against the repo checkout, which needs to exist independently of the XDG cache.
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
     monkeypatch.chdir(repo_dir)
@@ -224,29 +188,63 @@ def test_update_edits_the_existing_repo_local_file(tmp_path, monkeypatch, settin
             {"name": "base-ubuntu", "description": "old", "ref": "x", "aliases": []}
         )
     )
-    # update's `<name>` argument is fuzzy-resolved against the cached image
-    # registry (Task 2's decorator), so the local XDG cache needs the name too.
-    settings.images_dir.mkdir(parents=True)
-    (settings.images_dir / "base-ubuntu.json").write_text(
-        json.dumps({"name": "base-ubuntu"})
-    )
 
-    result = runner.invoke(app, ["update", "base-ubuntu", "--description", "new"])
+    result = runner.invoke(app, ["set", "base-ubuntu", "--description", "new"])
 
     assert result.exit_code == 0, result.output
     written = json.loads((repo_dir / "images" / "base-ubuntu.json").read_text())
     assert written["description"] == "new"
 
 
-def test_update_works_on_an_image_just_created_with_no_prior_sync(
-    tmp_path, monkeypatch, settings
+def test_set_fuzzy_resolves_a_close_typo_against_an_existing_image(
+    tmp_path, monkeypatch
 ):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "base-ubuntu.json").write_text(
+        json.dumps(
+            {"name": "base-ubuntu", "description": "old", "ref": "x", "aliases": []}
+        )
+    )
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+
+    result = runner.invoke(app, ["set", "bas-ubuntu", "--description", "new"])
+
+    assert result.exit_code == 0, result.output
+    written = json.loads((tmp_path / "images" / "base-ubuntu.json").read_text())
+    assert written["description"] == "new"
+
+
+def test_set_a_brand_new_name_with_no_close_match_never_prompts(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "base-ubuntu.json").write_text(
+        json.dumps(
+            {"name": "base-ubuntu", "description": "d", "ref": "x", "aliases": []}
+        )
+    )
+    monkeypatch.setattr(
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not prompt")),
+    )
+
+    result = runner.invoke(
+        app, ["set", "totally-unrelated", "--ref", "x", "--description", "y"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "images" / "totally-unrelated.json").exists()
+
+
+def test_set_twice_creates_then_updates_with_no_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".git").mkdir()
     create_result = runner.invoke(
         app,
         [
-            "create",
+            "set",
             "my-image",
             "--ref",
             "ghcr.io/x/my-image:latest",
@@ -257,7 +255,7 @@ def test_update_works_on_an_image_just_created_with_no_prior_sync(
     assert create_result.exit_code == 0, create_result.output
 
     update_result = runner.invoke(
-        app, ["update", "my-image", "--description", "new description"]
+        app, ["set", "my-image", "--description", "new description"]
     )
 
     assert update_result.exit_code == 0, update_result.output
@@ -265,35 +263,27 @@ def test_update_works_on_an_image_just_created_with_no_prior_sync(
     assert written["description"] == "new description"
 
 
-def test_delete_removes_the_repo_local_file(tmp_path, monkeypatch, settings):
-    repo_dir = tmp_path / "repo"
-    repo_dir.mkdir()
-    monkeypatch.chdir(repo_dir)
-    (repo_dir / ".git").mkdir()
-    (repo_dir / "images").mkdir()
-    (repo_dir / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
-    settings.images_dir.mkdir(parents=True)
-    (settings.images_dir / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
+def test_unset_removes_the_repo_local_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
 
-    result = runner.invoke(app, ["delete", "base-ubuntu"])
+    result = runner.invoke(app, ["unset", "base-ubuntu"])
 
     assert result.exit_code == 0, result.output
-    assert not (repo_dir / "images" / "base-ubuntu.json").exists()
+    assert not (tmp_path / "images" / "base-ubuntu.json").exists()
 
 
-def test_delete_json_prints_ok_true_with_path(tmp_path, monkeypatch, settings):
-    repo_dir = tmp_path / "repo"
-    repo_dir.mkdir()
-    monkeypatch.chdir(repo_dir)
-    (repo_dir / ".git").mkdir()
-    (repo_dir / "images").mkdir()
-    (repo_dir / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
-    settings.images_dir.mkdir(parents=True)
-    (settings.images_dir / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
+def test_unset_json_prints_ok_true_with_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
 
-    result = runner.invoke(app, ["delete", "base-ubuntu", "--json"])
+    result = runner.invoke(app, ["unset", "base-ubuntu", "--json"])
 
     assert result.exit_code == 0, result.output
     printed = json.loads(result.output)
     assert printed["ok"] is True
-    _assert_matches_declared_output_schema("image delete", printed)
+    _assert_matches_declared_output_schema("image unset", printed)

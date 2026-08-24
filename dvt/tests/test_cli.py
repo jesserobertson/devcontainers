@@ -35,6 +35,116 @@ def test_cli_help_exits_zero():
     assert result.exit_code == 0
 
 
+def test_sync_reports_synced_features_and_images(settings, monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Ok(["fastapi", "agent"]),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "sync_images",
+        lambda settings_arg, client: cli_module.Ok(["base-cuda"]),
+    )
+
+    result = runner.invoke(cli_module.app, ["sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "fastapi" in result.stdout
+    assert "agent" in result.stdout
+    assert "base-cuda" in result.stdout
+
+
+def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
+    import devtemplate.cli as cli_module
+
+    stale = settings.features_dir / "deadbeef"
+    stale.mkdir(parents=True)
+    (stale / "install.sh").write_text("echo stale\n")
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Ok(["fastapi"]),
+    )
+    monkeypatch.setattr(
+        cli_module, "sync_images", lambda settings_arg, client: cli_module.Ok([])
+    )
+
+    result = runner.invoke(cli_module.app, ["sync"])
+
+    assert result.exit_code == 0
+    assert not stale.exists()
+
+
+def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Ok(["fastapi"]),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "sync_images",
+        lambda settings_arg, client: cli_module.Ok(["base-cuda"]),
+    )
+
+    result = runner.invoke(cli_module.app, ["sync", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.output)
+    assert printed == {"ok": True, "features": ["fastapi"], "images": ["base-cuda"]}
+    _assert_matches_declared_output_schema("sync", printed)
+
+
+def test_sync_json_prints_ok_false_on_feature_sync_failure(settings, monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Err(
+            RuntimeError("network unreachable")
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module, "sync_images", lambda settings_arg, client: cli_module.Ok([])
+    )
+
+    result = runner.invoke(cli_module.app, ["sync", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "network unreachable" in printed["error"]
+
+
+def test_sync_json_prints_ok_false_on_image_sync_failure(settings, monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Ok(["fastapi"]),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "sync_images",
+        lambda settings_arg, client: cli_module.Err(RuntimeError("image sync broke")),
+    )
+
+    result = runner.invoke(cli_module.app, ["sync", "--json"])
+
+    assert result.exit_code == 1
+    printed = json.loads(result.output)
+    assert printed["ok"] is False
+    assert "image sync broke" in printed["error"]
+
+
 def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):
     import devtemplate.cli as cli_module
 

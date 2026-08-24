@@ -15,7 +15,6 @@ from rich.table import Table
 
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
-from devtemplate.features import clear_pulled_features
 from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
@@ -51,7 +50,7 @@ def list_features(
 
     names = list_cached_templates(settings)
     if not names and not json_output:
-        console.print("No cached features. Run 'dvt feature sync' first.")
+        console.print("No cached features. Run 'dvt sync' first.")
         raise typer.Exit(code=0)
 
     rows: list[dict[str, str]] = []
@@ -102,45 +101,6 @@ def show_feature(
         load_cached_template(settings, name), console, json_output=json_output
     )
     print(json.dumps(template, indent=2))
-
-
-@app.command("sync")
-def sync(
-    json_output: bool = typer.Option(  # noqa: B008
-        False,
-        "--json",
-        help="Print machine-readable JSON instead of human-readable text.",
-    ),
-) -> None:
-    """Refresh the cached feature registry from GitHub.
-
-    Also clears the local cache of pulled devcontainer spec Feature artifacts
-    (the OCI ref each template's "features" map points at, e.g.
-    "ghcr.io/.../py-devtools:latest") - `dvt up` caches those forever once
-    pulled once (see devtemplate.features.pull_feature), which is correct for
-    an immutable version tag but means a moved `:latest` upstream would
-    otherwise never be noticed on a machine that already pulled it. `sync` is
-    the existing "go get whatever's current" entry point, so it clears both.
-    """
-    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
-
-    clear_pulled_features(settings.features_dir)
-
-    def do_sync(_status: object) -> Result[list[str], Exception]:
-        with httpx.Client() as client:
-            return sync_templates(settings, client)
-
-    result = with_status(
-        json_output, console, "Syncing features from GitHub...", do_sync
-    )
-    names = unwrap_or_exit(
-        result, console, prefix="Sync failed: ", json_output=json_output
-    )
-    emit_success(
-        json_output,
-        {"synced": names},
-        lambda: console.print(f"Synced {len(names)} features: {', '.join(names)}"),
-    )
 
 
 # "description" is feature-registry metadata (used by 'dvt feature list'/'show'), not a

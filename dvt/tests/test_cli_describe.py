@@ -29,7 +29,7 @@ def test_describe_reports_dvt_version():
 
 def test_describe_lists_every_top_level_command():
     commands = _describe()["commands"]
-    for name in ("init", "info", "up", "ssh", "stop", "delete"):
+    for name in ("init", "info", "up", "ssh", "stop", "delete", "sync"):
         assert name in commands, f"{name!r} missing from --describe output"
 
 
@@ -38,7 +38,6 @@ def test_describe_lists_feature_subcommands_with_a_dotted_name():
     for name in (
         "feature list",
         "feature show",
-        "feature sync",
         "feature add",
         "feature remove",
     ):

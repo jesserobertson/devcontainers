@@ -3,17 +3,19 @@
 This walkthrough scaffolds a new project, layers on the `fastapi` and `agent` features, and
 starts it in a real container, built and run directly via Docker or Podman.
 
-## 1. Sync features
+## 1. Sync
 
-Features are fetched from this repo's `templates/` directory on GitHub:
+Features and images are fetched from this repo's `templates/` and `images/`
+directories on GitHub:
 
 ```bash
-dvt feature sync
+dvt sync
 ```
 
 ```
 Synced 12 features: agent, cli, fastapi, huggingface, jax, marimo, mojo, ollama,
 py-devtools, pytorch, rapids, transformers
+Synced 2 images: base-cuda, base-ubuntu
 ```
 
 ## 2. See what's available

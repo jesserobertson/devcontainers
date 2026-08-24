@@ -6,7 +6,7 @@
 single `dvt feature add <name>` often touches both at once:
 
 - **A dvt feature** is one of the curated overlays under this repo's `templates/` directory
-  (`fastapi`, `agent`, `pytorch`, ...), fetched by `dvt feature sync` and applied with `dvt
+  (`fastapi`, `agent`, `pytorch`, ...), fetched by `dvt sync` and applied with `dvt
   feature add <name>`. It's a devcontainer.json *fragment* — image, mounts,
   `postCreateCommand`, and so on — merged into your project's `devcontainer.json` at add-time,
   per the [merge algorithm](#the-merge-algorithm) below. Nothing is downloaded or built when

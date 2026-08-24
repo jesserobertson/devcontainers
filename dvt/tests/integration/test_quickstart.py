@@ -5,7 +5,7 @@ real GHCR-published Features - never a fake local template.
 Opt-in only - run with `pixi run test integration`, never part of `pixi run test
 all`, `pixi run pytest`, or CI. Requires network access and a reachable Docker
 or Podman engine (skips cleanly, not a failure, if the runtime is unreachable;
-a missing network connection surfaces as a real failure from `feature sync`,
+a missing network connection surfaces as a real failure from `sync`,
 since this suite's whole point is exercising the real thing).
 
 Written after a live run-through of the quickstart surfaced four real bugs
@@ -52,9 +52,9 @@ runtime_unreachable = get_client("auto").is_err()
 
 
 def test_feature_sync_and_list(settings) -> None:
-    """Quickstart steps 1-2: `dvt feature sync` then `dvt feature list`
+    """Quickstart steps 1-2: `dvt sync` then `dvt feature list`
     against the real GitHub repo - no container runtime needed."""
-    sync_result = runner.invoke(app, ["feature", "sync"])
+    sync_result = runner.invoke(app, ["sync"])
     assert sync_result.exit_code == 0, sync_result.output
     assert "cli" in sync_result.output
 
@@ -68,7 +68,7 @@ def test_init_and_feature_add(settings, tmp_path, monkeypatch) -> None:
     features' requirements in via `dvt feature add`. Config-level only, no
     container build - the full build+run+ssh cycle for one feature is
     covered by test_quickstart_cli_feature_full_lifecycle below."""
-    sync_result = runner.invoke(app, ["feature", "sync"])
+    sync_result = runner.invoke(app, ["sync"])
     assert sync_result.exit_code == 0, sync_result.output
 
     project_dir = tmp_path / "my-cli-project"
@@ -110,7 +110,7 @@ def test_quickstart_cli_feature_full_lifecycle(settings, tmp_path, monkeypatch) 
       Feature-built image, not just the synthetic alpine one
       test_native_runtime_lifecycle.py uses)
     """
-    sync_result = runner.invoke(app, ["feature", "sync"])
+    sync_result = runner.invoke(app, ["sync"])
     assert sync_result.exit_code == 0, sync_result.output
 
     project_dir = tmp_path / "dvt-test-cli"

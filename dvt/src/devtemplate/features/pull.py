@@ -27,9 +27,9 @@ def clear_pulled_features(cache_dir: Path) -> None:
     - correct for an immutable version tag, but a mutable tag like `:latest`
     (what every template in this repo references) can move upstream without
     that ever being noticed locally. There was previously no way to force a
-    refresh short of deleting this directory by hand; `dvt feature sync`
-    calls this precisely because "go get whatever's current" is already its
-    whole purpose."""
+    refresh short of deleting this directory by hand; `dvt sync` calls this
+    precisely because "go get whatever's current" is already its whole
+    purpose."""
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
 

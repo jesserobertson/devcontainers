@@ -4,15 +4,14 @@ import httpx
 import pytest
 
 from devtemplate.images import (
-    create_image_file,
-    delete_image_file,
     find_repo_root,
     list_cached_images,
     load_cached_image,
     read_image_manifest,
     resolve_image_ref,
+    set_image_file,
     sync_images,
-    update_image_file,
+    unset_image_file,
 )
 
 
@@ -153,10 +152,10 @@ def test_find_repo_root_returns_err_when_no_git_dir_found(tmp_path):
     assert isinstance(result.unwrap_err(), FileNotFoundError)
 
 
-def test_create_image_file_writes_expected_json(tmp_path):
+def test_set_image_file_creates_a_new_image(tmp_path):
     (tmp_path / ".git").mkdir()
 
-    result = create_image_file(
+    result = set_image_file(
         tmp_path,
         "base-ubuntu",
         ref="ghcr.io/jesserobertson/base-ubuntu:latest",
@@ -174,20 +173,29 @@ def test_create_image_file_writes_expected_json(tmp_path):
     }
 
 
-def test_create_image_file_refuses_when_already_exists(tmp_path):
-    images_dir = tmp_path / "images"
-    images_dir.mkdir()
-    (images_dir / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
+def test_set_image_file_new_image_defaults_aliases_to_empty_list(tmp_path):
+    (tmp_path / ".git").mkdir()
 
-    result = create_image_file(
-        tmp_path, "base-ubuntu", ref="x", description="y", aliases=[]
-    )
+    result = set_image_file(tmp_path, "base-ubuntu", ref="x", description="y")
 
+    assert result.is_ok()
+    written = json.loads((tmp_path / "images" / "base-ubuntu.json").read_text())
+    assert written["aliases"] == []
+
+
+def test_set_image_file_new_image_requires_ref(tmp_path):
+    result = set_image_file(tmp_path, "base-ubuntu", description="y")
     assert result.is_err()
-    assert isinstance(result.unwrap_err(), FileExistsError)
+    assert isinstance(result.unwrap_err(), ValueError)
 
 
-def test_update_image_file_edits_only_given_fields(tmp_path):
+def test_set_image_file_new_image_requires_description(tmp_path):
+    result = set_image_file(tmp_path, "base-ubuntu", ref="x")
+    assert result.is_err()
+    assert isinstance(result.unwrap_err(), ValueError)
+
+
+def test_set_image_file_edits_only_given_fields_on_an_existing_image(tmp_path):
     images_dir = tmp_path / "images"
     images_dir.mkdir()
     (images_dir / "base-ubuntu.json").write_text(
@@ -201,7 +209,7 @@ def test_update_image_file_edits_only_given_fields(tmp_path):
         )
     )
 
-    result = update_image_file(tmp_path, "base-ubuntu", description="new description")
+    result = set_image_file(tmp_path, "base-ubuntu", description="new description")
 
     assert result.is_ok()
     written = json.loads((images_dir / "base-ubuntu.json").read_text())
@@ -210,25 +218,19 @@ def test_update_image_file_edits_only_given_fields(tmp_path):
     assert written["aliases"] == ["ubuntu"]
 
 
-def test_update_image_file_refuses_when_missing(tmp_path):
-    result = update_image_file(tmp_path, "nonexistent", description="x")
-    assert result.is_err()
-    assert isinstance(result.unwrap_err(), FileNotFoundError)
-
-
-def test_delete_image_file_removes_the_file(tmp_path):
+def test_unset_image_file_removes_the_file(tmp_path):
     images_dir = tmp_path / "images"
     images_dir.mkdir()
     (images_dir / "base-ubuntu.json").write_text('{"name": "base-ubuntu"}')
 
-    result = delete_image_file(tmp_path, "base-ubuntu")
+    result = unset_image_file(tmp_path, "base-ubuntu")
 
     assert result.is_ok()
     assert not (images_dir / "base-ubuntu.json").exists()
 
 
-def test_delete_image_file_refuses_when_missing(tmp_path):
-    result = delete_image_file(tmp_path, "nonexistent")
+def test_unset_image_file_refuses_when_missing(tmp_path):
+    result = unset_image_file(tmp_path, "nonexistent")
     assert result.is_err()
     assert isinstance(result.unwrap_err(), FileNotFoundError)
 

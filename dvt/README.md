@@ -13,7 +13,7 @@ repo root.
 
 ## Usage
 
-    dvt feature sync
+    dvt sync
     dvt feature list
     dvt init ./my-project
     dvt feature add fastapi            # run from inside a project with .devcontainer/devcontainer.json

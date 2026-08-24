@@ -13,7 +13,7 @@ from rich.console import Console
 from devtemplate.cli_support import unwrap_or_exit
 from devtemplate.config import Settings, load_settings
 
-__all__ = ["fuzzy_argument", "resolve_or_confirm"]
+__all__ = ["fuzzy_argument", "resolve_or_confirm", "resolve_or_create"]
 
 
 def resolve_or_confirm(
@@ -59,6 +59,38 @@ def resolve_or_confirm(
             return Err(ValueError(f"Aborted: no {label} named {query!r}."))
         case _:
             raise AssertionError("unreachable")
+
+
+def resolve_or_create(
+    query: str,
+    candidates: list[str],
+    *,
+    label: str,
+    assume_yes: bool = False,
+    interactive: bool = True,
+) -> Result[str, Exception]:
+    """Like resolve_or_confirm, but for upsert-style resolution (e.g. `dvt
+    image set`): a query with no close match at all is passed through
+    unchanged instead of erroring, since it may be a brand-new name rather
+    than a typo of an existing one. An exact match, or a close-but-not-exact
+    typo, behaves identically to resolve_or_confirm.
+
+    Uses a stricter 0.8 cutoff (vs. resolve_or_confirm's 0.6) for what counts
+    as "close": candidate sets here are often a family of related-but-distinct
+    names sharing a long common prefix (e.g. images named `base-ubuntu`,
+    `base-cuda`, `base-julia`, ...), which resolve_or_confirm's looser cutoff
+    flags as a "did you mean" typo of each other at ~0.6 similarity - wrongly,
+    since these are separate names, not typos, and confirming the prompt
+    would silently write to the wrong file. A real single-character typo
+    (e.g. `bas-ubuntu` for `base-ubuntu`) still scores ~0.9+ and is unaffected.
+    """
+    if query in candidates or not difflib.get_close_matches(
+        query, candidates, n=1, cutoff=0.8
+    ):
+        return Ok(query)
+    return resolve_or_confirm(
+        query, candidates, label=label, assume_yes=assume_yes, interactive=interactive
+    )
 
 
 def fuzzy_argument(

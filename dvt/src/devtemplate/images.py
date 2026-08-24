@@ -19,15 +19,14 @@ IMAGE_MANIFEST_KEY = "managed_images"
 IMAGE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 __all__ = [
-    "create_image_file",
-    "delete_image_file",
     "find_repo_root",
     "list_cached_images",
     "load_cached_image",
     "read_image_manifest",
     "resolve_image_ref",
+    "set_image_file",
     "sync_images",
-    "update_image_file",
+    "unset_image_file",
     "validate_image_name",
     "write_image_manifest",
 ]
@@ -109,7 +108,7 @@ def load_cached_image(settings: Settings, name: str) -> dict[str, Any]:
     path = settings.images_dir / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(
-            f"No cached image named {name!r}. Run 'dvt image sync' first."
+            f"No cached image named {name!r}. Run 'dvt sync' first."
         )
     return cast(dict[str, Any], json.loads(path.read_text()))
 
@@ -118,10 +117,10 @@ def load_cached_image(settings: Settings, name: str) -> dict[str, Any]:
 def find_repo_root(start: Path) -> Path:
     """Walk upward from `start` (inclusive) looking for a `.git` directory.
 
-    dvt image create/update/delete edit images/*.json directly in a real
-    checkout of the source repo (see module docstring / design spec) -
-    unlike sync/list/show, which work from a plain XDG cache with no
-    checkout required at all.
+    dvt image set/unset edit images/*.json directly in a real checkout of
+    the source repo (see module docstring / design spec) - unlike
+    sync/list/show, which work from a plain XDG cache with no checkout
+    required at all.
     """
     current = start.resolve()
     for candidate in (current, *current.parents):
@@ -129,35 +128,13 @@ def find_repo_root(start: Path) -> Path:
             return candidate
     raise FileNotFoundError(
         f"No .git directory found in {start} or any parent - 'dvt image "
-        "create/update/delete' must be run from inside a checkout of the "
-        "devcontainers repo."
+        "set/unset' must be run from inside a checkout of the devcontainers "
+        "repo."
     )
 
 
 @wrap_result
-def create_image_file(
-    repo_root: Path, name: str, *, ref: str, description: str, aliases: list[str]
-) -> Path:
-    validate_image_name(name).unwrap()
-    images_dir = repo_root / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    path = images_dir / f"{name}.json"
-    if path.exists():
-        raise FileExistsError(
-            f"{path} already exists. Use 'dvt image update {name}' to change it."
-        )
-    metadata = {
-        "name": name,
-        "description": description,
-        "ref": ref,
-        "aliases": aliases,
-    }
-    path.write_text(json.dumps(metadata, indent=2) + "\n")
-    return path
-
-
-@wrap_result
-def update_image_file(
+def set_image_file(
     repo_root: Path,
     name: str,
     *,
@@ -165,25 +142,45 @@ def update_image_file(
     description: str | None = None,
     aliases: list[str] | None = None,
 ) -> Path:
+    """Create or update images/<name>.json in a repo checkout - an upsert.
+
+    A brand-new name requires both `ref` and `description` (the full record
+    a fresh file needs); an existing name only changes the fields passed -
+    `aliases`, if passed, replaces the existing list entirely rather than
+    appending to it.
+    """
     validate_image_name(name).unwrap()
-    path = repo_root / "images" / f"{name}.json"
+    images_dir = repo_root / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    path = images_dir / f"{name}.json"
+
     if not path.exists():
-        raise FileNotFoundError(
-            f"{path} does not exist. Use 'dvt image create {name}' first."
-        )
-    metadata = cast(dict[str, Any], json.loads(path.read_text()))
-    if ref is not None:
-        metadata["ref"] = ref
-    if description is not None:
-        metadata["description"] = description
-    if aliases is not None:
-        metadata["aliases"] = aliases
+        if ref is None or description is None:
+            raise ValueError(
+                f"{path} doesn't exist yet - creating {name!r} needs both "
+                "--ref and --description."
+            )
+        metadata: dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "ref": ref,
+            "aliases": aliases or [],
+        }
+    else:
+        metadata = cast(dict[str, Any], json.loads(path.read_text()))
+        if ref is not None:
+            metadata["ref"] = ref
+        if description is not None:
+            metadata["description"] = description
+        if aliases is not None:
+            metadata["aliases"] = aliases
+
     path.write_text(json.dumps(metadata, indent=2) + "\n")
     return path
 
 
 @wrap_result
-def delete_image_file(repo_root: Path, name: str) -> Path:
+def unset_image_file(repo_root: Path, name: str) -> Path:
     validate_image_name(name).unwrap()
     path = repo_root / "images" / f"{name}.json"
     if not path.exists():

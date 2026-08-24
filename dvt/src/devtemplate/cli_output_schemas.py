@@ -24,17 +24,15 @@ __all__ = [
     "FeatureListOutput",
     "FeatureRemoveOutput",
     "FeatureShowOutput",
-    "FeatureSyncOutput",
-    "ImageCreateOutput",
-    "ImageDeleteOutput",
     "ImageListOutput",
+    "ImageSetOutput",
     "ImageShowOutput",
-    "ImageSyncOutput",
-    "ImageUpdateOutput",
+    "ImageUnsetOutput",
     "InfoOutput",
     "InitOutput",
     "ProjectInfo",
     "StopOutput",
+    "SyncOutput",
     "UpOutput",
 ]
 
@@ -108,9 +106,10 @@ class FeatureShowOutput(RootModel[dict[str, Any]]):
     fixed dvt-defined contract."""
 
 
-class FeatureSyncOutput(BaseModel):
+class SyncOutput(BaseModel):
     ok: Literal[True]
-    synced: list[str]
+    features: list[str]
+    images: list[str]
 
 
 class FeatureAddOutput(BaseModel):
@@ -131,24 +130,13 @@ class ImageShowOutput(RootModel[dict[str, Any]]):
     """Raw pass-through of the cached image's own metadata JSON."""
 
 
-class ImageSyncOutput(BaseModel):
-    ok: Literal[True]
-    synced: list[str]
-
-
-class ImageCreateOutput(BaseModel):
+class ImageSetOutput(BaseModel):
     ok: Literal[True]
     name: str
     path: str
 
 
-class ImageUpdateOutput(BaseModel):
-    ok: Literal[True]
-    name: str
-    path: str
-
-
-class ImageDeleteOutput(BaseModel):
+class ImageUnsetOutput(BaseModel):
     ok: Literal[True]
     name: str
     path: str
@@ -160,17 +148,15 @@ OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "info": InfoOutput,
     "stop": StopOutput,
     "delete": DeleteOutput,
+    "sync": SyncOutput,
     "feature list": FeatureListOutput,
     "feature show": FeatureShowOutput,
-    "feature sync": FeatureSyncOutput,
     "feature add": FeatureAddOutput,
     "feature remove": FeatureRemoveOutput,
     "image list": ImageListOutput,
     "image show": ImageShowOutput,
-    "image sync": ImageSyncOutput,
-    "image create": ImageCreateOutput,
-    "image update": ImageUpdateOutput,
-    "image delete": ImageDeleteOutput,
+    "image set": ImageSetOutput,
+    "image unset": ImageUnsetOutput,
 }
 """Keyed the same way describe_app keys its "commands" dict (dotted names
 for feature subcommands), so devtemplate.cli_support._describe_command can

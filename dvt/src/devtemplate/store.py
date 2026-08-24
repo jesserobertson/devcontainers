@@ -115,6 +115,6 @@ def load_cached_template(settings: Settings, name: str) -> dict[str, Any]:
     path = settings.templates_dir / name / "devcontainer.json"
     if not path.exists():
         raise FileNotFoundError(
-            f"No cached feature named {name!r}. Run 'dvt feature sync' first."
+            f"No cached feature named {name!r}. Run 'dvt sync' first."
         )
     return cast(dict[str, Any], json.loads(path.read_text()))

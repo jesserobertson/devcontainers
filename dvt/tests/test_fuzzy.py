@@ -4,7 +4,7 @@ import typer
 from rich.console import Console
 from typer.testing import CliRunner
 
-from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
+from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm, resolve_or_create
 
 
 def test_exact_match_passes_through_with_no_prompt(monkeypatch):
@@ -63,6 +63,53 @@ def test_non_interactive_close_match_fails_with_suggestion_no_prompt(monkeypatch
     )
     assert result.is_err()
     assert "fastapi" in str(result.unwrap_err())
+
+
+def test_resolve_or_create_no_close_match_passes_through_unchanged():
+    result = resolve_or_create("brand-new-name", ["fastapi", "agent"], label="feature")
+    assert result.is_ok()
+    assert result.unwrap() == "brand-new-name"
+
+
+def test_resolve_or_create_exact_match_passes_through_with_no_prompt(monkeypatch):
+    monkeypatch.setattr(
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not prompt")),
+    )
+    result = resolve_or_create("fastapi", ["fastapi", "agent"], label="feature")
+    assert result.is_ok()
+    assert result.unwrap() == "fastapi"
+
+
+def test_resolve_or_create_close_match_confirmed_yes_resolves(monkeypatch):
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+    result = resolve_or_create("fastpi", ["fastapi", "agent"], label="feature")
+    assert result.is_ok()
+    assert result.unwrap() == "fastapi"
+
+
+def test_resolve_or_create_close_match_confirmed_no_returns_err(monkeypatch):
+    monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+    result = resolve_or_create("fastpi", ["fastapi", "agent"], label="feature")
+    assert result.is_err()
+
+
+def test_resolve_or_create_distinct_name_sharing_a_long_prefix_never_prompts(
+    monkeypatch,
+):
+    # "base-cuda" vs "base-ubuntu" scores ~0.6 on difflib's ratio - a real
+    # typo under resolve_or_confirm's looser cutoff, but here it's a
+    # brand-new, legitimately distinct name that happens to share a
+    # "base-" prefix (see resolve_or_create's docstring). Confirming a "did
+    # you mean" prompt here would silently write to the wrong file, so this
+    # must never prompt.
+    monkeypatch.setattr(
+        "typer.confirm",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not prompt")),
+    )
+    result = resolve_or_create("base-cuda", ["base-ubuntu"], label="image")
+    assert result.is_ok()
+    assert result.unwrap() == "base-cuda"
 
 
 runner = CliRunner()
