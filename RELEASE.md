@@ -84,3 +84,7 @@ touches `base/Dockerfile`. No tagging, no changelog entry; the top-level
 `CHANGELOG.md` documents these with dated sections instead of version
 numbers, matching the fact that nothing here ships as a single versioned
 artifact (see its own header for why).
+
+`base/Dockerfile` is multi-stage: `base-ubuntu` and `base-cuda` build `--target full`,
+`base-ubuntu-slim` builds `--target slim` (a pixi-free `core` stage). All three are in the
+`build.yml` matrix and in `build-images.ps1`'s `$ImageDefs`.

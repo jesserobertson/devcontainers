@@ -12,10 +12,20 @@ For changes to the `dvt` CLI itself, see [`dvt/CHANGELOG.md`](dvt/CHANGELOG.md) 
 
 ### Added
 
-- `cpp-devtools` feature - C/C++ build toolchain installed via pixi: clang/clang++, cmake,
-  ninja, make, pkg-config, ccache, the lldb and gdb debuggers, plus clangd (via clang-tools)
-  and the Helix editor. Helix's own default language config already pairs C/C++ with clangd,
-  so like `rust-devtools` it needs no extra `languages.toml` wiring.
+- `base-ubuntu-slim` base image - Ubuntu 24.04 with Homebrew and the chezmoi dotfiles but
+  no pixi and no Homebrew CLI bundle, built from a new `core` stage in `base/Dockerfile`.
+  `base-ubuntu` and `base-cuda` are unchanged (they build the `full` stage).
+- `cpp-devtools` feature - C/C++ toolchain (clang/clang++, clangd, lld, lldb, cmake, ninja,
+  ccache, pkgconf) plus the Helix editor, installed via Homebrew. Adds Homebrew's keg-only
+  `llvm` bin dir to PATH so `clang`/`clangd` resolve; Helix's default config already pairs
+  C/C++ with clangd.
+
+### Changed
+
+- `rust-devtools` and `cpp-devtools` now install via Homebrew instead of `pixi global
+  install`, and their templates target the new `base-ubuntu-slim` image. Both bumped to
+  `1.1.0`. The features still work on `base-ubuntu` / `base-cuda` (Homebrew is present in
+  all three).
 
 ## 2026-08-16
 

@@ -198,6 +198,10 @@ def test_readme_documents_agent():
     assert "agent" in (REPO_ROOT / "README.md").read_text()
 
 
+def test_readme_documents_base_ubuntu_slim():
+    assert "base-ubuntu-slim" in (REPO_ROOT / "README.md").read_text()
+
+
 # --- templates/ (standalone per-feature devcontainer.json) ---
 
 @pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)

@@ -42,7 +42,8 @@ required — everything below also works by hand with DevPod or `@devcontainers/
 
 | Image | From | Use for |
 |-------|------|---------|
-| `ghcr.io/jesserobertson/base-ubuntu:latest` | `ubuntu:24.04` | CPU-only projects |
+| `ghcr.io/jesserobertson/base-ubuntu:latest` | `ubuntu:24.04` | CPU-only projects — fish, Homebrew CLI kit, pixi |
+| `ghcr.io/jesserobertson/base-ubuntu-slim:latest` | `ubuntu:24.04` | Lean CPU base — Homebrew + dotfiles only, no pixi or CLI kit (used by `rust-devtools`, `cpp-devtools`) |
 | `ghcr.io/jesserobertson/base-cuda:latest` | `nvidia/cuda:12.8.0-devel-ubuntu24.04` | GPU projects (rapids, jax, mojo, pytorch) |
 
 ## Features
@@ -59,8 +60,8 @@ Composable features that install on top of a base image at container creation ti
 | `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
 | `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
 | `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, Helix editor + pyright (Helix wired to ruff's LSP + pyright out of the box) |
-| `…/rust-devtools:latest` | Dev | base-ubuntu / base-cuda | Rust dev tooling — cargo, rustc, rust-analyzer, Helix editor (Helix's default config already pairs Rust with rust-analyzer) |
-| `…/cpp-devtools:latest` | Dev | base-ubuntu / base-cuda | C/C++ dev tooling — clang, cmake, ninja, make, pkg-config, ccache, lldb + gdb, clangd, Helix editor (Helix's default config already pairs C/C++ with clangd) |
+| `…/rust-devtools:latest` | Dev | base-ubuntu-slim | Rust dev tooling via Homebrew — cargo, rustc, rust-analyzer, Helix editor (Helix's default config already pairs Rust with rust-analyzer) |
+| `…/cpp-devtools:latest` | Dev | base-ubuntu-slim | C/C++ dev tooling via Homebrew — clang, clangd, lld, lldb, cmake, ninja, ccache, pkgconf, Helix editor (Helix's default config already pairs C/C++ with clangd) |
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
 | `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
@@ -261,8 +262,8 @@ features/
   fastapi/                   ← Web: FastAPI + Pydantic + Uvicorn
   cli/                       ← CLI: Typer + Rich + Pydantic
   py-devtools/               ← Dev: ruff, mypy, pytest, mkdocs
-  rust-devtools/             ← Dev: cargo, rustc, rust-analyzer, Helix
-  cpp-devtools/              ← Dev: clang, cmake, ninja, lldb/gdb, clangd, Helix
+  rust-devtools/             ← Dev: cargo, rustc, rust-analyzer, Helix (brew)
+  cpp-devtools/              ← Dev: clang, clangd, cmake, ninja, lldb, Helix (brew)
   huggingface/               ← ML: huggingface_hub, tokenizers
   transformers/              ← ML: transformers, datasets, accelerate
   ollama/                    ← ML: OpenAI-compatible Ollama client
