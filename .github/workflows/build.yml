@@ -24,9 +24,15 @@ jobs:
         include:
           - name: base-ubuntu
             base_image: ubuntu:24.04
+            target: full
             tags: ghcr.io/jesserobertson/base-ubuntu:latest
+          - name: base-ubuntu-slim
+            base_image: ubuntu:24.04
+            target: slim
+            tags: ghcr.io/jesserobertson/base-ubuntu-slim:latest
           - name: base-cuda
             base_image: nvidia/cuda:12.8.0-devel-ubuntu24.04
+            target: full
             tags: |
               ghcr.io/jesserobertson/base-cuda:latest
               ghcr.io/jesserobertson/base-cuda:cuda12.8.0
@@ -41,6 +47,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: base
+          target: ${{ matrix.target }}
           push: true
           build-args: BASE_IMAGE=${{ matrix.base_image }}
           tags: ${{ matrix.tags }}

@@ -11,7 +11,7 @@
     Pull images and features from GHCR (ghcr.io/jesserobertson) instead of building locally.
 
 .PARAMETER Images
-    Images to process. Defaults to all: base-ubuntu, base-cuda, ramalama.
+    Images to process. Defaults to all: base-ubuntu, base-ubuntu-slim, base-cuda, ramalama.
     Note: ramalama depends on base-cuda, so base-cuda is always included when ramalama is selected.
 
 .PARAMETER Features
@@ -48,8 +48,8 @@ param(
     [switch]$SkipImages,
     [switch]$SkipFeatures,
 
-    [ValidateSet('base-ubuntu', 'base-cuda', 'ramalama')]
-    [string[]]$Images = @('base-ubuntu', 'base-cuda', 'ramalama'),
+    [ValidateSet('base-ubuntu', 'base-ubuntu-slim', 'base-cuda', 'ramalama')]
+    [string[]]$Images = @('base-ubuntu', 'base-ubuntu-slim', 'base-cuda', 'ramalama'),
 
     [ValidateSet('cli', 'fastapi', 'huggingface', 'jax', 'marimo', 'mojo',
                  'podman', 'py-devtools', 'pytorch', 'ramalama', 'rapids', 'transformers')]
@@ -78,11 +78,19 @@ function Invoke-Build {
     $ImageDefs = [ordered]@{
         'base-ubuntu' = @{
             Context   = 'base'
+            Target    = 'full'
             BuildArgs = @{ BASE_IMAGE = 'ubuntu:24.04' }
             Tags      = @("$Registry/$Owner/base-ubuntu:latest")
         }
+        'base-ubuntu-slim' = @{
+            Context   = 'base'
+            Target    = 'slim'
+            BuildArgs = @{ BASE_IMAGE = 'ubuntu:24.04' }
+            Tags      = @("$Registry/$Owner/base-ubuntu-slim:latest")
+        }
         'base-cuda' = @{
             Context   = 'base'
+            Target    = 'full'
             BuildArgs = @{ BASE_IMAGE = 'nvidia/cuda:12.8.0-devel-ubuntu24.04' }
             Tags      = @(
                 "$Registry/$Owner/base-cuda:latest",
@@ -130,6 +138,7 @@ function Invoke-Build {
                 $buildArgs = @('build')
                 foreach ($tag in $def.Tags)                       { $buildArgs += '--tag', $tag }
                 foreach ($kv in $def.BuildArgs.GetEnumerator())   { $buildArgs += '--build-arg', "$($kv.Key)=$($kv.Value)" }
+                if ($def.Target)                                  { $buildArgs += '--target', $def.Target }
                 $buildArgs += $def.Context
 
                 Write-Host "    docker $($buildArgs -join ' ')"

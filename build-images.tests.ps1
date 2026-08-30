@@ -56,6 +56,23 @@ Describe 'Invoke-Build — image build mode' {
         }
     }
 
+    It 'builds base-ubuntu with --target full' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') }
+
+        Should -Invoke docker -ParameterFilter {
+            ($args -join ' ') -match '--target\s+full'
+        }
+    }
+
+    It 'builds base-ubuntu-slim with --target slim' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim') }
+
+        Should -Invoke docker -ParameterFilter {
+            $args -contains 'ghcr.io/jesserobertson/base-ubuntu-slim:latest' -and
+            ($args -join ' ') -match '--target\s+slim'
+        }
+    }
+
     It 'tags base-cuda with both latest and versioned tag' {
         Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda') }
 
