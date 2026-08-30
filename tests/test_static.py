@@ -25,8 +25,13 @@ SU_DEV_FEATURES = [
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
 CPU_TEMPLATE_FEATURES = [
     "marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama", "podman",
-    "rust-devtools", "cpp-devtools",
 ]
+
+SLIM_TEMPLATE_FEATURES = ["rust-devtools", "cpp-devtools"]
+
+# Templates whose postCreateCommand must set pixi detached-environments -
+# everything except the slim-based ones, which run no pixi at all.
+PIXI_TEMPLATE_FEATURES = [f for f in FEATURES if f not in SLIM_TEMPLATE_FEATURES]
 
 
 # --- per-feature parametrised checks ---
@@ -242,6 +247,30 @@ def test_cpu_template_no_sshd_waitloop(feature):
     assert "pgrep sshd" not in json.dumps(_template_json(feature))
 
 
+@pytest.mark.parametrize("feature", SLIM_TEMPLATE_FEATURES)
+def test_slim_template_uses_base_ubuntu_slim(feature):
+    assert (
+        _template_json(feature)["image"]
+        == "ghcr.io/jesserobertson/base-ubuntu-slim:latest"
+    )
+
+
+@pytest.mark.parametrize("feature", SLIM_TEMPLATE_FEATURES)
+def test_slim_template_references_own_feature(feature):
+    data = _template_json(feature)
+    assert f"ghcr.io/jesserobertson/devcontainers/{feature}:latest" in data["features"]
+
+
+@pytest.mark.parametrize("feature", SLIM_TEMPLATE_FEATURES)
+def test_slim_template_remote_user_dev(feature):
+    assert _template_json(feature)["remoteUser"] == "dev"
+
+
+@pytest.mark.parametrize("feature", SLIM_TEMPLATE_FEATURES)
+def test_slim_template_no_sshd_waitloop(feature):
+    assert "pgrep sshd" not in json.dumps(_template_json(feature))
+
+
 def test_agent_template_uses_base_ubuntu():
     assert _template_json("agent")["image"] == "ghcr.io/jesserobertson/base-ubuntu:latest"
 
@@ -271,7 +300,7 @@ def test_agent_template_no_sshd_waitloop():
     assert "pgrep sshd" not in json.dumps(_template_json("agent"))
 
 
-@pytest.mark.parametrize("feature", FEATURES)
+@pytest.mark.parametrize("feature", PIXI_TEMPLATE_FEATURES)
 def test_template_post_create_enables_detached_environments(feature):
     # Every template's postCreateCommand is a plain string, and dvt's merge
     # algorithm replaces (rather than combines) plain-string lifecycle
