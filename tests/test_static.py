@@ -20,7 +20,7 @@ FEATURES = [
 SU_DEV_FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
-    "rust-devtools", "cpp-devtools",
+    "cpp-devtools",
 ]
 
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
@@ -67,6 +67,18 @@ def test_pixi_calls_run_as_dev(feature):
     for line in script.read_text().splitlines():
         if "pixi global install" in line or "envs/dev/bin/pip" in line:
             assert "su dev -c" in line, f"{feature}: not run via su dev -c: {line!r}"
+
+
+BREW_FEATURES = ["rust-devtools"]
+
+
+@pytest.mark.parametrize("feature", BREW_FEATURES)
+def test_brew_calls_run_as_dev(feature):
+    script = (REPO_ROOT / "features" / feature / "install.sh").read_text()
+    brew_lines = [l for l in script.splitlines() if "brew install" in l]
+    assert brew_lines, f"{feature}: no 'brew install' line in install.sh"
+    for line in brew_lines:
+        assert "su dev -c" in line, f"{feature}: brew install not via su dev -c: {line!r}"
 
 
 # --- huggingface ---
