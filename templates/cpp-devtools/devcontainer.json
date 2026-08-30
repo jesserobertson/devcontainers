@@ -1,0 +1,15 @@
+{
+  "name": "cpp-devtools",
+  "description": "C/C++ toolchain (clang, cmake, ninja) plus clangd, lldb/gdb and Helix.",
+  "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/cpp-devtools:latest": {}
+  },
+  "mounts": [
+    "source=pixi-cache,target=/home/dev/.cache/pixi,type=volume"
+  ],
+  "postCreateCommand": "mkdir -p ~/.config/pixi && printf 'detached-environments = true\\n' >> ~/.config/pixi/config.toml && pixi install",
+  "remoteUser": "dev"
+}

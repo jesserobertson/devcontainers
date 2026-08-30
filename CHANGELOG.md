@@ -8,6 +8,15 @@ independently.
 
 For changes to the `dvt` CLI itself, see [`dvt/CHANGELOG.md`](dvt/CHANGELOG.md) instead.
 
+## 2026-08-30
+
+### Added
+
+- `cpp-devtools` feature - C/C++ build toolchain installed via pixi: clang/clang++, cmake,
+  ninja, make, pkg-config, ccache, the lldb and gdb debuggers, plus clangd (via clang-tools)
+  and the Helix editor. Helix's own default language config already pairs C/C++ with clangd,
+  so like `rust-devtools` it needs no extra `languages.toml` wiring.
+
 ## 2026-08-16
 
 ### Added
