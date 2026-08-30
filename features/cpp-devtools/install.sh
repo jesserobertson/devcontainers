@@ -12,4 +12,4 @@ LLVM_BIN=/home/linuxbrew/.linuxbrew/opt/llvm/bin
 mkdir -p /home/dev/.config/fish/conf.d
 echo "fish_add_path -gp $LLVM_BIN" > /home/dev/.config/fish/conf.d/cpp-devtools.fish
 echo "export PATH=\"$LLVM_BIN:\$PATH\"" >> /home/dev/.bashrc
-chown dev:dev /home/dev/.config/fish/conf.d/cpp-devtools.fish
+chown -R dev:dev /home/dev/.config
