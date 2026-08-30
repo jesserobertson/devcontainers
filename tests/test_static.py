@@ -332,6 +332,51 @@ def test_dockerfile_sets_pixi_home():
     assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in _dockerfile_text()
 
 
+def _dockerfile_stage(name: str) -> str:
+    """Return the text of one multi-stage build stage: the `FROM … AS <name>`
+    line through to (not including) the next top-level `FROM` line."""
+    lines = _dockerfile_text().splitlines()
+    start = next(
+        (i for i, l in enumerate(lines)
+         if re.match(rf"^FROM\s+\S+\s+AS\s+{re.escape(name)}\s*$", l)),
+        None,
+    )
+    assert start is not None, f"no Dockerfile stage named {name!r}"
+    end = next(
+        (j for j in range(start + 1, len(lines)) if lines[j].startswith("FROM ")),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
+def test_dockerfile_has_core_slim_full_stages():
+    text = _dockerfile_text()
+    assert re.search(r"^FROM \S+ AS core$", text, re.M)
+    assert re.search(r"^FROM core AS slim$", text, re.M)
+    assert re.search(r"^FROM core AS full$", text, re.M)
+
+
+def test_dockerfile_core_stage_is_pixi_free():
+    core = _dockerfile_stage("core")
+    assert "pixi.sh/install.sh" not in core
+    assert "PIXI_HOME" not in core
+
+
+def test_dockerfile_core_stage_has_no_cli_bundle():
+    assert "brew install" not in _dockerfile_stage("core")
+
+
+def test_dockerfile_slim_stage_adds_nothing():
+    assert "RUN" not in _dockerfile_stage("slim")
+
+
+def test_dockerfile_full_stage_has_pixi_and_cli_bundle():
+    full = _dockerfile_stage("full")
+    assert "pixi.sh/install.sh" in full
+    assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in full
+    assert "brew install" in full
+
+
 # --- published Feature versions vs local content ---
 #
 # 2026-08-15: every feature's install.sh had drifted from what's actually
