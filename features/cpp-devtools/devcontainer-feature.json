@@ -1,7 +1,7 @@
 {
   "id": "cpp-devtools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "C/C++ dev tooling (clang, cmake, ninja, lldb, helix)",
-  "description": "Installs a C/C++ build toolchain via pixi: clang/clang++, cmake, ninja, make, pkg-config, ccache, the lldb and gdb debuggers, plus clangd (via clang-tools) and the Helix editor - Helix's own default language config already pairs C/C++ with clangd, so no extra wiring is needed. Works with both base-ubuntu and base-cuda images.",
+  "description": "Installs a C/C++ toolchain via Homebrew: clang/clang++, clangd, lld, lldb, cmake, ninja, ccache, pkgconf, and the Helix editor. Adds Homebrew's keg-only llvm bin dir to PATH so clang and clangd resolve; Helix's default config already pairs C/C++ with clangd. Designed for the base-ubuntu-slim image; also works on base-ubuntu and base-cuda.",
   "options": {}
 }

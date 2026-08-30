@@ -20,7 +20,6 @@ FEATURES = [
 SU_DEV_FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
-    "cpp-devtools",
 ]
 
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
@@ -69,7 +68,7 @@ def test_pixi_calls_run_as_dev(feature):
             assert "su dev -c" in line, f"{feature}: not run via su dev -c: {line!r}"
 
 
-BREW_FEATURES = ["rust-devtools"]
+BREW_FEATURES = ["rust-devtools", "cpp-devtools"]
 
 
 @pytest.mark.parametrize("feature", BREW_FEATURES)
