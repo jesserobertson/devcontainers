@@ -488,7 +488,7 @@ def test_published_feature_version_matches_local_content(feature):
 
 # --- images/ registry ---
 
-IMAGES = ["base-ubuntu", "base-cuda"]
+IMAGES = ["base-ubuntu", "base-cuda", "base-ubuntu-slim"]
 
 
 @pytest.mark.parametrize("image", IMAGES)
@@ -511,6 +511,13 @@ def test_base_ubuntu_ref_matches_cpu_templates():
 
 def test_base_cuda_ref_matches_gpu_templates():
     assert _image_json("base-cuda")["ref"] == "ghcr.io/jesserobertson/base-cuda:latest"
+
+
+def test_base_ubuntu_slim_ref():
+    assert (
+        _image_json("base-ubuntu-slim")["ref"]
+        == "ghcr.io/jesserobertson/base-ubuntu-slim:latest"
+    )
 
 
 # --- helpers ---

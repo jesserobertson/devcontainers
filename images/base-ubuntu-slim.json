@@ -1,0 +1,6 @@
+{
+  "name": "base-ubuntu-slim",
+  "description": "Ubuntu 24.04 devcontainer base with Homebrew and the chezmoi dotfiles but no pixi and no CLI bundle - a lean base for toolchains that install via brew or apt.",
+  "ref": "ghcr.io/jesserobertson/base-ubuntu-slim:latest",
+  "aliases": ["ubuntu-slim", "slim"]
+}
