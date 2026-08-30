@@ -1,6 +1,6 @@
 # devcontainers
 
-Base images and composable devcontainer features for Python development, published to `ghcr.io/jesserobertson`. All images include fish shell, starship, neovim, and pixi — with the full dotfiles setup from [jesserobertson/dotfiles](https://github.com/jesserobertson/dotfiles) baked in.
+Base images and composable devcontainer features for Python development, published to `ghcr.io/jesserobertson`. The `base-ubuntu` and `base-cuda` images include fish shell, starship, neovim, and pixi — with the full dotfiles setup from [jesserobertson/dotfiles](https://github.com/jesserobertson/dotfiles) baked in; `base-ubuntu-slim` is a leaner variant with Homebrew and the dotfiles but no pixi or CLI bundle.
 
 ## dvt: the CLI
 
@@ -252,7 +252,7 @@ regression introduced here.
 ## Repo structure
 
 ```
-base/Dockerfile              ← ARG BASE_IMAGE; installs brew, pixi, dotfiles
+base/Dockerfile              ← ARG BASE_IMAGE; multi-stage core/slim/full — brew + dotfiles (pixi & CLI kit in full only)
 features/
   rapids/                    ← ML: cuDF, JAX, Polars GPU, Marimo
   mojo/                      ← ML: Modular MAX / Mojo
@@ -271,6 +271,6 @@ features/
 dvt/                          ← CLI: fetches templates/, scaffolds+layers devcontainer.json, builds/runs/ssh via Docker or Podman
 host-services/ollama/        ← local LLM host service (real Ollama via Docker Compose)
 .github/workflows/
-  build.yml                  ← builds base-ubuntu and base-cuda on Dockerfile changes
+  build.yml                  ← builds base-ubuntu, base-ubuntu-slim, base-cuda on Dockerfile changes
   publish-features.yml       ← publishes features via devcontainers/action on features/** changes
 ```
