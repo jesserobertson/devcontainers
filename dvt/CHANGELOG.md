@@ -6,7 +6,7 @@ All notable changes to this project are documented here. Format follows
 include breaking changes while bumping only the minor version — patch releases are fixes
 only. Revisit switching breaking changes to a major bump once the project reaches `1.0.0`.
 
-## [Unreleased]
+## [0.4.0] - 2026-08-31
 
 ### Added
 
