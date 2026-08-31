@@ -148,10 +148,15 @@ def test_fuzzy_argument_exact_match_runs_unchanged():
 
 
 def test_fuzzy_argument_injects_yes_flag_into_help():
-    result = runner.invoke(_greet_app(), ["greet", "--help"], env={"COLUMNS": "200"})
-    assert result.exit_code == 0
-    assert "--yes" in result.output
-    assert "-y" in result.output
+    # Inspect the resolved Click command rather than rendered `--help` text:
+    # Rich's help-panel layout is terminal-width sensitive and renders
+    # differently on headless CI (Rich 15 on a runner with no tty collapses
+    # the options panel), so asserting on the printed output is flaky. The
+    # behaviour under test is just "the decorator adds a --yes/-y option".
+    greet = typer.main.get_command(_greet_app()).commands["greet"]
+    flags = {opt for param in greet.params for opt in getattr(param, "opts", [])}
+    assert "--yes" in flags
+    assert "-y" in flags
 
 
 def test_fuzzy_argument_prompts_and_resolves_on_confirm():
