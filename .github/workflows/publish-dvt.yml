@@ -45,10 +45,6 @@ jobs:
       with:
         manifest-path: dvt/pyproject.toml
         environments: dev
-        # Install exactly what pixi.lock pins - never re-solve. A newer pixi
-        # otherwise picks free-threaded CPython 3.14 for `python >=3.12,<3.15`,
-        # which has no pywin32 wheel, breaking the win-64 solve.
-        frozen: true
 
     - name: Run full checks
       run: pixi run -e dev check-all
