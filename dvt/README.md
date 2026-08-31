@@ -20,6 +20,7 @@ repo root.
     dvt feature add agent
     dvt up my-project
     dvt ssh my-project
+    dvt run -n my-project pytest -q  # run one command inside the workspace, exit with its status
     dvt info                        # from inside my-project - no name needed
 
 ## Development

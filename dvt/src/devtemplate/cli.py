@@ -31,7 +31,12 @@ from devtemplate.container import find_workspace_container
 from devtemplate.features import clear_pulled_features
 from devtemplate.images import sync_images
 from devtemplate.runtime import get_client
-from devtemplate.ssh import exec_interactive, remove_ssh_config_entry, stdio_proxy
+from devtemplate.ssh import (
+    exec_command,
+    exec_interactive,
+    remove_ssh_config_entry,
+    stdio_proxy,
+)
 from devtemplate.store import sync_templates
 from devtemplate.workspace import resolve_existing, resolve_for_up, up_workspace
 
@@ -247,6 +252,54 @@ def ssh(
         else exec_interactive(handle.cli_binary, handle.client, resolved_name)
     )
     exit_code = unwrap_or_exit(result, errors)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command(context_settings={"ignore_unknown_options": True})
+def run(
+    command: list[str] = typer.Argument(  # noqa: B008
+        ...,
+        help="Command (and its arguments) to run inside the workspace, e.g. "
+        "'dvt run -n web pytest -q'. Options meant for dvt itself (-n/--name, "
+        "-t/--tty) must come before the command.",
+    ),
+    name: str | None = typer.Option(  # noqa: B008
+        None,
+        "--name",
+        "-n",
+        help="Name of the workspace to run in (default: inferred from the "
+        "current folder).",
+    ),
+    tty: bool = typer.Option(  # noqa: B008
+        False,
+        "--tty",
+        "-t",
+        help="Allocate a TTY (needed for interactive programs like a REPL); "
+        "leave off when capturing output or piping.",
+    ),
+) -> None:
+    """Run a command inside a running workspace and exit with its status.
+
+    The command runs through the workspace user's login shell so image
+    shell-startup hooks (e.g. a project's pixi environment) apply, the same
+    way `dvt ssh` gets them.
+    """
+    settings = unwrap_or_exit(load_settings(), console)
+    handle = unwrap_or_exit(
+        get_client(
+            settings.runtime,
+            podman_machine_auto_init=settings.podman_machine_auto_init,
+            podman_machine_auto_start=settings.podman_machine_auto_start,
+        ),
+        console,
+    )
+    resolved_name = unwrap_or_exit(
+        resolve_existing(handle.client, name, Path.cwd(), "run"), console
+    )
+    exit_code = unwrap_or_exit(
+        exec_command(handle.cli_binary, handle.client, resolved_name, command, tty=tty),
+        console,
+    )
     raise typer.Exit(code=exit_code)
 
 

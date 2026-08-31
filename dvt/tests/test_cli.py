@@ -355,6 +355,68 @@ def test_ssh_reports_clean_error_on_exec_failure(monkeypatch):
     assert result.exit_code == 1
 
 
+def _stub_run_deps(monkeypatch, cli_module, exec_result):
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    captured = {}
+
+    def fake_exec_command(cli_binary, client, name, command, *, tty):
+        captured.update(name=name, command=command, tty=tty)
+        return exec_result
+
+    monkeypatch.setattr(cli_module, "exec_command", fake_exec_command)
+    return captured
+
+
+def test_run_execs_the_given_command_in_the_workspace(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    captured = _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(0))
+
+    result = runner.invoke(cli_module.app, ["run", "-n", "my-project", "pytest", "-q"])
+
+    assert result.exit_code == 0
+    assert captured == {"name": "my-project", "command": ["pytest", "-q"], "tty": False}
+
+
+def test_run_propagates_the_child_exit_code(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(3))
+
+    result = runner.invoke(cli_module.app, ["run", "-n", "my-project", "false"])
+
+    assert result.exit_code == 3
+
+
+def test_run_tty_flag_requests_a_terminal(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    captured = _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(0))
+
+    result = runner.invoke(
+        cli_module.app, ["run", "-n", "my-project", "--tty", "python"]
+    )
+
+    assert result.exit_code == 0
+    assert captured["tty"] is True
+
+
+def test_run_reports_clean_error_when_exec_fails(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    _stub_run_deps(
+        monkeypatch, cli_module, cli_module.Err(RuntimeError("no such workspace"))
+    )
+
+    result = runner.invoke(cli_module.app, ["run", "-n", "my-project", "pytest"])
+
+    assert result.exit_code == 1
+
+
 def test_stop_stops_the_labeled_container(monkeypatch):
     import devtemplate.cli as cli_module
 

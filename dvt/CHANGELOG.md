@@ -10,6 +10,12 @@ only. Revisit switching breaking changes to a major bump once the project reache
 
 ### Added
 
+- `dvt run [-n <name>] <command>...` — run a single command inside a running workspace and
+  exit with its status, without opening an interactive shell. Resolves the workspace the
+  same way `dvt ssh`/`stop`/`delete` do (folder-inferred when `-n` is omitted). The command
+  runs through the workspace user's login shell so image shell-startup hooks (e.g. a
+  project's pixi environment) apply; pass `-t`/`--tty` for programs that need a real
+  terminal.
 - `dvt image` — a new command group (`list`, `show`, `set`, `unset`) for managing the
   base images dvt knows about, mirroring `dvt feature`'s list/show shape. `set`
   (create-or-update) and `unset` edit `images/*.json` directly in a checkout of the

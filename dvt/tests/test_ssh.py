@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from unittest.mock import MagicMock
 
 # `ssh.py` imports devtemplate.sshd lazily, inside stdio_proxy's body, to keep
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock
 from devtemplate import ssh as ssh_module
 from devtemplate import sshd as sshd_module
 from devtemplate.ssh import (
+    exec_command,
     exec_interactive,
     remove_ssh_config_entry,
     stdio_proxy,
@@ -77,6 +79,151 @@ def test_exec_interactive_returns_err_when_subprocess_run_raises(monkeypatch):
     exit_code_result = exec_interactive("/usr/bin/docker", fake_client, "my-project")
 
     assert exit_code_result.is_err()
+
+
+def test_exec_command_returns_err_when_container_lookup_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.containers.list.side_effect = RuntimeError("daemon unreachable")
+
+    result = exec_command(
+        "/usr/bin/docker", fake_client, "my-project", ["pytest", "-q"], tty=False
+    )
+
+    assert result.is_err()
+
+
+def test_exec_command_returns_err_when_no_container_found(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.containers.list.return_value = []
+
+    result = exec_command(
+        "/usr/bin/docker", fake_client, "missing", ["pytest"], tty=False
+    )
+
+    assert result.is_err()
+
+
+def test_exec_command_runs_via_interactive_login_shell_without_tty(monkeypatch):
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.name = "dvt-my-project"
+    fake_client.containers.list.return_value = [fake_container]
+
+    captured = {}
+
+    def fake_run(args):
+        captured["args"] = args
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(ssh_module.subprocess, "run", fake_run)
+
+    result = exec_command(
+        "/usr/bin/docker", fake_client, "my-project", ["pytest", "-q"], tty=False
+    )
+
+    assert result.is_ok()
+    assert result.unwrap() == 0
+    assert captured["args"] == [
+        "/usr/bin/docker",
+        "exec",
+        "-i",
+        "dvt-my-project",
+        "sh",
+        "-c",
+        "exec \"${SHELL:-sh}\" -ilc 'pytest -q'",
+    ]
+
+
+def test_exec_command_adds_tty_flag_when_requested(monkeypatch):
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.name = "dvt-my-project"
+    fake_client.containers.list.return_value = [fake_container]
+
+    captured = {}
+
+    def fake_run(args):
+        captured["args"] = args
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(ssh_module.subprocess, "run", fake_run)
+
+    result = exec_command(
+        "/usr/bin/docker", fake_client, "my-project", ["python"], tty=True
+    )
+
+    assert result.is_ok()
+    assert captured["args"][:4] == [
+        "/usr/bin/docker",
+        "exec",
+        "-it",
+        "dvt-my-project",
+    ]
+
+
+def test_exec_command_shell_quotes_command_tokens_with_spaces(monkeypatch):
+    # The command reaches `sh -c` as a single argument, so a token containing
+    # shell metacharacters (here a space and quotes) must survive intact rather
+    # than being re-split by the container's shell.
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.name = "dvt-my-project"
+    fake_client.containers.list.return_value = [fake_container]
+
+    captured = {}
+    monkeypatch.setattr(
+        ssh_module.subprocess,
+        "run",
+        lambda args: captured.update(args=args) or MagicMock(returncode=0),
+    )
+
+    exec_command(
+        "/usr/bin/docker",
+        fake_client,
+        "my-project",
+        ["python", "-c", "print('hi there')"],
+        tty=False,
+    )
+
+    inner = captured["args"][-1]
+    quoted_program = shlex.quote(shlex.join(["python", "-c", "print('hi there')"]))
+    assert inner == f'exec "${{SHELL:-sh}}" -ilc {quoted_program}'
+
+
+def test_exec_command_returns_err_when_subprocess_run_raises(monkeypatch):
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.name = "dvt-my-project"
+    fake_client.containers.list.return_value = [fake_container]
+
+    def fake_run(args):
+        raise FileNotFoundError("docker binary not found")
+
+    monkeypatch.setattr(ssh_module.subprocess, "run", fake_run)
+
+    result = exec_command(
+        "/usr/bin/docker", fake_client, "my-project", ["pytest"], tty=False
+    )
+
+    assert result.is_err()
+
+
+def test_exec_command_propagates_child_exit_code(monkeypatch):
+    fake_client = MagicMock()
+    fake_container = MagicMock()
+    fake_container.name = "dvt-my-project"
+    fake_client.containers.list.return_value = [fake_container]
+
+    monkeypatch.setattr(
+        ssh_module.subprocess, "run", lambda args: MagicMock(returncode=7)
+    )
+
+    result = exec_command(
+        "/usr/bin/docker", fake_client, "my-project", ["false"], tty=False
+    )
+
+    assert result.is_ok()
+    assert result.unwrap() == 7
 
 
 def test_write_ssh_config_entry_adds_host_block(tmp_path):

@@ -13,7 +13,8 @@ show` and `image show` always printed their raw JSON pass-through on success
 and now accept `--json` too, purely so their *failure* path matches the
 shared convention as well. `ssh` has no `--json` mode: without `--stdio` it's
 an interactive terminal session, and `--stdio` is a raw SSH byte stream, not
-structured output.
+structured output. `run` likewise has no `--json` mode — its stdout is the
+exec'd command's own output, passed straight through.
 
 `dvt --describe` prints a JSON manifest of every command (dotted names for `feature`
 subcommands, e.g. `"feature add"`) with its description, args (name, kind, type,
@@ -182,14 +183,16 @@ untouched, if run from somewhere else. A plain `up` never destroys anything, ful
 stop; only `--rebuild` does, and only after its own validation has already
 succeeded.
 
-`<name>` is optional on `up`/`ssh`/`stop`/`delete` — when omitted, dvt looks for a workspace
-already tied to the current folder (via its `devcontainer.local_folder` container label, not
-just the folder's own name, so it still finds a workspace created under a different name).
-Exactly one match reuses it; for `up`, no match falls back to the folder's own directory name
-to create a fresh workspace — unless a workspace already exists under that name for a
-*different* folder, in which case `up` refuses rather than silently resuming someone else's
-workspace; for `ssh`/`stop`/`delete`, no match refuses outright (nothing to act on); more than
-one match always refuses, listing every candidate name and asking for an explicit one.
+The workspace name is optional on `up`/`ssh`/`stop`/`delete` (positional `<name>`) and on
+`run` (`-n`/`--name`, so the trailing tokens are unambiguously the command) — when omitted,
+dvt looks for a workspace already tied to the current folder (via its
+`devcontainer.local_folder` container label, not just the folder's own name, so it still
+finds a workspace created under a different name). Exactly one match reuses it; for `up`, no
+match falls back to the folder's own directory name to create a fresh workspace — unless a
+workspace already exists under that name for a *different* folder, in which case `up` refuses
+rather than silently resuming someone else's workspace; for `ssh`/`run`/`stop`/`delete`, no
+match refuses outright (nothing to act on); more than one match always refuses, listing every
+candidate name and asking for an explicit one.
 
 Feature refs in the `features` map accept either a tag
 (`ghcr.io/jesserobertson/devcontainers/cli:latest`) or a digest
@@ -206,6 +209,16 @@ in `~/.ssh/config` whose `ProxyCommand` runs `dvt ssh --stdio <name>`: a real
 `asyncssh`-based SSH server that this process runs against its own stdin/stdout,
 bridging the resulting session to `docker`/`podman exec` in that container —
 `-it` with a real pty for sessions that requested one, `-i` otherwise.
+
+`dvt run [-n <name>] <command>...` execs a single command in the running container
+(`docker`/`podman exec`, `-i` — add `-t`/`--tty` for programs that need a real terminal like
+a REPL), streams its stdin/stdout/stderr through, and exits with the command's own status —
+no interactive shell. dvt's own options (`-n`/`--name`, `-t`/`--tty`) must come before the
+command; everything after is passed through untouched, so `dvt run -n web pytest -q -x` does
+what you'd expect. The command runs through the workspace user's login shell
+(`"${SHELL:-sh}" -ilc …`, same `$SHELL` fallback as `dvt ssh`) so image shell-startup hooks
+fire — this repo's base image gates its per-project `pixi shell-hook` on the shell being
+interactive, so a bare non-interactive `sh -c` would miss the project environment entirely.
 
 `dvt stop <name>` / `dvt delete <name>` find the workspace via its `dvt.workspace`
 container label — not a `dvt`-side registry — so they work from any directory.

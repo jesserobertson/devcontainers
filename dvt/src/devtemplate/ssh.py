@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -13,6 +14,7 @@ __all__ = [
     "remove_ssh_config_entry",
     "stdio_proxy",
     "exec_interactive",
+    "exec_command",
 ]
 
 BEGIN_MARKER = "# BEGIN dvt {name}"
@@ -106,6 +108,47 @@ def exec_interactive(cli_binary: str, client: DockerClient, name: str) -> int:
             "sh",
             "-c",
             'exec "${SHELL:-sh}"',
+        ]
+    )
+    return result.returncode
+
+
+@wrap_result
+def exec_command(
+    cli_binary: str,
+    client: DockerClient,
+    name: str,
+    command: list[str],
+    *,
+    tty: bool,
+) -> int:
+    """`dvt run [-n <name>] <command>...`: finds the container labeled
+    dvt.workspace=name and execs one command inside it via `docker exec`,
+    inheriting this process's stdin/stdout/stderr and returning the command's
+    exit code. `-i` by default; `-it` when tty=True (for programs that need a
+    real terminal, e.g. a REPL).
+
+    The command runs through the container user's own login shell
+    (`exec "${SHELL:-sh}" -ilc ...`, same $SHELL fallback as exec_interactive)
+    so image shell-startup hooks fire - this repo's base image gates its
+    per-project `pixi shell-hook` on the shell being interactive, so a plain
+    non-interactive `sh -c` would miss the project environment entirely. Each
+    command token is shell-quoted (shlex) before being handed to that shell,
+    so arguments containing spaces or metacharacters aren't re-split.
+    """
+    container = find_workspace_container(client, name)
+    if container is None or container.name is None:
+        raise ValueError(f"No workspace named {name!r} is running.")
+    program = shlex.quote(shlex.join(command))
+    result = subprocess.run(
+        [
+            cli_binary,
+            "exec",
+            "-it" if tty else "-i",
+            container.name,
+            "sh",
+            "-c",
+            f'exec "${{SHELL:-sh}}" -ilc {program}',
         ]
     )
     return result.returncode
