@@ -3,10 +3,11 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/), with the pre-1.0 allowance that any release may
-include breaking changes while bumping only the minor version — patch releases are fixes
-only. Revisit switching breaking changes to a major bump once the project reaches `1.0.0`.
+include breaking changes while bumping only the minor version — patch releases carry only
+backward-compatible changes (fixes and small enhancements that don't break callers).
+Revisit switching breaking changes to a major bump once the project reaches `1.0.0`.
 
-## [Unreleased]
+## [0.4.1] - 2026-09-01
 
 ### Changed
 
