@@ -33,6 +33,12 @@ jobs:
         with:
           manifest-path: dvt/pyproject.toml
           environments: dev
+          # Install exactly what pixi.lock pins - never re-solve. Without
+          # this, setup-pixi re-resolves from scratch and a newer pixi will
+          # now pick free-threaded CPython 3.14 for `python >=3.12,<3.15`,
+          # which has no pywin32 wheel (docker -> pywin32 on win-64), making
+          # the solve unsatisfiable even though the committed lock is fine.
+          frozen: true
 
       - name: Run quality checks
         run: pixi run -e dev quality check
@@ -71,6 +77,7 @@ jobs:
         with:
           manifest-path: dvt/pyproject.toml
           environments: docs
+          frozen: true  # see the comment on the test job's setup-pixi step
 
       - name: Build docs
         run: pixi run -e docs docs build --strict
