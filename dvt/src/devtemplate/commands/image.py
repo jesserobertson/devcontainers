@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from devtemplate import describe
 from devtemplate.cli_support import emit_success, unwrap_or_exit
 from devtemplate.config import load_settings
 from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm, resolve_or_create
@@ -26,7 +27,7 @@ from devtemplate.images import (
 
 __all__ = ["app"]
 
-app = typer.Typer(help="List and manage the base images dvt knows about.")
+app = describe.Typer(help="List and manage the base images dvt knows about.")
 console = Console()
 stderr_console = Console(stderr=True)
 

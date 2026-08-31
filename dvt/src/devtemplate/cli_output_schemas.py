@@ -1,12 +1,12 @@
 """Pydantic models describing every JSON-capable command's output shape.
 
 Used two ways: `dvt --describe` calls `.model_json_schema()` on each to
-publish real JSON Schema (see devtemplate.cli_support.describe_app), and
-tests call `.model_validate()` (or validate a real --json invocation's
-output against the *published* schema directly, via the `jsonschema`
-package) to prove a command's actual output still matches what's declared
-here - so the two can't silently drift apart the way a hand-maintained,
-never-checked description would.
+publish real JSON Schema (via the `attach_output_schema` enrich hook wired
+into devtemplate.describe), and tests call `.model_validate()` (or validate
+a real --json invocation's output against the *published* schema directly,
+via the `jsonschema` package) to prove a command's actual output still
+matches what's declared here - so the two can't silently drift apart the
+way a hand-maintained, never-checked description would.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ __all__ = [
     "StopOutput",
     "SyncOutput",
     "UpOutput",
+    "attach_output_schema",
 ]
 
 
@@ -159,5 +160,18 @@ OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "image unset": ImageUnsetOutput,
 }
 """Keyed the same way describe_app keys its "commands" dict (dotted names
-for feature subcommands), so devtemplate.cli_support._describe_command can
-look a command's output model up by the same full_name it already has."""
+for feature subcommands), so attach_output_schema can look a command's
+output model up by the same full_name it already has."""
+
+
+def attach_output_schema(full_name: str, entry: dict[str, Any]) -> None:
+    """Enrich hook for devtemplate.describe: for any command that has a
+    --json mode, add its output shape as real JSON Schema - `output.success`
+    from the command's own model, `output.error` from the shared error
+    shape - to that command's --describe manifest entry, in place."""
+    model = OUTPUT_MODELS.get(full_name)
+    if model is not None:
+        entry["output"] = {
+            "success": model.model_json_schema(),
+            "error": ErrorOutput.model_json_schema(),
+        }

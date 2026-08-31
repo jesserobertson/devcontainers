@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from devtemplate import describe
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
 from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
@@ -27,7 +28,7 @@ from devtemplate.store import (
 
 __all__ = ["app"]
 
-app = typer.Typer(
+app = describe.Typer(
     help="Add, remove, and inspect the devcontainer features dvt knows about."
 )
 console = Console()

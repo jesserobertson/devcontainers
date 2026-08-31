@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -18,13 +17,9 @@ from loguru import logger
 from rich.console import Console
 from rich.markup import escape
 
-from devtemplate import __version__
-from devtemplate.cli_support import (
-    describe_app,
-    emit_success,
-    unwrap_or_exit,
-    with_status,
-)
+from devtemplate import __version__, describe
+from devtemplate.cli_output_schemas import attach_output_schema
+from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.commands import feature_app, image_app, info_command, init_command
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
@@ -40,7 +35,15 @@ from devtemplate.ssh import (
 from devtemplate.store import sync_templates
 from devtemplate.workspace import resolve_existing, resolve_for_up, up_workspace
 
-app = typer.Typer(
+# Wires --describe (on every command and sub-group, via describe.Typer) to
+# report dvt's version and to attach each command's output JSON Schema.
+describe.configure(
+    version=__version__,
+    version_key="dvt_version",
+    enrich=attach_output_schema,
+)
+
+app = describe.Typer(
     help="dvt: dev-style named devcontainer templates, built and run via Docker/Podman."
 )
 app.add_typer(feature_app, name="feature")
@@ -59,13 +62,6 @@ def version_callback(value: bool) -> None:
     raise typer.Exit()
 
 
-def describe_callback(value: bool) -> None:
-    if not value:
-        return
-    print(json.dumps(describe_app(app, version=__version__)))
-    raise typer.Exit()
-
-
 @app.callback()
 def root_callback(
     version: bool = typer.Option(  # noqa: B008
@@ -74,13 +70,6 @@ def root_callback(
         callback=version_callback,
         is_eager=True,
         help="Show dvt's version and exit.",
-    ),
-    describe: bool = typer.Option(  # noqa: B008
-        False,
-        "--describe",
-        callback=describe_callback,
-        is_eager=True,
-        help="Print a JSON manifest of every command and its args, then exit.",
     ),
     verbose: bool = typer.Option(  # noqa: B008
         False,

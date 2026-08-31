@@ -8,8 +8,8 @@ from typer.testing import CliRunner
 
 from devtemplate import __version__
 from devtemplate.cli import app as real_app
-from devtemplate.cli_support import describe_app
 from devtemplate.commands.feature import app, console
+from devtemplate.describe import describe_app
 
 runner = CliRunner()
 

@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import typer
-import typer.core
-import typer.main
 from logerr import Result
 from rich.console import Console
 from rich.markup import escape
 from rich.status import Status
 
-from devtemplate.cli_output_schemas import OUTPUT_MODELS, ErrorOutput
-
 __all__ = [
-    "describe_app",
     "emit_success",
     "report_error",
     "unwrap_or_exit",
@@ -93,60 +88,3 @@ def with_status[T](
         return fn(None)
     with console.status(message, spinner="dots") as status:
         return fn(status)
-
-
-def describe_app(app: typer.Typer, *, version: str) -> dict[str, Any]:
-    """Introspect a Typer app's underlying Click command tree into a
-    JSON-serializable manifest: every command's description, args
-    (name/kind/type/required/flags), and - for commands with a --json mode -
-    its output shape as real JSON Schema, generated from the Pydantic models
-    in devtemplate.cli_output_schemas (OUTPUT_MODELS) - keyed by dotted name
-    for nested groups (e.g. "feature add"). Args are auto-generated from the
-    live command definitions, so they can't drift out of sync with what the
-    CLI actually accepts; hidden params (e.g. ssh --stdio) are excluded,
-    matching --help's own behavior - they aren't meant to be discovered."""
-    root = cast(typer.core.TyperGroup, typer.main.get_command(app))
-    commands: dict[str, Any] = {}
-    _collect_commands(root, "", commands)
-    return {"dvt_version": version, "commands": commands}
-
-
-def _collect_commands(
-    group: typer.core.TyperGroup, prefix: str, out: dict[str, Any]
-) -> None:
-    for name, command in group.commands.items():
-        full_name = f"{prefix}{name}"
-        if isinstance(command, typer.core.TyperGroup):
-            _collect_commands(command, f"{full_name} ", out)
-        else:
-            out[full_name] = _describe_command(
-                full_name, cast(typer.core.TyperCommand, command)
-            )
-
-
-def _describe_command(
-    full_name: str, command: typer.core.TyperCommand
-) -> dict[str, Any]:
-    described: dict[str, Any] = {
-        "description": (command.help or "").strip(),
-        "args": [
-            {
-                "name": param.name,
-                "kind": "argument"
-                if isinstance(param, typer.core.TyperArgument)
-                else "option",
-                "type": param.type.name,
-                "required": bool(param.required),
-                "flags": list(param.opts),
-            }
-            for param in command.params
-            if not getattr(param, "hidden", False)
-        ],
-    }
-    output_model = OUTPUT_MODELS.get(full_name)
-    if output_model is not None:
-        described["output"] = {
-            "success": output_model.model_json_schema(),
-            "error": ErrorOutput.model_json_schema(),
-        }
-    return described

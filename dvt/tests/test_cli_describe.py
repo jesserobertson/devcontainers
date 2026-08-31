@@ -17,6 +17,12 @@ def _describe() -> dict:
     return json.loads(result.output)
 
 
+def _describe_scoped(*args: str) -> dict:
+    result = runner.invoke(app, [*args, "--describe"])
+    assert result.exit_code == 0, result.output
+    return json.loads(result.output)
+
+
 def test_describe_exits_zero_and_prints_valid_json():
     result = runner.invoke(app, ["--describe"])
     assert result.exit_code == 0
@@ -131,3 +137,37 @@ def test_describe_omits_output_for_a_command_with_no_json_mode():
 def test_describe_documents_bare_array_output_for_feature_list():
     feature_list = _describe()["commands"]["feature list"]
     assert feature_list["output"]["success"]["type"] == "array"
+
+
+def test_describe_after_a_leaf_command_scopes_to_just_that_command():
+    # `dvt up --describe` mirrors `dvt up --help`: the flag rides the
+    # subcommand and the manifest covers only that command, so an agent
+    # discovering one command doesn't pay for the whole tree.
+    scoped = _describe_scoped("up")
+    assert set(scoped["commands"]) == {"up"}
+    assert "Build and run a workspace" in scoped["commands"]["up"]["description"]
+
+
+def test_describe_after_a_group_scopes_to_that_group_subtree():
+    scoped = _describe_scoped("feature")
+    assert set(scoped["commands"]) == {
+        "feature list",
+        "feature show",
+        "feature add",
+        "feature remove",
+    }
+
+
+def test_describe_after_a_nested_leaf_scopes_to_just_that_command():
+    scoped = _describe_scoped("feature", "add")
+    assert set(scoped["commands"]) == {"feature add"}
+
+
+def test_describe_scoped_still_reports_dvt_version():
+    assert _describe_scoped("up")["dvt_version"] == __version__
+
+
+def test_describe_scoped_keeps_the_output_schema_and_its_validity():
+    info = _describe_scoped("info")["commands"]["info"]
+    jsonschema.Draft202012Validator.check_schema(info["output"]["success"])
+    jsonschema.Draft202012Validator.check_schema(info["output"]["error"])

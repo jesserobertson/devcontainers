@@ -16,7 +16,7 @@ an interactive terminal session, and `--stdio` is a raw SSH byte stream, not
 structured output. `run` likewise has no `--json` mode — its stdout is the
 exec'd command's own output, passed straight through.
 
-`dvt --describe` prints a JSON manifest of every command (dotted names for `feature`
+`--describe` prints a JSON manifest of every command (dotted names for `feature`
 subcommands, e.g. `"feature add"`) with its description, args (name, kind, type,
 required, flags), and — for every `--json`-capable command — its output shape as real
 [JSON Schema](https://json-schema.org/) (`output.success` / `output.error`), generated
@@ -27,6 +27,14 @@ own metadata) but cross-checked against real command output by each command's ow
 `--json` tests, so drift between the two gets caught in CI. Useful for an agent or
 script that wants to discover dvt's callable surface — including validating a
 response — without parsing `--help` text or guessing at field names.
+
+The flag rides any command or group, like `--help`: `dvt --describe` is the whole
+tree, `dvt feature --describe` just the `feature` subtree, `dvt feature add --describe`
+just that one command. The envelope (`{"dvt_version": ..., "commands": {...}}`) is the
+same at every scope — for a single command, `commands` has one entry — so a consumer
+can ask about just the command it cares about instead of the entire surface. The
+mechanism is a self-contained `devtemplate.describe` module (`describe.Typer`, a
+`typer.Typer` drop-in).
 
 ## `dvt init <path>`
 

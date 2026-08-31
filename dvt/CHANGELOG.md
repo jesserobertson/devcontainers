@@ -6,6 +6,19 @@ All notable changes to this project are documented here. Format follows
 include breaking changes while bumping only the minor version — patch releases are fixes
 only. Revisit switching breaking changes to a major bump once the project reaches `1.0.0`.
 
+## [Unreleased]
+
+### Changed
+
+- `--describe` now works on every command and command group, not just the top level:
+  `dvt up --describe` emits the manifest for just `up`, `dvt feature --describe` just the
+  `feature` subtree, and `dvt --describe` the whole tree as before. The flag rides the
+  subcommand the same way `--help` does, so an agent discovering one command no longer has
+  to parse (or pay the tokens for) the entire CLI surface. Output shape is unchanged —
+  `{"dvt_version": ..., "commands": {...}}` — just scoped. The mechanism lives in a new
+  self-contained `devtemplate.describe` module (`describe.Typer`) so it can be lifted into
+  its own package later.
+
 ## [0.4.0] - 2026-08-31
 
 ### Added
