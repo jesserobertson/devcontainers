@@ -1,0 +1,28 @@
+{
+  "id": "pixi",
+  "version": "1.0.0",
+  "name": "pixi",
+  "description": "Installs the pixi package manager for the 'dev' user with PIXI_HOME at ~/.local/share/pixi, puts it on PATH, and (shellHook=auto) writes bash + fish shell-hook snippets that activate a /workspace pixi environment on shell open when pixi.toml or pyproject.toml is present. Optionally runs 'pixi global install' for a given package list. This is the layer every Python toolchain feature (py-devtools, fastapi, cli, ...) depends on.",
+  "options": {
+    "shellHook": {
+      "type": "string",
+      "enum": ["auto", "off"],
+      "default": "auto",
+      "description": "auto: write the bash + fish project pixi shell-hook snippets (fish only if fish is installed). off: install pixi only."
+    },
+    "global": {
+      "type": "string",
+      "default": "",
+      "description": "Optional space-separated package list to 'pixi global install --environment dev --channel conda-forge' at install time."
+    }
+  },
+  "containerEnv": {
+    "PIXI_HOME": "/home/dev/.local/share/pixi",
+    "PATH": "/home/dev/.local/share/pixi/bin:${PATH}",
+    "UV_HTTP_TIMEOUT": "300"
+  },
+  "installsAfter": [
+    "ghcr.io/jesserobertson/devcontainers/homebrew",
+    "ghcr.io/jesserobertson/devcontainers/shell-kit"
+  ]
+}

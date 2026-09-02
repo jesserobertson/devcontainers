@@ -15,7 +15,7 @@ FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
     "agent", "podman", "rust-devtools", "cpp-devtools",
-    "homebrew",
+    "homebrew", "pixi",
 ]
 
 SU_DEV_FEATURES = [
