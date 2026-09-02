@@ -377,8 +377,9 @@ def test_dockerfile_ends_as_dev_user():
     assert lines[-1].strip() == "USER dev"
 
 
-def test_dockerfile_sets_pixi_home():
-    assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in _dockerfile_text()
+def test_dockerfile_does_not_set_pixi_home():
+    # PIXI_HOME now lives only in the pixi feature's containerEnv.
+    assert "PIXI_HOME" not in _dockerfile_text()
 
 
 def _dockerfile_stage(name: str) -> str:
@@ -398,17 +399,19 @@ def _dockerfile_stage(name: str) -> str:
     return "\n".join(lines[start:end])
 
 
-def test_dockerfile_has_core_slim_full_stages():
+def test_dockerfile_has_core_and_slim_stages_only():
     text = _dockerfile_text()
     assert re.search(r"^FROM \S+ AS core$", text, re.M)
     assert re.search(r"^FROM core AS slim$", text, re.M)
-    assert re.search(r"^FROM core AS full$", text, re.M)
+    assert not re.search(r"^FROM \S+ AS full$", text, re.M), "the full stage must be gone"
 
 
-def test_dockerfile_core_stage_is_pixi_free():
+def test_dockerfile_core_stage_has_no_pixi_no_brew_no_cli_bundle():
     core = _dockerfile_stage("core")
     assert "pixi.sh/install.sh" not in core
     assert "PIXI_HOME" not in core
+    assert "brew install" not in core
+    assert "Homebrew/install/HEAD/install.sh" not in core
 
 
 def test_dockerfile_core_stage_has_no_cli_bundle():
@@ -417,13 +420,6 @@ def test_dockerfile_core_stage_has_no_cli_bundle():
 
 def test_dockerfile_slim_stage_adds_nothing():
     assert "RUN" not in _dockerfile_stage("slim")
-
-
-def test_dockerfile_full_stage_has_pixi_and_cli_bundle():
-    full = _dockerfile_stage("full")
-    assert "pixi.sh/install.sh" in full
-    assert 'ENV PIXI_HOME="/home/dev/.local/share/pixi"' in full
-    assert "brew install" in full
 
 
 # --- published Feature versions vs local content ---
