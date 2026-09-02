@@ -15,6 +15,7 @@ from devtemplate.container import (
     resolve_workspace,
     run_container,
     run_lifecycle_commands,
+    translate_published_ports,
 )
 
 FASTAPI_CONFIG = {
@@ -411,3 +412,58 @@ def test_find_workspace_containers_by_folder_returns_empty_list_when_absent(tmp_
     fake_client.containers.list.return_value = []
 
     assert find_workspace_containers_by_folder(fake_client, tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "config, expected",
+    [
+        ({}, {}),
+        ({"appPort": 2718}, {"2718/tcp": ("127.0.0.1", 2718)}),
+        (
+            {"appPort": [2718, 8080]},
+            {"2718/tcp": ("127.0.0.1", 2718), "8080/tcp": ("127.0.0.1", 8080)},
+        ),
+        ({"appPort": "9000:3000"}, {"3000/tcp": ("127.0.0.1", 9000)}),
+        ({"forwardPorts": [2718]}, {"2718/tcp": ("127.0.0.1", 2718)}),
+        ({"forwardPorts": ["8080:3000"]}, {"3000/tcp": ("127.0.0.1", 8080)}),
+        (
+            {"appPort": [2718], "forwardPorts": [9229]},
+            {"2718/tcp": ("127.0.0.1", 2718), "9229/tcp": ("127.0.0.1", 9229)},
+        ),
+    ],
+)
+def test_translate_published_ports(config, expected):
+    assert translate_published_ports(config) == expected
+
+
+def test_translate_published_ports_rejects_label_form():
+    with pytest.raises(ValueError):
+        translate_published_ports({"forwardPorts": ["app:3000"]})
+
+
+def test_run_container_publishes_translated_ports(tmp_path):
+    config = {**FASTAPI_CONFIG, "appPort": [2718]}
+    fake_client = MagicMock()
+    fake_client.containers.run.return_value = MagicMock()
+
+    run_container(
+        fake_client, "img", config, "web", tmp_path, tmp_path / "devcontainer.json"
+    )
+
+    _, kwargs = fake_client.containers.run.call_args
+    assert kwargs["ports"] == {"2718/tcp": ("127.0.0.1", 2718)}
+
+
+def test_run_container_omits_ports_when_none_declared(tmp_path):
+    fake_client = MagicMock()
+    fake_client.containers.run.return_value = MagicMock()
+    run_container(
+        fake_client,
+        "img",
+        FASTAPI_CONFIG,
+        "web",
+        tmp_path,
+        tmp_path / "devcontainer.json",
+    )
+    _, kwargs = fake_client.containers.run.call_args
+    assert kwargs["ports"] == {}

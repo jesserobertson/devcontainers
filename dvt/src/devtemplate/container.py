@@ -29,6 +29,7 @@ __all__ = [
     "run_lifecycle_commands",
     "find_workspace_container",
     "find_workspace_containers_by_folder",
+    "translate_published_ports",
 ]
 
 
@@ -134,7 +135,10 @@ def config_has_drifted(container: Container, config: dict[str, Any]) -> bool:
     on-disk devcontainer.json, already parsed). Dict equality, not label-string
     equality - JSON key order isn't meaningful. An unreadable stored config
     counts as drifted: better to ask for --rebuild than silently resume a
-    container whose provenance can't be verified."""
+    container whose provenance can't be verified. This whole-dict compare
+    also covers published ports (appPort/forwardPorts): change either and
+    dvt up refuses until --rebuild, since ports can only be set at create
+    time."""
     return (
         read_stored_config(container)
         .map(lambda stored: stored != config)
@@ -161,6 +165,42 @@ def parse_mount(mount_spec: str) -> dict[str, dict[str, str]]:
     into docker-py's {source: {"bind": target, "mode": "rw"}} volumes form."""
     parts = dict(item.split("=", 1) for item in mount_spec.split(",") if "=" in item)
     return {parts["source"]: {"bind": parts["target"], "mode": "rw"}}
+
+
+def _publish_entry(value: object) -> tuple[int, int]:
+    """One appPort/forwardPorts item -> (host_port, container_port). Accepts an
+    int (same port both sides) or a 'HOST:CONTAINER' string. A non-numeric
+    segment (the devcontainer 'label:port' UI form) is refused - it has no
+    bind meaning; use `dvt forward` / `-L` for named forwards."""
+    if isinstance(value, int):
+        return value, value
+    if isinstance(value, str) and ":" in value:
+        host, _, container = value.partition(":")
+        if host.isdigit() and container.isdigit():
+            return int(host), int(container)
+    if isinstance(value, str) and value.isdigit():
+        return int(value), int(value)
+    raise ValueError(
+        f"can't publish port {value!r} - expected an int or 'HOST:CONTAINER'"
+    )
+
+
+def translate_published_ports(config: dict[str, Any]) -> dict[str, tuple[str, int]]:
+    """Translate devcontainer.json `appPort` (hard publish, per spec) and
+    `forwardPorts` into docker-py's `ports=` mapping, each bound to host
+    loopback. Empty when neither key is set - byte-for-byte the previous
+    behavior. Changing either key changes devcontainer.json, which
+    `config_has_drifted` already catches, so `dvt up` refuses a stale port
+    set and points at `--rebuild` with no extra check here."""
+    raw = config.get("appPort", [])
+    app_ports = raw if isinstance(raw, list) else [raw]
+    forward_ports = config.get("forwardPorts", [])
+
+    mapping: dict[str, tuple[str, int]] = {}
+    for item in [*app_ports, *forward_ports]:
+        host_port, container_port = _publish_entry(item)
+        mapping[f"{container_port}/tcp"] = ("127.0.0.1", host_port)
+    return mapping
 
 
 @wrap_result
@@ -235,6 +275,7 @@ def run_container(
         cap_add=cap_adds,
         device_requests=device_requests,
         entrypoint=entrypoint,
+        ports=translate_published_ports(config),
     )
 
 
