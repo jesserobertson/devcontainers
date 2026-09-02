@@ -1,6 +1,6 @@
 {
   "name": "base-cuda",
-  "description": "CUDA-enabled devcontainer base for GPU workloads.",
+  "description": "CUDA 12.8 devcontainer base = base-cuda-slim + the homebrew, shell-kit and pixi features. Assembled via devcontainer build.",
   "ref": "ghcr.io/jesserobertson/base-cuda:latest",
   "aliases": ["cuda", "gpu"]
 }

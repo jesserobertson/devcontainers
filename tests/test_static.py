@@ -533,7 +533,7 @@ def test_published_feature_version_matches_local_content(feature):
 
 # --- images/ registry ---
 
-IMAGES = ["base-ubuntu", "base-cuda", "base-ubuntu-slim"]
+IMAGES = ["base-ubuntu", "base-cuda", "base-ubuntu-slim", "base-cuda-slim"]
 
 
 @pytest.mark.parametrize("image", IMAGES)
@@ -563,6 +563,31 @@ def test_base_ubuntu_slim_ref():
         _image_json("base-ubuntu-slim")["ref"]
         == "ghcr.io/jesserobertson/base-ubuntu-slim:latest"
     )
+
+
+def test_base_cuda_slim_ref():
+    assert (
+        _image_json("base-cuda-slim")["ref"]
+        == "ghcr.io/jesserobertson/base-cuda-slim:latest"
+    )
+
+
+BUNDLE_CONFIGS = {
+    "base-ubuntu": "ghcr.io/jesserobertson/base-ubuntu-slim:latest",
+    "base-cuda": "ghcr.io/jesserobertson/base-cuda-slim:latest",
+}
+PLUMBING_FEATURE_REFS = {
+    "ghcr.io/jesserobertson/devcontainers/homebrew:latest",
+    "ghcr.io/jesserobertson/devcontainers/shell-kit:latest",
+    "ghcr.io/jesserobertson/devcontainers/pixi:latest",
+}
+
+
+@pytest.mark.parametrize("bundle,base_ref", BUNDLE_CONFIGS.items())
+def test_bundle_config_composes_slim_plus_three_features(bundle, base_ref):
+    cfg = _devcontainer_json(f"images/{bundle}/.devcontainer/devcontainer.json")
+    assert cfg["image"] == base_ref
+    assert set(cfg["features"]) == PLUMBING_FEATURE_REFS
 
 
 # --- helpers ---

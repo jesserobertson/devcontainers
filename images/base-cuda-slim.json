@@ -1,0 +1,6 @@
+{
+  "name": "base-cuda-slim",
+  "description": "Bare CUDA 12.8 devcontainer core - apt kit, the dev user, and the chezmoi dotfiles, with no Homebrew, no pixi and no CLI bundle. The lean base GPU toolchain features compose onto.",
+  "ref": "ghcr.io/jesserobertson/base-cuda-slim:latest",
+  "aliases": ["cuda-slim", "gpu-slim"]
+}

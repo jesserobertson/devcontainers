@@ -1,0 +1,9 @@
+{
+  "name": "base-cuda",
+  "image": "ghcr.io/jesserobertson/base-cuda-slim:latest",
+  "features": {
+    "ghcr.io/jesserobertson/devcontainers/homebrew:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/shell-kit:latest": {},
+    "ghcr.io/jesserobertson/devcontainers/pixi:latest": {}
+  }
+}

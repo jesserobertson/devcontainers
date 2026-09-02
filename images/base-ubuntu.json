@@ -1,6 +1,6 @@
 {
   "name": "base-ubuntu",
-  "description": "Ubuntu 24.04 devcontainer base with fish, homebrew, pixi, and dev CLI tooling.",
+  "description": "Ubuntu 24.04 devcontainer base = base-ubuntu-slim + the homebrew, shell-kit and pixi features (fish, Homebrew CLI bundle, pixi with project shell-hooks). Assembled via devcontainer build.",
   "ref": "ghcr.io/jesserobertson/base-ubuntu:latest",
   "aliases": ["ubuntu", "default"]
 }
