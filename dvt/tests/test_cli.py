@@ -1090,3 +1090,100 @@ def test_forward_requires_at_least_one_spec(monkeypatch):
     _stub_forward_deps(monkeypatch, cli_module, build_result=cli_module.Ok(None))
     result = runner.invoke(cli_module.app, ["forward", "-n", "web"])
     assert result.exit_code != 0
+
+
+def test_run_with_dash_L_builds_and_closes_a_forwarder(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    captured = _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(0))
+    events: list[str] = []
+    fake_fwd = SimpleNamespace(
+        summary_lines=lambda: [], close=lambda: events.append("closed")
+    )
+
+    def fake_build(client, cli_binary, name, specs):
+        events.append(f"built:{specs}")
+        return cli_module.Ok(fake_fwd)
+
+    monkeypatch.setattr(cli_module, "build_forwarder", fake_build)
+
+    result = runner.invoke(
+        cli_module.app,
+        ["run", "-n", "web", "-L", "2718", "python", "-m", "http.server"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert events == ["built:['2718']", "closed"]
+    assert captured["command"] == ["python", "-m", "http.server"]
+
+
+def test_run_forwarder_closed_even_when_command_fails(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(7))
+    closed = {"n": 0}
+    monkeypatch.setattr(
+        cli_module,
+        "build_forwarder",
+        lambda *a, **k: cli_module.Ok(
+            SimpleNamespace(
+                summary_lines=lambda: [],
+                close=lambda: closed.__setitem__("n", closed["n"] + 1),
+            )
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["run", "-n", "web", "-L", "2718", "false"])
+
+    assert result.exit_code == 7
+    assert closed["n"] == 1
+
+
+def test_run_dash_L_build_failure_exits_one(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(0))
+    monkeypatch.setattr(
+        cli_module,
+        "build_forwarder",
+        lambda *a, **k: cli_module.Err(ValueError("port 2718 unavailable")),
+    )
+    result = runner.invoke(cli_module.app, ["run", "-n", "web", "-L", "2718", "true"])
+    assert result.exit_code == 1
+    assert "2718" in result.output
+
+
+def test_ssh_with_dash_L_builds_and_closes_a_forwarder(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_existing",
+        lambda client, name, cwd, command: cli_module.Ok(name),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "exec_interactive",
+        lambda cli_binary, client, name: cli_module.Ok(0),
+    )
+    closed = {"n": 0}
+    monkeypatch.setattr(
+        cli_module,
+        "build_forwarder",
+        lambda *a, **k: cli_module.Ok(
+            SimpleNamespace(
+                summary_lines=lambda: [],
+                close=lambda: closed.__setitem__("n", closed["n"] + 1),
+            )
+        ),
+    )
+
+    result = runner.invoke(cli_module.app, ["ssh", "web", "-L", "2718"])
+
+    assert result.exit_code == 0, result.output
+    assert closed["n"] == 1

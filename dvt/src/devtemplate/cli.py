@@ -212,6 +212,14 @@ def ssh(
         help="Non-interactive pipe mode for ProxyCommand use.",
         hidden=True,
     ),
+    forward: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--forward",
+        "-L",
+        help="Forward a host port to a server inside the workspace for the "
+        "lifetime of this session, e.g. -L 2718 (repeatable). Spec: "
+        "LOCAL[:REMOTE_HOST:]REMOTE. Ignored in --stdio mode.",
+    ),
 ) -> None:
     """SSH into a running workspace (or, with --stdio, pipe stdio for ProxyCommand)."""
     # In --stdio mode this process's stdout *is* the SSH byte stream the client
@@ -236,12 +244,27 @@ def ssh(
     resolved_name = unwrap_or_exit(
         resolve_existing(handle.client, name, Path.cwd(), "ssh"), errors
     )
-    result = (
-        stdio_proxy(handle.cli_binary, handle.client, resolved_name)
-        if stdio
-        else exec_interactive(handle.cli_binary, handle.client, resolved_name)
+    if stdio:
+        exit_code = unwrap_or_exit(
+            stdio_proxy(handle.cli_binary, handle.client, resolved_name), errors
+        )
+        raise typer.Exit(code=exit_code)
+
+    forwarder = (
+        unwrap_or_exit(
+            build_forwarder(handle.client, handle.cli_binary, resolved_name, forward),
+            errors,
+        )
+        if forward
+        else None
     )
-    exit_code = unwrap_or_exit(result, errors)
+    try:
+        exit_code = unwrap_or_exit(
+            exec_interactive(handle.cli_binary, handle.client, resolved_name), errors
+        )
+    finally:
+        if forwarder is not None:
+            forwarder.close()
     raise typer.Exit(code=exit_code)
 
 
@@ -267,6 +290,14 @@ def run(
         help="Allocate a TTY (needed for interactive programs like a REPL); "
         "leave off when capturing output or piping.",
     ),
+    forward: list[str] = typer.Option(  # noqa: B008
+        [],
+        "--forward",
+        "-L",
+        help="Forward a host port to a server inside the workspace for the "
+        "lifetime of this command, e.g. -L 2718 (repeatable). Spec: "
+        "LOCAL[:REMOTE_HOST:]REMOTE.",
+    ),
 ) -> None:
     """Run a command inside a running workspace and exit with its status.
 
@@ -286,10 +317,24 @@ def run(
     resolved_name = unwrap_or_exit(
         resolve_existing(handle.client, name, Path.cwd(), "run"), console
     )
-    exit_code = unwrap_or_exit(
-        exec_command(handle.cli_binary, handle.client, resolved_name, command, tty=tty),
-        console,
+    forwarder = (
+        unwrap_or_exit(
+            build_forwarder(handle.client, handle.cli_binary, resolved_name, forward),
+            console,
+        )
+        if forward
+        else None
     )
+    try:
+        exit_code = unwrap_or_exit(
+            exec_command(
+                handle.cli_binary, handle.client, resolved_name, command, tty=tty
+            ),
+            console,
+        )
+    finally:
+        if forwarder is not None:
+            forwarder.close()
     raise typer.Exit(code=exit_code)
 
 
