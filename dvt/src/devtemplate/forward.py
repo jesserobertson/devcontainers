@@ -11,9 +11,10 @@ No host networking, no container recreate.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 
-__all__ = ["ForwardSpec"]
+__all__ = ["ForwardSpec", "RELAY_TOOLS", "select_relay_tool", "relay_argv"]
 
 
 @dataclass(frozen=True)
@@ -66,3 +67,59 @@ class ForwardSpec:
 
     def __str__(self) -> str:
         return f"{self.bind}:{self.local}:{self.remote_host}:{self.remote}"
+
+
+RELAY_TOOLS: tuple[str, ...] = ("socat", "ncat", "nc", "python3")
+
+# Runs inside the container via `python3 -c`. Reads the exec's stdin (bytes
+# from the host client) into a socket connected to the in-container target,
+# and pumps the socket back to stdout, flushing every chunk. read1() returns
+# on first-available data - correct for a live stream. Half-closes the socket
+# when the host side hangs up. Real newlines + single-space indent so it is a
+# valid script; `{host}`/`{port}` are substituted then the whole thing is
+# shlex.quote'd by relay_argv.
+_PYTHON_RELAY = "\n".join(
+    [
+        "import socket,sys,threading",
+        "s=socket.create_connection(({host!r},{port}))",
+        "def up():",
+        " try:",
+        "  while 1:",
+        "   d=sys.stdin.buffer.read1(65536)",
+        "   if not d: break",
+        "   s.sendall(d)",
+        " finally:",
+        "  s.shutdown(socket.SHUT_WR)",
+        "threading.Thread(target=up,daemon=True).start()",
+        "while 1:",
+        " d=s.recv(65536)",
+        " if not d: break",
+        " sys.stdout.buffer.write(d); sys.stdout.buffer.flush()",
+    ]
+)
+
+
+def select_relay_tool(probe_output: str) -> str | None:
+    """First entry of RELAY_TOOLS whose basename appears (one path per line)
+    in `probe_output` - the stdout of a `command -v socat || command -v ncat
+    || ...` run inside the container."""
+    found = {line.rsplit("/", 1)[-1].strip() for line in probe_output.splitlines()}
+    return next((tool for tool in RELAY_TOOLS if tool in found), None)
+
+
+def relay_argv(tool: str, spec: ForwardSpec) -> list[str]:
+    """`["sh", "-c", <snippet>]` that, run via `exec -i` in the container,
+    connects to spec.remote_host:spec.remote and relays stdin<->stdout."""
+    host, port = spec.remote_host, spec.remote
+    if tool == "socat":
+        snippet = f"exec socat - TCP:{shlex.quote(host)}:{port}"
+    elif tool == "ncat":
+        snippet = f"exec ncat {shlex.quote(host)} {port}"
+    elif tool == "nc":
+        snippet = f"exec nc {shlex.quote(host)} {port}"
+    elif tool == "python3":
+        script = _PYTHON_RELAY.format(host=host, port=port)
+        snippet = f"exec python3 -c {shlex.quote(script)}"
+    else:
+        raise ValueError(f"unknown relay tool {tool!r}")
+    return ["sh", "-c", snippet]
