@@ -21,6 +21,13 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 
+# subprocess timeouts: a short one for cheap probes / daemon pings, a generous
+# one for image builds. A TimeoutExpired propagates as a test error (or a
+# skip, from _docker_ok) rather than letting the run hang indefinitely.
+_PING_TIMEOUT = 15
+_PROBE_TIMEOUT = 180
+_BUILD_TIMEOUT = 2400
+
 # Image tags this module builds. The cleanup fixture removes every one of them
 # after each test so a failed run never leaves dangling images behind.
 _TEST_IMAGES = (
@@ -36,8 +43,10 @@ def _docker_ok() -> bool:
     if not shutil.which("docker"):
         return False
     try:
-        return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
-    except OSError:
+        return subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=_PING_TIMEOUT
+        ).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
         return False
 
 
@@ -57,9 +66,13 @@ _needs_devcontainer_cli = pytest.mark.skipif(
 )
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess:
-    """subprocess.run with the capture/text defaults every probe here wants."""
-    return subprocess.run(cmd, capture_output=True, text=True)
+def _run(cmd: list[str], timeout: int = _PROBE_TIMEOUT) -> subprocess.CompletedProcess:
+    """subprocess.run with the capture/text/timeout defaults every probe wants.
+
+    A TimeoutExpired is left to propagate: a wedged build or container run then
+    fails the test loudly instead of hanging the session.
+    """
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 def _write_devcontainer(tmp_path: Path, config: dict) -> Path:
@@ -78,7 +91,14 @@ def cleanup_images():
     """Force-remove every image tag this module might create, post-test."""
     yield
     for name in _TEST_IMAGES:
-        subprocess.run(["docker", "rmi", "-f", name], capture_output=True)
+        try:
+            subprocess.run(
+                ["docker", "rmi", "-f", name],
+                capture_output=True,
+                timeout=_PING_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            pass
 
 
 @_needs_devcontainer_cli
@@ -89,7 +109,7 @@ def test_base_ubuntu_assembly_has_fish_brew_pixi(cleanup_images):
         "devcontainer", "build",
         "--workspace-folder", str(REPO_ROOT / "images" / "base-ubuntu"),
         "--image-name", "base-ubuntu-itest",
-    ])
+    ], timeout=_BUILD_TIMEOUT)
     assert build.returncode == 0, build.stderr
 
     tools = _run([
@@ -98,9 +118,22 @@ def test_base_ubuntu_assembly_has_fish_brew_pixi(cleanup_images):
     ])
     assert tools.returncode == 0, f"stdout={tools.stdout}\nstderr={tools.stderr}"
 
-    # Drop a valid pixi workspace manifest in /workspace, then source the
-    # feature-written .bashrc snippet: it should eval `pixi shell-hook` and
-    # export PIXI_PROJECT_ROOT=/workspace.
+    # (a) The pixi feature wired its bash hook into ~/.bashrc, pointed at the
+    #     /workspace manifest.
+    bashrc = _run([
+        "docker", "run", "--rm", "--user", "dev", "base-ubuntu-itest",
+        "cat", "/home/dev/.bashrc",
+    ])
+    assert bashrc.returncode == 0, bashrc.stderr
+    assert "pixi shell-hook --manifest-path /workspace" in bashrc.stdout, bashrc.stdout
+
+    # (b) With a real pixi workspace manifest in /workspace, a fresh
+    #     *interactive* bash sources the full ~/.bashrc (the stock Ubuntu
+    #     rc returns early for non-interactive shells, so `bash -c` +
+    #     `source` would never reach the appended hook line) and the hook
+    #     runs `pixi shell-hook`, which activates an env -> CONDA_PREFIX is
+    #     set. Assert the activation happened rather than a specific
+    #     PIXI_* var name (those have changed across pixi versions).
     manifest = (
         "[project]\\n"
         'name = "probe"\\n'
@@ -112,12 +145,12 @@ def test_base_ubuntu_assembly_has_fish_brew_pixi(cleanup_images):
     )
     hook = _run([
         "docker", "run", "--rm", "--user", "dev", "-w", "/workspace",
-        "base-ubuntu-itest", "bash", "-c",
+        "base-ubuntu-itest", "bash", "-ic",
         f"printf '{manifest}' > /workspace/pyproject.toml && "
-        "source /home/dev/.bashrc && "
-        'echo "HOOK_ROOT=${PIXI_PROJECT_ROOT:-none}"',
+        "exec bash -ic 'test -n \"$CONDA_PREFIX\" && "
+        "echo HOOK_ACTIVATED CONDA_PREFIX=$CONDA_PREFIX'",
     ])
-    assert "HOOK_ROOT=/workspace" in hook.stdout, (
+    assert "HOOK_ACTIVATED" in hook.stdout, (
         f"stdout={hook.stdout}\nstderr={hook.stderr}"
     )
 
@@ -127,7 +160,7 @@ def test_base_ubuntu_slim_has_none_of_them(cleanup_images):
     build = _run([
         "docker", "build", "--target", "slim", "-t", "slim-itest",
         str(REPO_ROOT / "base"),
-    ])
+    ], timeout=_BUILD_TIMEOUT)
     assert build.returncode == 0, build.stderr
 
     for tool in ("fish", "brew", "pixi"):
@@ -147,7 +180,7 @@ def test_pixi_feature_writes_bash_hook_not_fish_on_slim(tmp_path, cleanup_images
     slim = _run([
         "docker", "build", "--target", "slim", "-t", "slim-itest",
         str(REPO_ROOT / "base"),
-    ])
+    ], timeout=_BUILD_TIMEOUT)
     assert slim.returncode == 0, slim.stderr
 
     workspace = _write_devcontainer(tmp_path, {
@@ -161,7 +194,7 @@ def test_pixi_feature_writes_bash_hook_not_fish_on_slim(tmp_path, cleanup_images
         "devcontainer", "build",
         "--workspace-folder", str(workspace),
         "--image-name", "pixi-on-slim-itest",
-    ])
+    ], timeout=_BUILD_TIMEOUT)
     assert build.returncode == 0, build.stderr
 
     bashrc = _run([
@@ -195,7 +228,7 @@ def test_rust_devtools_on_slim_pulls_homebrew(tmp_path, cleanup_images):
         "devcontainer", "build",
         "--workspace-folder", str(workspace),
         "--image-name", "rust-on-slim-itest",
-    ])
+    ], timeout=_BUILD_TIMEOUT)
     assert build.returncode == 0, build.stderr
 
     probe = _run([
