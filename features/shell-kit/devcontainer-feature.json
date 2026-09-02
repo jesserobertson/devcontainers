@@ -1,0 +1,20 @@
+{
+  "id": "shell-kit",
+  "version": "1.0.0",
+  "name": "Interactive shell kit (fish + modern CLI tools)",
+  "description": "Installs a modern interactive CLI bundle via Homebrew - bat, bat-extras, eza, fd, fish, fzf, jq, just, neovim, ripgrep, starship, zoxide - and makes fish the 'dev' user's login shell (set loginShell=false to keep bash). The chezmoi dotfiles already wire starship/fzf/zoxide integrations when these tools are present. Pulls in the homebrew feature.",
+  "options": {
+    "loginShell": {
+      "type": "boolean",
+      "default": true,
+      "description": "chsh the dev user to fish. When false, installs the tools but leaves the login shell as bash."
+    }
+  },
+  "containerEnv": {
+    "SHELL": "/home/linuxbrew/.linuxbrew/bin/fish"
+  },
+  "dependsOn": {
+    "ghcr.io/jesserobertson/devcontainers/homebrew": {}
+  },
+  "installsAfter": ["ghcr.io/jesserobertson/devcontainers/homebrew"]
+}
