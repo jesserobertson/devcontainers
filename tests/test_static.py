@@ -15,6 +15,7 @@ FEATURES = [
     "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
     "agent", "podman", "rust-devtools", "cpp-devtools",
+    "homebrew",
 ]
 
 SU_DEV_FEATURES = [
@@ -29,9 +30,13 @@ CPU_TEMPLATE_FEATURES = [
 
 SLIM_TEMPLATE_FEATURES = ["rust-devtools", "cpp-devtools"]
 
+# Plumbing features extracted from base/Dockerfile - published, composed onto
+# base images, and depended on by other features. They have no template dir.
+PLUMBING_FEATURES = ["homebrew", "pixi", "shell-kit"]
+
 # Templates whose postCreateCommand must set pixi detached-environments -
 # everything except the slim-based ones, which run no pixi at all.
-PIXI_TEMPLATE_FEATURES = [f for f in FEATURES if f not in SLIM_TEMPLATE_FEATURES]
+PIXI_TEMPLATE_FEATURES = [f for f in FEATURES if f not in SLIM_TEMPLATE_FEATURES + PLUMBING_FEATURES]
 
 
 # --- per-feature parametrised checks ---

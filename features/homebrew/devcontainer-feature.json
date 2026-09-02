@@ -1,0 +1,13 @@
+{
+  "id": "homebrew",
+  "version": "1.0.0",
+  "name": "Homebrew (Linuxbrew)",
+  "description": "Installs Homebrew for the non-root 'dev' user at the standard /home/linuxbrew/.linuxbrew prefix, with no formulae. Puts brew on PATH and disables auto-update and analytics. This is the package-manager layer that shell-kit, rust-devtools and cpp-devtools build on; base-ubuntu and base-cuda bundle it. Idempotent - a no-op if brew is already present.",
+  "options": {},
+  "containerEnv": {
+    "PATH": "/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/dev/.local/bin:${PATH}",
+    "HOMEBREW_NO_AUTO_UPDATE": "1",
+    "HOMEBREW_NO_ANALYTICS": "1"
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}
