@@ -16,24 +16,12 @@ from typing import TYPE_CHECKING
 import asyncssh
 
 from devtemplate.net import bounded_socketpair
+from devtemplate.pty.constants import CHUNK, DRAIN_TIMEOUT
 
 if TYPE_CHECKING:
     from devtemplate.pty.spawn import PtyProcess
 
 __all__ = ["bridge_to_ssh_process", "CHUNK", "DRAIN_TIMEOUT"]
-
-CHUNK = 4096
-"""Read size for every byte pump touching a pty session - shared with
-devtemplate.sshd, whose plain-pipe session path uses the identical value
-for the identical reason (interactive terminal traffic, latency over
-throughput)."""
-
-DRAIN_TIMEOUT = 5.0
-"""How long to wait for a blocking pump thread to notice its socket end
-closed and flush its last output, after the async side has finished.
-Shared with devtemplate.sshd for the same reason as CHUNK above - both
-packages bridge blocking OS-level I/O into asyncio via a socketpair-plus-
-daemon-thread shape, and both need the same drain budget."""
 
 CHANNEL_EVENTS = (asyncssh.misc.BreakReceived, asyncssh.misc.SignalReceived)
 """Explicit SSH protocol-level signal/break requests - distinct from a

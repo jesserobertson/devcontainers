@@ -24,7 +24,7 @@ from logerr.utilities import wrap_result
 from loguru import logger
 
 from devtemplate.container import find_workspace_container
-from devtemplate.pty import CHUNK
+from devtemplate.pty.constants import CHUNK
 
 __all__ = [
     "ForwardSpec",
@@ -160,13 +160,26 @@ def _probe_relay_tool(cli_binary: str, container: str) -> str | None:
         text=True,
         timeout=15,
     )
+    # _PROBE ends `|| true`, so a healthy probe always exits 0 even when no
+    # relay tool is found - a non-zero code therefore means the exec itself
+    # failed (e.g. the engine is unreachable, or the container isn't running).
+    if proc.returncode != 0:
+        raise ValueError(
+            f"could not probe workspace container {container!r} for a relay "
+            f"tool ({proc.stderr.strip() or 'exec failed'})"
+        )
     return select_relay_tool(proc.stdout)
 
 
 def block_forever() -> None:
-    """Park until Ctrl-C. Its own function so tests can monkeypatch it."""
+    """Park until Ctrl-C. Polls on a short timeout rather than blocking
+    indefinitely: on Windows an untimed Event().wait() / lock acquire is not
+    interrupted by a console Ctrl-C, so a bare wait() would never see the
+    KeyboardInterrupt. Its own function so tests can monkeypatch it."""
+    stop = threading.Event()
     try:
-        threading.Event().wait()
+        while not stop.wait(0.2):
+            pass
     except KeyboardInterrupt:
         pass
 
@@ -238,7 +251,16 @@ class PortForwarder:
             *relay_argv(self._tool, spec),
         ]
         try:
-            proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                # A relay child's traceback / socat error would otherwise land
+                # in the middle of the user's `dvt run -L` output; the
+                # logger.debug on teardown below is the visible-but-quiet
+                # signal that a relay died.
+                stderr=subprocess.DEVNULL,
+            )
         except OSError as exc:
             logger.debug("forward {}: relay spawn failed: {}", spec, exc)
             conn.close()
@@ -292,8 +314,25 @@ class PortForwarder:
         t2.start()
         t2.join()
         proc.terminate()
+        try:
+            proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            with contextlib.suppress(Exception):
+                proc.wait(timeout=2.0)
+        for stream in (proc.stdout, proc.stdin):
+            if stream is not None:
+                with contextlib.suppress(OSError):
+                    stream.close()
         with contextlib.suppress(OSError):
             conn.close()
+        if proc.returncode not in (0, None) and not self._closed:
+            logger.debug("forward {}: relay exited {}", spec, proc.returncode)
+        with self._lock:
+            if proc in self._children:
+                self._children.remove(proc)
+            if conn in self._conns:
+                self._conns.remove(conn)
 
     def summary_lines(self) -> list[str]:
         return [
@@ -335,6 +374,8 @@ def build_forwarder(
         raise ValueError("no forward specs given")
     container = find_workspace_container(client, name)
     if container is None or container.name is None:
+        raise ValueError(f"No workspace named {name!r} is running.")
+    if getattr(container, "status", None) != "running":
         raise ValueError(f"No workspace named {name!r} is running.")
     tool = _probe_relay_tool(cli_binary, container.name)
     if tool is None:

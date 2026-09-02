@@ -9,7 +9,7 @@ import socket
 import sys
 import threading
 
-from devtemplate.pty import CHUNK
+from devtemplate.pty.constants import CHUNK
 
 __all__ = ["pump_stdio_to_socket"]
 

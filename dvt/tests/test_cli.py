@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 
 import jsonschema
+import pytest
 from typer.testing import CliRunner
 
 from devtemplate import __version__
@@ -1115,6 +1116,25 @@ def test_run_with_dash_L_builds_and_closes_a_forwarder(monkeypatch):
     assert result.exit_code == 0, result.output
     assert events == ["built:['2718']", "closed"]
     assert captured["command"] == ["python", "-m", "http.server"]
+
+
+def test_run_does_not_steal_the_commands_own_dash_L(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    captured = _stub_run_deps(monkeypatch, cli_module, cli_module.Ok(0))
+    # build_forwarder must NOT be called - no -L before the command
+    monkeypatch.setattr(
+        cli_module,
+        "build_forwarder",
+        lambda *a, **k: pytest.fail(
+            "build_forwarder called; -L was stolen from the command"
+        ),
+    )
+    result = runner.invoke(
+        cli_module.app, ["run", "-n", "web", "curl", "-L", "http://example"]
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["command"] == ["curl", "-L", "http://example"]
 
 
 def test_run_forwarder_closed_even_when_command_fails(monkeypatch):

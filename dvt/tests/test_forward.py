@@ -194,6 +194,19 @@ def test_build_forwarder_errs_when_container_not_running(monkeypatch):
     )
 
 
+def test_build_forwarder_errs_when_container_stopped(monkeypatch):
+    # find_workspace_container returns exited containers too (all=True); a
+    # stopped workspace must be rejected up front, not probed for a relay tool.
+    monkeypatch.setattr(
+        forward_mod,
+        "find_workspace_container",
+        lambda c, n: SimpleNamespace(name="dvt-ws", status="exited"),
+    )
+    result = build_forwarder(object(), "podman", "ws", ["2718"])
+    assert result.is_err()
+    assert "is running" in str(result.unwrap_err())
+
+
 def test_build_forwarder_errs_on_local_port_in_use(fake_container_env):
     busy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     busy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -220,3 +233,56 @@ def test_build_forwarder_errs_when_no_relay_tool(monkeypatch):
     result = build_forwarder(object(), "podman", "ws", ["2718"])
     assert result.is_err()
     assert "socat" in str(result.unwrap_err())
+
+
+def test_block_forever_returns_on_keyboard_interrupt():
+    import _thread
+    import time
+
+    from devtemplate.forward import block_forever
+
+    timer = threading.Timer(0.3, _thread.interrupt_main)
+    timer.start()
+    start = time.monotonic()
+    try:
+        block_forever()  # must return, not hang
+    finally:
+        timer.cancel()
+    assert time.monotonic() - start < 5
+
+
+def test_bridge_reaps_children_and_clears_tracking_lists(
+    fake_container_env, monkeypatch
+):
+    import time
+
+    spawned: list = []
+    inner_popen = forward_mod.subprocess.Popen
+
+    def recording_popen(argv, **kwargs):
+        proc = inner_popen(argv, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(forward_mod.subprocess, "Popen", recording_popen)
+
+    port = _free_port()
+    fwd = build_forwarder(object(), "podman", "ws", [str(port)]).unwrap()
+    try:
+        for i in range(5):
+            c = socket.create_connection(("127.0.0.1", port), timeout=5)
+            msg = f"payload-{i}".encode()
+            c.sendall(msg)
+            assert c.recv(4096) == msg
+            c.close()
+        # The per-connection bridge runs in a daemon thread; give its teardown
+        # (proc.wait + list.remove) time to run.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and (fwd._children or fwd._conns):
+            time.sleep(0.05)
+        assert fwd._children == []
+        assert fwd._conns == []
+        assert len(spawned) == 5
+        assert all(p.returncode is not None for p in spawned)
+    finally:
+        fwd.close()

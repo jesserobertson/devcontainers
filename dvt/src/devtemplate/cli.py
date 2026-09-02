@@ -268,13 +268,23 @@ def ssh(
     raise typer.Exit(code=exit_code)
 
 
-@app.command(context_settings={"ignore_unknown_options": True})
+@app.command(
+    context_settings={
+        "ignore_unknown_options": True,
+        # Stop option parsing at the first positional so a flag that belongs to
+        # the user's command (curl/grep/ls/tar/make all take -L; also -t) isn't
+        # captured as one of dvt's own -n/-t/-L. dvt's options must precede the
+        # command, exactly as this command's docstring already promises.
+        "allow_interspersed_args": False,
+    }
+)
 def run(
     command: list[str] = typer.Argument(  # noqa: B008
         ...,
         help="Command (and its arguments) to run inside the workspace, e.g. "
-        "'dvt run -n web pytest -q'. Options meant for dvt itself (-n/--name, "
-        "-t/--tty) must come before the command.",
+        "'dvt run -n web pytest -q'. Options meant for dvt itself "
+        "(-n/--name, -t/--tty, -L/--forward) must come before the command; "
+        "put '--' before the command to separate them explicitly.",
     ),
     name: str | None = typer.Option(  # noqa: B008
         None,
@@ -300,6 +310,11 @@ def run(
     ),
 ) -> None:
     """Run a command inside a running workspace and exit with its status.
+
+    Options meant for dvt itself (-n/--name, -t/--tty, -L/--forward) must come
+    before the command; everything from the first non-option argument onward is
+    the command and its own arguments (so `dvt run -n web curl -L <url>` passes
+    -L to curl). Use `--` before the command to separate them explicitly.
 
     The command runs through the workspace user's login shell so image
     shell-startup hooks (e.g. a project's pixi environment) apply, the same
@@ -344,7 +359,7 @@ def forward(
         ...,
         metavar="SPEC...",
         help="Port forward(s), each LOCAL[:REMOTE_HOST:]REMOTE "
-        "(default REMOTE_HOST=localhost, LOCAL=REMOTE). Repeatable: "
+        "(default REMOTE_HOST=127.0.0.1, LOCAL=REMOTE). Repeatable: "
         "'dvt forward -n web 2718 8080:3000'.",
     ),
     name: str | None = typer.Option(  # noqa: B008
