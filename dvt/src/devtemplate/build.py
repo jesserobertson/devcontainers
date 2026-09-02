@@ -57,6 +57,8 @@ def generate_dockerfile(
         lines.append(f"COPY {context_dir}/ /tmp/dvt-feature/")
         lines.append("USER root")
         for key in sorted(container_env):
+            # trusted feature metadata, emitted verbatim - a literal `"` in a
+            # value would break the line
             lines.append(f'ENV {key}="{container_env[key]}"')
         env_assignments = " ".join(
             f"{key.upper()}={shlex.quote(value)}" for key, value in options.items()

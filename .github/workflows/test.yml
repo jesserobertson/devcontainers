@@ -7,6 +7,8 @@ on:
       - features/**
       - examples/**
       - host-services/**
+      - base/**
+      - images/**
       - tests/**
       - pyproject.toml
       - .github/workflows/test.yml
@@ -14,6 +16,8 @@ on:
     paths:
       - features/**
       - examples/**
+      - base/**
+      - images/**
       - tests/**
 
 jobs:
@@ -49,6 +53,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: npm install -g @devcontainers/cli
       - run: pip install pytest
       # GPU tests are automatically skipped — no --gpu flag
       - run: pytest tests/integration/ -v

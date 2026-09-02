@@ -55,19 +55,19 @@ Composable features that install on top of a base image at container creation ti
 
 | Feature | Use | Stack | Description |
 |---------|-----|-------|-------------|
-| `…/rapids:latest` | ML | base-cuda | GPU DataFrames and array computing — cuDF, Polars GPU |
-| `…/jax:latest` | ML | base-cuda | Accelerated numerical computing — JAX (CUDA 12), Marimo |
-| `…/pytorch:latest` | ML | base-cuda | Deep learning — PyTorch (CUDA 12.4), Torchvision, Marimo |
-| `…/mojo:latest` | ML | base-cuda | Systems AI programming — Modular MAX / Mojo (nightly) |
-| `…/marimo:latest` | Data | base-ubuntu / base-cuda | Reactive notebooks and visualisation — Marimo, Altair, vega_datasets |
-| `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
-| `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
-| `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, Helix editor + pyright (Helix wired to ruff's LSP + pyright out of the box) |
+| `…/rapids:latest` | ML | base-cuda-slim | GPU DataFrames and array computing — cuDF, Polars GPU |
+| `…/jax:latest` | ML | base-cuda-slim | Accelerated numerical computing — JAX (CUDA 12), Marimo |
+| `…/pytorch:latest` | ML | base-cuda-slim | Deep learning — PyTorch (CUDA 12.4), Torchvision, Marimo |
+| `…/mojo:latest` | ML | base-cuda-slim | Systems AI programming — Modular MAX / Mojo (nightly) |
+| `…/marimo:latest` | Data | base-ubuntu-slim | Reactive notebooks and visualisation — Marimo, Altair, vega_datasets |
+| `…/fastapi:latest` | Web | base-ubuntu-slim | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
+| `…/cli:latest` | CLI | base-ubuntu-slim | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
+| `…/py-devtools:latest` | Dev | base-ubuntu-slim | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, Helix editor + pyright (Helix wired to ruff's LSP + pyright out of the box) |
 | `…/rust-devtools:latest` | Dev | base-ubuntu-slim | Rust dev tooling via Homebrew — cargo, rustc, rust-analyzer, Helix editor (Helix's default config already pairs Rust with rust-analyzer). `dependsOn: homebrew`, so it self-provisions brew on a slim base |
 | `…/cpp-devtools:latest` | Dev | base-ubuntu-slim | C/C++ dev tooling via Homebrew — clang, clangd, lld, lldb, cmake, ninja, ccache, pkgconf, Helix editor (Helix's default config already pairs C/C++ with clangd). `dependsOn: homebrew`, so it self-provisions brew on a slim base |
-| `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
-| `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
-| `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
+| `…/huggingface:latest` | ML | base-ubuntu-slim | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
+| `…/transformers:latest` | ML | base-cuda-slim | HuggingFace inference — transformers, datasets, accelerate |
+| `…/ollama:latest` | ML | base-ubuntu-slim | Local LLM client — OpenAI-compatible client for an Ollama service |
 | `…/agent:latest` | Agent | base-ubuntu / base-cuda | Contained agents — `claude`/`pi`/`omp` CLIs, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
 | `…/podman:latest` | Dev | base-ubuntu / base-cuda | Rootless Podman for nested container/image testing — `docker`/`docker compose` CLI shims via podman-docker + podman-compose, vfs storage driver (no `--privileged` needed) |
 | `…/homebrew:latest` | Base | base-ubuntu-slim / base-cuda-slim | Homebrew (Linuxbrew) for the `dev` user at `/home/linuxbrew/.linuxbrew`, no formulae — the package-manager layer `shell-kit`, `rust-devtools` and `cpp-devtools` build on. Baked into `base-ubuntu` / `base-cuda` |

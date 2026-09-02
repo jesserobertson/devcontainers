@@ -17,6 +17,10 @@ implementation:
 - Only `dependsOn` triggers a pull. An `installsAfter` (or `dependsOn`) ref that
   resolves to something not in the resolved set is ignored for ordering; a
   `dependsOn` target the registry can't serve surfaces as the pull's own error.
+- A `dependsOn` target's per-dependency option object (`{"<ref>": {<options>}}`)
+  is NOT applied - a transitively-pulled feature always installs with its default
+  options. A project needing non-default options for a dependency must list that
+  ref explicitly in its own `features`.
 - `containerEnv` values are passed through verbatim to a plain Docker `ENV`
   instruction. `${VAR}` therefore works with ordinary shell/Docker semantics;
   the spec's `${containerEnv:VAR}` self-referential interpolation is NOT

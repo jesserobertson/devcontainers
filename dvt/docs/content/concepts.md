@@ -124,8 +124,6 @@ client — not `dvt`-specific artifacts.
 This is compatibility, not full spec parity. `dvt` does not implement:
 
 - **docker-compose devcontainers** (`dockerComposeFile`) — image-only devcontainer.json
-- **Feature dependency ordering** (`installsAfter`/`dependsOn`) — one Feature per
-  devcontainer.json is assumed
 - **`build.dockerfile`-based devcontainer.json** — use `image` instead
 - **`onCreateCommand`/`updateContentCommand`/`initializeCommand`/`postAttachCommand`**
   — only `postCreateCommand` and `postStartCommand` run. `initializeCommand` in
