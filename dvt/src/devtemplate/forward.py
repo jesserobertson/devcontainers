@@ -11,10 +11,30 @@ No host networking, no container recreate.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import shlex
+import socket
+import subprocess
+import threading
 from dataclasses import dataclass
 
-__all__ = ["ForwardSpec", "RELAY_TOOLS", "select_relay_tool", "relay_argv"]
+from docker.client import DockerClient
+from logerr.utilities import wrap_result
+from loguru import logger
+
+from devtemplate.container import find_workspace_container
+from devtemplate.pty import CHUNK
+
+__all__ = [
+    "ForwardSpec",
+    "RELAY_TOOLS",
+    "select_relay_tool",
+    "relay_argv",
+    "PortForwarder",
+    "build_forwarder",
+    "block_forever",
+]
 
 
 @dataclass(frozen=True)
@@ -123,3 +143,202 @@ def relay_argv(tool: str, spec: ForwardSpec) -> list[str]:
     else:
         raise ValueError(f"unknown relay tool {tool!r}")
     return ["sh", "-c", snippet]
+
+
+_PROBE = " || ".join(f"command -v {t}" for t in RELAY_TOOLS) + " || true"
+
+
+def _probe_relay_tool(cli_binary: str, container: str) -> str | None:
+    proc = subprocess.run(
+        [cli_binary, "exec", container, "sh", "-c", _PROBE],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    return select_relay_tool(proc.stdout)
+
+
+def block_forever() -> None:
+    """Park until Ctrl-C. Its own function so tests can monkeypatch it."""
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+
+
+class PortForwarder:
+    def __init__(
+        self,
+        cli_binary: str,
+        container: str,
+        name: str,
+        specs: list[ForwardSpec],
+        tool: str,
+    ) -> None:
+        self._cli_binary = cli_binary
+        self._container = container
+        self._name = name
+        self._specs = specs
+        self._tool = tool
+        self._listeners: list[socket.socket] = []
+        self._acceptors: list[threading.Thread] = []
+        self._children: list[subprocess.Popen[bytes]] = []
+        self._conns: list[socket.socket] = []
+        self._closed = False
+        self._lock = threading.Lock()
+
+    def _bind_all(self) -> None:
+        for spec in self._specs:
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if os.name != "nt":
+                # POSIX SO_REUSEADDR only frees a TIME_WAIT port; on Windows it
+                # instead lets a second bind steal a port that is actively in
+                # use, which would silently swallow the "local port unavailable"
+                # error path below. Windows' default (no opt) already gives the
+                # exclusive bind we want.
+                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                srv.bind((spec.bind, spec.local))
+            except OSError as exc:
+                srv.close()
+                self.close()
+                raise OSError(
+                    f"cannot forward {spec}: local port {spec.local} "
+                    f"on {spec.bind} is unavailable ({exc})"
+                ) from exc
+            srv.listen(16)
+            self._listeners.append(srv)
+            thread = threading.Thread(
+                target=self._accept_loop, args=(srv, spec), daemon=True
+            )
+            thread.start()
+            self._acceptors.append(thread)
+
+    def _accept_loop(self, srv: socket.socket, spec: ForwardSpec) -> None:
+        while not self._closed:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            threading.Thread(
+                target=self._bridge, args=(conn, spec), daemon=True
+            ).start()
+
+    def _bridge(self, conn: socket.socket, spec: ForwardSpec) -> None:
+        argv = [
+            self._cli_binary,
+            "exec",
+            "-i",
+            self._container,
+            *relay_argv(self._tool, spec),
+        ]
+        try:
+            proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        except OSError as exc:
+            logger.debug("forward {}: relay spawn failed: {}", spec, exc)
+            conn.close()
+            return
+        with self._lock:
+            if self._closed:
+                proc.terminate()
+                conn.close()
+                return
+            self._children.append(proc)
+            self._conns.append(conn)
+
+        assert proc.stdin is not None and proc.stdout is not None
+        proc_stdin, proc_stdout = proc.stdin, proc.stdout
+        in_fd, out_fd = proc_stdin.fileno(), proc_stdout.fileno()
+
+        def sock_to_proc() -> None:
+            try:
+                while True:
+                    # conn.recv(), not os.read(conn.fileno()): a socket fd is
+                    # not an os.read-able descriptor on Windows (raises
+                    # EBADF). The subprocess-pipe side keeps os.read/os.write.
+                    # Same split as devtemplate.sshd.stdio.pump_stdio_to_socket.
+                    data = conn.recv(CHUNK)
+                    if not data:
+                        break
+                    while data:
+                        data = data[os.write(in_fd, data) :]
+            except OSError:
+                pass
+            finally:
+                with contextlib.suppress(OSError):
+                    proc_stdin.close()
+
+        def proc_to_sock() -> None:
+            try:
+                while True:
+                    data = os.read(out_fd, CHUNK)
+                    if not data:
+                        break
+                    conn.sendall(data)
+            except OSError:
+                pass
+            finally:
+                with contextlib.suppress(OSError):
+                    conn.shutdown(socket.SHUT_WR)
+
+        t1 = threading.Thread(target=sock_to_proc, daemon=True)
+        t2 = threading.Thread(target=proc_to_sock, daemon=True)
+        t1.start()
+        t2.start()
+        t2.join()
+        proc.terminate()
+        with contextlib.suppress(OSError):
+            conn.close()
+
+    def summary_lines(self) -> list[str]:
+        return [
+            f"{spec.bind}:{spec.local} -> {self._name}:{spec.remote_host}:{spec.remote}"
+            for spec in self._specs
+        ]
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        for srv in self._listeners:
+            with contextlib.suppress(OSError):
+                srv.close()
+        for proc in list(self._children):
+            with contextlib.suppress(Exception):
+                proc.terminate()
+        for conn in list(self._conns):
+            with contextlib.suppress(OSError):
+                conn.close()
+        for thread in self._acceptors:
+            thread.join(timeout=2.0)
+
+
+@wrap_result
+def build_forwarder(
+    client: DockerClient, cli_binary: str, name: str, specs: list[str]
+) -> PortForwarder:
+    """Parse `specs`, resolve the running workspace container, probe its relay
+    tool, and bind every listener. On failure nothing is left open.
+
+    Decorated with @wrap_result: a bare return becomes Ok(...), a raised
+    exception becomes Err(...) - the same convention as
+    devtemplate.ssh.stdio_proxy.
+    """
+    parsed = [ForwardSpec.parse(s) for s in specs]
+    if not parsed:
+        raise ValueError("no forward specs given")
+    container = find_workspace_container(client, name)
+    if container is None or container.name is None:
+        raise ValueError(f"No workspace named {name!r} is running.")
+    tool = _probe_relay_tool(cli_binary, container.name)
+    if tool is None:
+        raise ValueError(
+            f"workspace {name!r} has none of {', '.join(RELAY_TOOLS)} installed - "
+            "dvt needs one of them inside the container to relay a forwarded "
+            "connection. Install one in the image, or publish the port "
+            'declaratively via devcontainer.json "appPort" and `dvt up --rebuild`.'
+        )
+    fwd = PortForwarder(cli_binary, container.name, name, parsed, tool)
+    fwd._bind_all()
+    return fwd
