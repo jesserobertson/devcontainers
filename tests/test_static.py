@@ -23,6 +23,17 @@ SU_DEV_FEATURES = [
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
 ]
 
+PIXI_DEPENDENT_FEATURES = [
+    "rapids", "jax", "pytorch", "mojo", "marimo", "fastapi",
+    "cli", "py-devtools", "huggingface", "transformers", "ollama",
+]
+
+
+@pytest.mark.parametrize("feature", PIXI_DEPENDENT_FEATURES)
+def test_pixi_feature_depends_on_pixi(feature):
+    data = _feature_json(feature)
+    assert data["dependsOn"] == {"ghcr.io/jesserobertson/devcontainers/pixi": {}}
+
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
 CPU_TEMPLATE_FEATURES = [
     "marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama", "podman",

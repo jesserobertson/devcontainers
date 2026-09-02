@@ -1,7 +1,10 @@
 {
   "id": "marimo",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "Marimo + Altair",
   "description": "Installs Marimo notebook server and Altair visualisation via pixi. Works with both base-ubuntu and base-cuda images. Provides a default pixi.toml if the workspace doesn't already have one.",
-  "options": {}
+  "options": {},
+  "dependsOn": {
+    "ghcr.io/jesserobertson/devcontainers/pixi": {}
+  }
 }

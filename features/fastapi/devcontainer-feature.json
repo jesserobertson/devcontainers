@@ -1,7 +1,10 @@
 {
   "id": "fastapi",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "FastAPI + Pydantic",
   "description": "Installs FastAPI, Pydantic and Uvicorn via pixi for building Python web APIs. Works with both base-ubuntu and base-cuda images.",
-  "options": {}
+  "options": {},
+  "dependsOn": {
+    "ghcr.io/jesserobertson/devcontainers/pixi": {}
+  }
 }

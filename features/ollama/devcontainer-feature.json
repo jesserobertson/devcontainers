@@ -1,6 +1,6 @@
 {
   "id": "ollama",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Ollama client",
   "description": "Installs the OpenAI-compatible Python client and configures connection env vars for an Ollama service running on the host. Assumes Ollama is running via Docker Desktop — see host-services/ollama/ for setup.",
   "options": {
@@ -29,5 +29,8 @@
       "default": "4096",
       "description": "Context window size hint written as OLLAMA_CONTEXT_SIZE for use by client code."
     }
+  },
+  "dependsOn": {
+    "ghcr.io/jesserobertson/devcontainers/pixi": {}
   }
 }
