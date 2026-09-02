@@ -13,7 +13,19 @@ export PIXI_HOME="/home/dev/.local/share/pixi"
 # is baked into them). Re-running the installer there would be wasted work at
 # best; skip it so the feature is safe to list explicitly on a bundle base too.
 if [ ! -x /home/dev/.local/share/pixi/bin/pixi ]; then
-    curl -fsSL https://pixi.sh/install.sh | su dev -s /bin/bash
+    # Run the whole install as dev (curl + shell), and pin TMPDIR to a dir dev
+    # can definitely write: under `devcontainer build` on podman/buildah the
+    # feature-content-copy step can normalise /tmp from 1777 to 0755 root:root,
+    # and the pixi installer's `mktemp /tmp/.pixi_install.XXXX` as dev then dies
+    # with Permission denied. pipefail here too so a curl 404 aborts the build.
+    su dev -s /bin/bash -c '
+        set -e
+        set -o pipefail
+        export TMPDIR="$HOME/.cache/pixi-install"
+        mkdir -p "$TMPDIR"
+        curl -fsSL https://pixi.sh/install.sh | bash
+        rm -rf "$TMPDIR"
+    '
 fi
 [ -x /home/dev/.local/share/pixi/bin/pixi ] || { echo "pixi install failed" >&2; exit 1; }
 
