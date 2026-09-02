@@ -76,6 +76,19 @@ def test_refuse_unsupported_rejects_installs_after():
     assert result.is_err()
 
 
+def test_refuse_unsupported_installs_after_message_is_about_malformed_shape():
+    """dvt now resolves a Feature's own dependsOn/installsAfter at build time, so
+    the rejection here is only about the *malformed* shape of putting those keys
+    in devcontainer.json's per-feature options object - the message must not
+    claim the runtime can't do multi-Feature ordering."""
+    config = {
+        "features": {"ghcr.io/x/y:latest": {"dependsOn": {"ghcr.io/x/z:latest": {}}}}
+    }
+    message = str(refuse_unsupported(config).unwrap_err())
+    assert "single-Feature only" not in message
+    assert "devcontainer-feature.json" in message
+
+
 def test_resolve_workspace_uses_explicit_fields(tmp_path):
     folder, mount = resolve_workspace(FASTAPI_CONFIG, tmp_path)
     assert folder == "/workspace"

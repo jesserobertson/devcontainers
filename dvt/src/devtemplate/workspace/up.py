@@ -8,7 +8,6 @@ from typing import Any, cast
 
 import httpx
 from docker.models.containers import Container
-from logerr.itertools import traverse_result
 from logerr.utilities import wrap_result
 
 from devtemplate import podman_machine
@@ -21,6 +20,7 @@ from devtemplate.container import (
     run_container,
     run_lifecycle_commands,
 )
+from devtemplate.feature_graph import resolve_feature_graph
 from devtemplate.features import pull_feature
 from devtemplate.runtime import RuntimeHandle
 from devtemplate.workspace.existing import (
@@ -32,15 +32,6 @@ from devtemplate.workspace.existing import (
 )
 
 __all__ = ["up_workspace"]
-
-
-def feature_id(ref: str) -> str:
-    """Derive a short id from an OCI ref's trailing path segment, e.g.
-    'ghcr.io/jesserobertson/devcontainers/fastapi:latest' -> 'fastapi'. Used only
-    for Dockerfile stage naming, not read from the Feature's own
-    devcontainer-feature.json "id" field - an acceptable v1 simplification since
-    this repo's own Features always keep the two in sync by construction."""
-    return ref.rsplit("/", 1)[-1].split(":")[0]
 
 
 @wrap_result
@@ -145,18 +136,16 @@ def up_workspace(
         rebuild_teardown(handle.client, existing, image_tag(name)).unwrap()
 
     features_config = config.get("features", {})
-    feature_refs = list(features_config.keys())
 
-    on_stage(f"Pulling {len(feature_refs)} feature(s)...")
+    on_stage("Resolving and pulling features...")
     with httpx.Client() as http_client:
-        pulled = traverse_result(
-            feature_refs,
-            lambda ref: pull_feature(http_client, ref, settings.features_dir),
+        resolved = resolve_feature_graph(
+            features_config,
+            lambda ref: pull_feature(http_client, ref, settings.features_dir).unwrap(),
         ).unwrap()
 
     features = [
-        (feature_id(ref), extracted_dir, features_config[ref])
-        for ref, extracted_dir in zip(feature_refs, pulled, strict=True)
+        (rf.id, rf.extracted_dir, rf.options, rf.container_env) for rf in resolved
     ]
 
     if handle.machine_name is not None and "--gpus" in config.get("runArgs", []):

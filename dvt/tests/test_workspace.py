@@ -54,8 +54,8 @@ def test_up_workspace_full_build_and_run_sequence(
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     build_calls = []
     monkeypatch.setattr(
@@ -92,8 +92,8 @@ def test_up_workspace_reports_stage_progress(project, handle, settings, monkeypa
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     monkeypatch.setattr(
         workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
@@ -113,7 +113,7 @@ def test_up_workspace_reports_stage_progress(project, handle, settings, monkeypa
 
     assert result.is_ok()
     assert stages == [
-        "Pulling 1 feature(s)...",
+        "Resolving and pulling features...",
         "Building image...",
         "Starting container...",
         "Running lifecycle commands...",
@@ -155,8 +155,8 @@ def test_up_workspace_without_on_stage_still_works(
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     monkeypatch.setattr(
         workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
@@ -331,8 +331,8 @@ def test_up_workspace_skips_gpu_check_on_docker(project, settings, monkeypatch):
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/x")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     monkeypatch.setattr(
         workspace_module,
@@ -393,8 +393,8 @@ def test_up_workspace_skips_gpu_check_on_podman_windows_without_gpus_arg(
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/x")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     monkeypatch.setattr(
         workspace_module,
@@ -485,8 +485,8 @@ def test_up_workspace_rebuild_tears_down_and_rebuilds(
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     build_calls = []
     monkeypatch.setattr(
@@ -524,8 +524,8 @@ def test_up_workspace_rebuild_skips_teardown_when_no_existing_container(
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     monkeypatch.setattr(
         workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")
@@ -564,8 +564,8 @@ def test_up_workspace_rebuild_proceeds_when_image_removal_fails(
     )
     monkeypatch.setattr(
         workspace_module,
-        "pull_feature",
-        lambda client, ref, cache_dir: Ok(Path("/extracted")),
+        "resolve_feature_graph",
+        lambda *a, **k: Ok([]),
     )
     monkeypatch.setattr(
         workspace_module, "build_image", lambda *a, **k: Ok("dvt/fastapi:latest")

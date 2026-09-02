@@ -16,7 +16,7 @@ def test_generate_dockerfile_no_features():
 def test_generate_dockerfile_single_feature():
     content = generate_dockerfile(
         "ghcr.io/jesserobertson/base-ubuntu:latest",
-        [("fastapi", "features/0-fastapi", {})],
+        [("fastapi", "features/0-fastapi", {}, {})],
     )
     assert "FROM ghcr.io/jesserobertson/base-ubuntu:latest AS stage0" in content
     assert "FROM stage0 AS feature-0-fastapi" in content
@@ -32,7 +32,7 @@ def test_generate_dockerfile_installs_features_as_root():
     step, since install.sh commonly needs root (e.g. su-ing to _REMOTE_USER)."""
     content = generate_dockerfile(
         "ghcr.io/jesserobertson/base-ubuntu:latest",
-        [("fastapi", "features/0-fastapi", {})],
+        [("fastapi", "features/0-fastapi", {}, {})],
     )
     lines = content.splitlines()
     copy_index = lines.index("COPY features/0-fastapi/ /tmp/dvt-feature/")
@@ -45,9 +45,28 @@ def test_generate_dockerfile_installs_features_as_root():
 def test_generate_dockerfile_quotes_option_values_safely():
     content = generate_dockerfile(
         "base:latest",
-        [("ollama", "features/0-ollama", {"model": "llama3.2; rm -rf /"})],
+        [("ollama", "features/0-ollama", {"model": "llama3.2; rm -rf /"}, {})],
     )
     assert "MODEL='llama3.2; rm -rf /'" in content
+
+
+def test_generate_dockerfile_emits_container_env_after_user_root():
+    """A Feature's own devcontainer-feature.json "containerEnv" is threaded in as
+    plain Docker ENV instructions, emitted between USER root and the install RUN,
+    sorted by key, with ${VAR} references left intact (not shell-escaped)."""
+    content = generate_dockerfile(
+        "base:latest",
+        [("tc", "features/0-tc", {}, {"PATH": "/x:${PATH}", "FOO": "bar"})],
+    )
+    lines = content.splitlines()
+    user_root = lines.index("USER root")
+    run_index = next(
+        i for i, line in enumerate(lines) if line.startswith("RUN chmod +x")
+    )
+    assert lines[user_root + 1 : run_index] == [
+        'ENV FOO="bar"',
+        'ENV PATH="/x:${PATH}"',
+    ]
 
 
 def test_build_image_writes_dockerfile_and_copies_features(tmp_path):
@@ -62,7 +81,7 @@ def test_build_image_writes_dockerfile_and_copies_features(tmp_path):
     result = build_image(
         fake_client,
         "base:latest",
-        [("fastapi", feature_dir, {})],
+        [("fastapi", feature_dir, {}, {})],
         "dvt/my-project:latest",
         scratch_dir,
     )
@@ -97,7 +116,7 @@ def test_build_image_returns_err_when_copytree_destination_exists(tmp_path):
     fake_client = MagicMock()
     fake_client.images.build.return_value = (MagicMock(), iter([]))
 
-    features = [("fastapi", feature_dir, {})]
+    features = [("fastapi", feature_dir, {}, {})]
 
     first_result = build_image(
         fake_client, "base:latest", features, "dvt/my-project:latest", scratch_dir
@@ -123,7 +142,7 @@ def test_build_image_returns_err_when_extracted_dir_missing(tmp_path):
     result = build_image(
         fake_client,
         "base:latest",
-        [("fastapi", missing_feature_dir, {})],
+        [("fastapi", missing_feature_dir, {}, {})],
         "dvt/my-project:latest",
         scratch_dir,
     )

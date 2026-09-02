@@ -35,9 +35,17 @@ __all__ = [
 @wrap_result
 def refuse_unsupported(config: dict[str, Any]) -> Result[None, Exception]:
     """Refuse (Err, nothing built) if config uses spec surface this runtime
-    doesn't implement: docker-compose, build.dockerfile, lifecycle commands other
-    than postCreateCommand/postStartCommand, or per-Feature installsAfter/
-    dependsOn. See the design spec's Non-Goals for why each is out for v1.
+    doesn't implement: docker-compose, build.dockerfile, or lifecycle commands
+    other than postCreateCommand/postStartCommand. See the design spec's
+    Non-Goals for why each is out for v1.
+
+    Also refuses a feature whose *option object* carries an "installsAfter" or
+    "dependsOn" key. That is a malformed devcontainer.json, not an unsupported
+    feature: a Feature declares its ordering in its own
+    devcontainer-feature.json, never in the consumer's per-feature options map.
+    dvt now resolves a Feature's own dependsOn/installsAfter/containerEnv at
+    build time (see devtemplate.feature_graph); only this nonsensical shape is
+    rejected here.
 
     Examples:
         >>> refuse_unsupported({"image": "python:3.12"}).is_ok()
@@ -68,8 +76,9 @@ def refuse_unsupported(config: dict[str, Any]) -> Result[None, Exception]:
         ):
             return Err(
                 ValueError(
-                    f"Feature {feature_ref!r} uses installsAfter/dependsOn, "
-                    "which this runtime doesn't support (single-Feature only)"
+                    f"Feature {feature_ref!r} puts installsAfter/dependsOn in "
+                    "its options object; a Feature declares those in its own "
+                    "devcontainer-feature.json, not in devcontainer.json"
                 )
             )
     return Ok(None)
