@@ -28,57 +28,75 @@ BeforeAll {
 Describe 'Invoke-Build — image build mode' {
     BeforeEach {
         Mock docker { $global:LASTEXITCODE = 0 }
+        Mock devcontainer { $global:LASTEXITCODE = 0 }
     }
 
-    It 'calls docker build with correct context for base-ubuntu' {
-        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') }
+    It 'calls devcontainer build with the workspace folder for base-ubuntu' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim', 'base-ubuntu') }
 
-        Should -Invoke docker -Times 1 -ParameterFilter {
+        Should -Invoke devcontainer -Times 1 -ParameterFilter {
             $args -contains 'build' -and
-            $args -contains 'base' -and
+            $args -contains '--workspace-folder' -and
+            $args -contains 'images/base-ubuntu' -and
+            $args -contains '--image-name' -and
             $args -contains 'ghcr.io/jesserobertson/base-ubuntu:latest'
         }
     }
 
-    It 'passes BASE_IMAGE build-arg for base-ubuntu' {
-        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') }
+    It 'does not call docker build for base-ubuntu' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim', 'base-ubuntu') }
+
+        Should -Invoke docker -Times 0 -ParameterFilter {
+            $args -contains 'build' -and
+            $args -contains 'ghcr.io/jesserobertson/base-ubuntu:latest'
+        }
+    }
+
+    It 'passes BASE_IMAGE build-arg for base-ubuntu-slim' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim') }
 
         Should -Invoke docker -ParameterFilter {
             ($args -join ' ') -match 'BASE_IMAGE=ubuntu:24\.04'
         }
     }
 
-    It 'passes BASE_IMAGE build-arg for base-cuda' {
-        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda') }
+    It 'passes BASE_IMAGE build-arg for base-cuda-slim' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda-slim') }
 
         Should -Invoke docker -ParameterFilter {
             ($args -join ' ') -match 'BASE_IMAGE=nvidia/cuda'
         }
     }
 
-    It 'builds base-ubuntu with --target full' {
-        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') }
-
-        Should -Invoke docker -ParameterFilter {
-            ($args -join ' ') -match '--target\s+full'
-        }
-    }
-
-    It 'builds base-ubuntu-slim with --target slim' {
+    It 'builds base-ubuntu-slim with --target slim from the base context' {
         Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim') }
 
         Should -Invoke docker -ParameterFilter {
             $args -contains 'ghcr.io/jesserobertson/base-ubuntu-slim:latest' -and
+            $args -contains 'base' -and
             ($args -join ' ') -match '--target\s+slim'
         }
     }
 
-    It 'tags base-cuda with both latest and versioned tag' {
-        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda') }
+    It 'builds base-cuda-slim with --target slim from the base context' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda-slim') }
 
         Should -Invoke docker -ParameterFilter {
+            $args -contains 'ghcr.io/jesserobertson/base-cuda-slim:latest' -and
+            $args -contains 'base' -and
+            ($args -join ' ') -match '--target\s+slim'
+        }
+    }
+
+    It 'passes --image-name once per tag for base-cuda' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda-slim', 'base-cuda') }
+
+        Should -Invoke devcontainer -ParameterFilter {
+            $args -contains '--workspace-folder' -and
+            $args -contains 'images/base-cuda' -and
             $args -contains 'ghcr.io/jesserobertson/base-cuda:latest' -and
-            $args -contains 'ghcr.io/jesserobertson/base-cuda:cuda12.8.0'
+            $args -contains 'ghcr.io/jesserobertson/base-cuda:cuda12.8.0' -and
+            (@($args | Where-Object { $_ -eq '--image-name' }).Count -eq 2)
         }
     }
 
@@ -95,8 +113,15 @@ Describe 'Invoke-Build — image build mode' {
     It 'throws when docker build returns non-zero' {
         Mock docker { $global:LASTEXITCODE = 1 }
 
-        { Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') } } |
+        { Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim') } } |
             Should -Throw -ExpectedMessage '*docker build failed*'
+    }
+
+    It 'throws when devcontainer build returns non-zero' {
+        Mock devcontainer { $global:LASTEXITCODE = 1 }
+
+        { Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') } } |
+            Should -Throw -ExpectedMessage '*devcontainer build failed*'
     }
 }
 
@@ -134,6 +159,7 @@ Describe 'Invoke-Build — image pull mode' {
 Describe 'Invoke-Build — ramalama dependency guard' {
     BeforeEach {
         Mock docker { $global:LASTEXITCODE = 0 }
+        Mock devcontainer { $global:LASTEXITCODE = 0 }
     }
 
     It 'auto-adds base-cuda when only ramalama is requested' {
@@ -149,6 +175,71 @@ Describe 'Invoke-Build — ramalama dependency guard' {
             Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
 
         $warnings.Message | Should -Match 'base-cuda'
+    }
+}
+
+Describe 'Invoke-Build — bundle/slim auto-add nudge' {
+    BeforeEach {
+        Mock docker { $global:LASTEXITCODE = 0 }
+        Mock devcontainer { $global:LASTEXITCODE = 0 }
+    }
+
+    It 'auto-adds base-ubuntu-slim when only base-ubuntu is requested' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') }
+
+        Should -Invoke docker -ParameterFilter {
+            $args -contains 'ghcr.io/jesserobertson/base-ubuntu-slim:latest' -and
+            ($args -join ' ') -match '--target\s+slim'
+        }
+    }
+
+    It 'auto-adds base-cuda-slim when only base-cuda is requested' {
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-cuda') }
+
+        Should -Invoke docker -ParameterFilter {
+            $args -contains 'ghcr.io/jesserobertson/base-cuda-slim:latest' -and
+            ($args -join ' ') -match '--target\s+slim'
+        }
+    }
+
+    It 'warns when base-ubuntu-slim is auto-added' {
+        $warnings = Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') } 3>&1 |
+            Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+
+        ($warnings.Message -join "`n") | Should -Match 'base-ubuntu-slim'
+    }
+
+    It 'does not nudge when the slim image is already selected' {
+        $warnings = Invoke-BuildDefault @{
+            SkipFeatures = $true; Images = @('base-ubuntu', 'base-ubuntu-slim')
+        } 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+
+        ($warnings.Message -join "`n") | Should -Not -Match 'adding base-ubuntu-slim'
+    }
+}
+
+Describe 'build-images.ps1 — parameter defaults' {
+    BeforeAll {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PSScriptRoot/build-images.ps1", [ref]$null, [ref]$null)
+        $script:paramBlock = $ast.ParamBlock
+    }
+
+    It 'default -Features array includes homebrew, pixi and shell-kit' {
+        $featuresParam = $paramBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'Features' }
+        $default = $featuresParam.DefaultValue.Extent.Text
+
+        $default | Should -Match "'homebrew'"
+        $default | Should -Match "'pixi'"
+        $default | Should -Match "'shell-kit'"
+    }
+
+    It 'default -Images array includes base-cuda-slim' {
+        $imagesParam = $paramBlock.Parameters |
+            Where-Object { $_.Name.VariablePath.UserPath -eq 'Images' }
+
+        $imagesParam.DefaultValue.Extent.Text | Should -Match "'base-cuda-slim'"
     }
 }
 
@@ -252,7 +343,7 @@ Describe 'Invoke-Build — skip flags' {
     }
 
     It 'does not call devcontainer when -SkipFeatures is set' {
-        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu') }
+        Invoke-BuildDefault @{ SkipFeatures = $true; Images = @('base-ubuntu-slim') }
         Should -Invoke devcontainer -Times 0
     }
 
