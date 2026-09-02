@@ -1034,3 +1034,59 @@ def test_debug_takes_precedence_over_verbose(monkeypatch, tmp_path):
 def test_info_is_registered_as_a_top_level_command():
     result = runner.invoke(app, ["info", "--help"])
     assert result.exit_code == 0
+
+
+def _stub_forward_deps(monkeypatch, cli_module, *, build_result):
+    monkeypatch.setattr(
+        cli_module,
+        "get_client",
+        lambda runtime, **kwargs: cli_module.Ok(_fake_handle()),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "resolve_existing",
+        lambda client, name, cwd, command: cli_module.Ok(name or "inferred"),
+    )
+    monkeypatch.setattr(cli_module, "build_forwarder", lambda *a, **k: build_result)
+    monkeypatch.setattr(cli_module, "block_forever", lambda: None)
+
+
+def test_forward_prints_mappings_and_tears_down(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    closed = {"n": 0}
+    fake_fwd = SimpleNamespace(
+        summary_lines=lambda: ["127.0.0.1:2718 -> web:localhost:2718"],
+        close=lambda: closed.__setitem__("n", closed["n"] + 1),
+    )
+    _stub_forward_deps(monkeypatch, cli_module, build_result=cli_module.Ok(fake_fwd))
+
+    result = runner.invoke(cli_module.app, ["forward", "-n", "web", "2718"])
+
+    assert result.exit_code == 0, result.output
+    assert "127.0.0.1:2718 -> web:localhost:2718" in result.output
+    assert "Stopped forwarding." in result.output
+    assert closed["n"] == 1
+
+
+def test_forward_reports_setup_failure(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    _stub_forward_deps(
+        monkeypatch,
+        cli_module,
+        build_result=cli_module.Err(ValueError("local port 2718 is unavailable")),
+    )
+
+    result = runner.invoke(cli_module.app, ["forward", "-n", "web", "2718"])
+
+    assert result.exit_code == 1
+    assert "2718" in result.output
+
+
+def test_forward_requires_at_least_one_spec(monkeypatch):
+    import devtemplate.cli as cli_module
+
+    _stub_forward_deps(monkeypatch, cli_module, build_result=cli_module.Ok(None))
+    result = runner.invoke(cli_module.app, ["forward", "-n", "web"])
+    assert result.exit_code != 0

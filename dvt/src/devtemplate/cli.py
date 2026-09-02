@@ -24,6 +24,7 @@ from devtemplate.commands import feature_app, image_app, info_command, init_comm
 from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.features import clear_pulled_features
+from devtemplate.forward import block_forever, build_forwarder
 from devtemplate.images import sync_images
 from devtemplate.runtime import get_client
 from devtemplate.ssh import (
@@ -290,6 +291,54 @@ def run(
         console,
     )
     raise typer.Exit(code=exit_code)
+
+
+@app.command()
+def forward(
+    specs: list[str] = typer.Argument(  # noqa: B008
+        ...,
+        metavar="SPEC...",
+        help="Port forward(s), each LOCAL[:REMOTE_HOST:]REMOTE "
+        "(default REMOTE_HOST=localhost, LOCAL=REMOTE). Repeatable: "
+        "'dvt forward -n web 2718 8080:3000'.",
+    ),
+    name: str | None = typer.Option(  # noqa: B008
+        None,
+        "--name",
+        "-n",
+        help="Workspace to forward into (default: inferred from the current folder).",
+    ),
+) -> None:
+    """Forward host ports to a server running inside a workspace, over the
+    existing `dvt ssh` transport - no container rebuild, no host networking.
+
+    Runs in the foreground until interrupted (Ctrl-C). Handy for a dev server
+    started with `dvt run`, e.g. `marimo edit --port 2718` reachable at
+    http://localhost:2718 on the host.
+    """
+    settings = unwrap_or_exit(load_settings(), console)
+    handle = unwrap_or_exit(
+        get_client(
+            settings.runtime,
+            podman_machine_auto_init=settings.podman_machine_auto_init,
+            podman_machine_auto_start=settings.podman_machine_auto_start,
+        ),
+        console,
+    )
+    resolved_name = unwrap_or_exit(
+        resolve_existing(handle.client, name, Path.cwd(), "forward"), console
+    )
+    forwarder = unwrap_or_exit(
+        build_forwarder(handle.client, handle.cli_binary, resolved_name, specs), console
+    )
+    for line in forwarder.summary_lines():
+        console.print(line)
+    console.print("[dim]Forwarding until interrupted (Ctrl-C to stop).[/dim]")
+    try:
+        block_forever()
+    finally:
+        forwarder.close()
+    console.print("Stopped forwarding.")
 
 
 @wrap_result
