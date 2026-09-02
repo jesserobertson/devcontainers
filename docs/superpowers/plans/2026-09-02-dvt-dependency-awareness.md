@@ -1,5 +1,11 @@
 # dvt Dependency Awareness — Implementation Plan
 
+> **SUPERSEDED 2026-09-03.** Written before `feature_graph.py` shipped (commit `6ed7268`).
+> Its GitHub-raw spec cache (`feature_specs.py`, new `github.py` fetchers) and standalone
+> `deps.py` resolver are no longer needed. See
+> [`docs/superpowers/specs/2026-09-03-dvt-dependency-awareness-v2.md`](../specs/2026-09-03-dvt-dependency-awareness-v2.md)
+> and its implementation plan. Do not execute this document.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Teach `dvt` the feature dependency graph — `dvt sync` fetches every `devcontainer-feature.json`, a pure resolver walks the `dependsOn` edges, and four UI surfaces expose it: a "Pulls in" column in `dvt feature list`, a dependency tree in `dvt feature show`, a new `dvt feature deps` command (`tree`/`dot`/`mermaid`/`json`), and an "also pulling in" message at `dvt feature add` time.
