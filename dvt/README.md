@@ -21,7 +21,40 @@ repo root.
     dvt up my-project
     dvt ssh my-project
     dvt run -n my-project pytest -q  # run one command inside the workspace, exit with its status
+    dvt forward -n my-project 2718   # reach an in-container :2718 server at http://localhost:2718
     dvt info                        # from inside my-project - no name needed
+
+## Reaching a server inside a workspace
+
+A workspace's own network isn't routable from the host, so a server you start
+inside one (a dev server, a notebook) isn't reachable at `localhost` until you
+forward its port.
+
+**Dynamically (no rebuild).** `dvt forward` tunnels one or more ports over the
+same transport `dvt ssh` uses, until you Ctrl-C it:
+
+    dvt forward -n my-project 2718            # localhost:2718 -> container 127.0.0.1:2718
+    dvt forward -n my-project 8080:3000       # localhost:8080 -> container 127.0.0.1:3000
+    dvt forward -n my-project 9000:db:5432    # localhost:9000 -> db:5432 from inside
+
+Or bind the tunnel to the lifetime of a command:
+
+    dvt run -n my-project -L 2718 just viz-notebooks   # marimo edit --port 2718, reachable while it runs
+    dvt ssh my-project -L 8888                          # tunnel stays up for the shell session
+
+The workspace image needs one of `socat`, `ncat`, `nc`, or `python3` on `PATH`
+(the relay runs inside the container). `-L`/`--forward` is repeatable.
+
+**Declaratively (at `dvt up`).** `appPort` and `forwardPorts` in
+`devcontainer.json` are published to the host when the container is created:
+
+```json
+{ "image": "...", "appPort": [2718] }
+```
+
+Because published ports are fixed at creation, changing them makes the next
+`dvt up` stop and ask for `dvt up --rebuild` rather than silently recreating
+the container.
 
 ## Development
 

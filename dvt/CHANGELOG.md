@@ -7,6 +7,24 @@ include breaking changes while bumping only the minor version — patch releases
 backward-compatible changes (fixes and small enhancements that don't break callers).
 Revisit switching breaking changes to a major bump once the project reaches `1.0.0`.
 
+## [Unreleased]
+
+### Added
+
+- Host↔container port forwarding. `dvt forward -n <ws> <spec>...` tunnels host
+  ports to servers running inside a workspace over the existing `dvt ssh`
+  transport — no container rebuild, no host-networking assumption, works on
+  Podman and Docker. `dvt run` and `dvt ssh` take a repeatable `-L/--forward
+  <spec>` that lives for the command's / session's lifetime (e.g. `dvt run -L
+  2718 just viz-notebooks` to reach `marimo edit --port 2718` at
+  `http://localhost:2718`). `<spec>` is `LOCAL[:REMOTE_HOST:]REMOTE`
+  (`REMOTE_HOST` defaults to `127.0.0.1`, `LOCAL` to `REMOTE`). Needs one of
+  `socat`/`ncat`/`nc`/`python3` inside the container.
+- `dvt up` now publishes `appPort` and `forwardPorts` from `devcontainer.json`
+  to the host (bound to loopback). Since published ports are fixed at container
+  creation, a changed set makes `dvt up` ask for `--rebuild` rather than
+  recreating silently.
+
 ## [0.4.1] - 2026-09-01
 
 ### Changed
