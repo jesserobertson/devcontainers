@@ -28,12 +28,6 @@ PIXI_DEPENDENT_FEATURES = [
     "cli", "py-devtools", "huggingface", "transformers", "ollama",
 ]
 
-
-@pytest.mark.parametrize("feature", PIXI_DEPENDENT_FEATURES)
-def test_pixi_feature_depends_on_pixi(feature):
-    data = _feature_json(feature)
-    assert data["dependsOn"] == {"ghcr.io/jesserobertson/devcontainers/pixi": {}}
-
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
 # Python toolchains: moved onto the slim CPU base, pixi arrives via dependsOn.
 CPU_SLIM_TEMPLATE_FEATURES = [
@@ -108,6 +102,12 @@ def test_brew_calls_run_as_dev(feature):
 def test_brew_feature_depends_on_homebrew(feature):
     data = _feature_json(feature)
     assert data["dependsOn"] == {"ghcr.io/jesserobertson/devcontainers/homebrew": {}}
+
+
+@pytest.mark.parametrize("feature", PIXI_DEPENDENT_FEATURES)
+def test_pixi_feature_depends_on_pixi(feature):
+    data = _feature_json(feature)
+    assert data["dependsOn"] == {"ghcr.io/jesserobertson/devcontainers/pixi": {}}
 
 
 # --- huggingface ---
@@ -443,10 +443,6 @@ def test_dockerfile_core_stage_has_no_pixi_no_brew_no_cli_bundle():
     assert "PIXI_HOME" not in core
     assert "brew install" not in core
     assert "Homebrew/install/HEAD/install.sh" not in core
-
-
-def test_dockerfile_core_stage_has_no_cli_bundle():
-    assert "brew install" not in _dockerfile_stage("core")
 
 
 def test_dockerfile_slim_stage_adds_nothing():

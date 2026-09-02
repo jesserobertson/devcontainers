@@ -70,11 +70,11 @@ function Invoke-DevcontainerBuild {
     if (-not (Get-Command devcontainer -ErrorAction SilentlyContinue)) {
         throw "devcontainer CLI not found. Install it with: npm install -g @devcontainers/cli"
     }
-    $args = @('build', '--workspace-folder', $ConfigDir)
-    foreach ($tag in $Tags) { $args += '--image-name', $tag }
-    if ($Push) { $args += '--push', 'true' }
-    Write-Host "    devcontainer $($args -join ' ')"
-    devcontainer @args
+    $dcArgs = @('build', '--workspace-folder', $ConfigDir)
+    foreach ($tag in $Tags) { $dcArgs += '--image-name', $tag }
+    if ($Push) { $dcArgs += '--push', 'true' }
+    Write-Host "    devcontainer $($dcArgs -join ' ')"
+    devcontainer @dcArgs
     if ($LASTEXITCODE -ne 0) { throw "devcontainer build failed for $ConfigDir" }
 }
 
@@ -95,16 +95,22 @@ function Invoke-Build {
     $Owner    = 'jesserobertson'
 
     $ImageDefs = [ordered]@{
-        'base-ubuntu' = @{
-            Builder   = 'devcontainer'
-            ConfigDir = 'images/base-ubuntu'
-            Tags      = @("$Registry/$Owner/base-ubuntu:latest")
-        }
         'base-ubuntu-slim' = @{
             Context   = 'base'
             Target    = 'slim'
             BuildArgs = @{ BASE_IMAGE = 'ubuntu:24.04' }
             Tags      = @("$Registry/$Owner/base-ubuntu-slim:latest")
+        }
+        'base-ubuntu' = @{
+            Builder   = 'devcontainer'
+            ConfigDir = 'images/base-ubuntu'
+            Tags      = @("$Registry/$Owner/base-ubuntu:latest")
+        }
+        'base-cuda-slim' = @{
+            Context   = 'base'
+            Target    = 'slim'
+            BuildArgs = @{ BASE_IMAGE = 'nvidia/cuda:12.8.0-devel-ubuntu24.04' }
+            Tags      = @("$Registry/$Owner/base-cuda-slim:latest")
         }
         'base-cuda' = @{
             Builder   = 'devcontainer'
@@ -113,12 +119,6 @@ function Invoke-Build {
                 "$Registry/$Owner/base-cuda:latest",
                 "$Registry/$Owner/base-cuda:cuda12.8.0"
             )
-        }
-        'base-cuda-slim' = @{
-            Context   = 'base'
-            Target    = 'slim'
-            BuildArgs = @{ BASE_IMAGE = 'nvidia/cuda:12.8.0-devel-ubuntu24.04' }
-            Tags      = @("$Registry/$Owner/base-cuda-slim:latest")
         }
         'ramalama' = @{
             Context   = 'ramalama'

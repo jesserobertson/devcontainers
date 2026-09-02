@@ -143,13 +143,16 @@ def test_base_ubuntu_assembly_has_fish_brew_pixi(cleanup_images):
         'channels = ["conda-forge"]\\n'
         'platforms = ["linux-64"]\\n'
     )
+    # Outer shell only writes the manifest and exec's; the inner `bash -ic`
+    # is what must be interactive to source the appended hook line. This probe
+    # triggers a live conda solve, so it needs the build-length timeout.
     hook = _run([
         "docker", "run", "--rm", "--user", "dev", "-w", "/workspace",
-        "base-ubuntu-itest", "bash", "-ic",
+        "base-ubuntu-itest", "bash", "-c",
         f"printf '{manifest}' > /workspace/pyproject.toml && "
         "exec bash -ic 'test -n \"$CONDA_PREFIX\" && "
         "echo HOOK_ACTIVATED CONDA_PREFIX=$CONDA_PREFIX'",
-    ])
+    ], timeout=_BUILD_TIMEOUT)
     assert "HOOK_ACTIVATED" in hook.stdout, (
         f"stdout={hook.stdout}\nstderr={hook.stderr}"
     )

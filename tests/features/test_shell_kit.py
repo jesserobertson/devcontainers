@@ -35,7 +35,11 @@ def test_install_sh_installs_full_bundle_as_dev_and_conditionally_chsh():
     script = (FEATURE_DIR / "install.sh").read_text()
     brew_line = next(l for l in script.splitlines() if "brew install" in l)
     assert "su dev -c" in brew_line or "su dev -c" in script.split("brew install")[0].splitlines()[-1]
+    # Assert each package is its own whitespace-delimited token on the
+    # `brew install` line - a bare substring check matches comments and lets
+    # "bat" ride in on "bat-extras".
+    installed = brew_line.split("brew install", 1)[1].strip().rstrip("'\"").split()
     for pkg in BUNDLE:
-        assert pkg in script, f"{pkg} missing from bundle"
+        assert pkg in installed, f"{pkg} missing from the brew install line"
     assert 'if [ "${LOGINSHELL:-true}" = "true" ]' in script
     assert "chsh -s /home/linuxbrew/.linuxbrew/bin/fish dev" in script

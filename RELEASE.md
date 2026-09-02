@@ -100,9 +100,12 @@ artifact (see its own header for why).
    entries in `$ImageDefs`.
 
 The bundle configs pin the three plumbing features at `:latest`, so a bundle
-build only picks up new `homebrew` / `shell-kit` / `pixi` content once
-`publish-features.yml` has actually published it. When a single push changes both
-a plumbing feature and something that triggers `build.yml`, the bundle built in
-that run still sees the *previous* feature content - the bumped feature lands in
-the *next* `build.yml` run (or a manual `workflow_dispatch`). Bump a plumbing
-feature, let its publish finish, then rely on a bundle rebuild.
+build only picks up `homebrew` / `shell-kit` / `pixi` content once
+`publish-features.yml` has actually published it. On the merge commit that first
+introduces the features there is no *previous* content to fall back on:
+`build.yml` fires on the same push as `publish-features.yml` (its `paths` covers
+both `base/Dockerfile` and `features/{homebrew,shell-kit,pixi}/**`), and if
+`build-bundles` wins that race it fails hard on a feature-pull 404 rather than
+quietly assembling a bundle from stale content. So on first rollout a manual
+`workflow_dispatch` of `build.yml`, run *after* `publish-features.yml` has
+completed, is mandatory - not a cleanup nicety.
