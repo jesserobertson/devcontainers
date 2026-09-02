@@ -90,6 +90,12 @@ def test_brew_calls_run_as_dev(feature):
         assert "su dev -c" in line, f"{feature}: brew install not via su dev -c: {line!r}"
 
 
+@pytest.mark.parametrize("feature", BREW_FEATURES)
+def test_brew_feature_depends_on_homebrew(feature):
+    data = _feature_json(feature)
+    assert data["dependsOn"] == {"ghcr.io/jesserobertson/devcontainers/homebrew": {}}
+
+
 # --- huggingface ---
 
 def test_huggingface_hf_home_containerenv():

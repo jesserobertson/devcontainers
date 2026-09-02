@@ -1,7 +1,10 @@
 {
   "id": "rust-devtools",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "Rust dev tooling (cargo, rust-analyzer, helix)",
   "description": "Installs the Rust toolchain (rustc, cargo), rust-analyzer, and the Helix editor via Homebrew. Helix's own default language config already pairs Rust with rust-analyzer, so no extra wiring is needed. Designed for the base-ubuntu-slim image; also works on base-ubuntu and base-cuda.",
-  "options": {}
+  "options": {},
+  "dependsOn": {
+    "ghcr.io/jesserobertson/devcontainers/homebrew": {}
+  }
 }
