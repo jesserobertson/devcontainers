@@ -590,6 +590,19 @@ def test_bundle_config_composes_slim_plus_three_features(bundle, base_ref):
     assert set(cfg["features"]) == PLUMBING_FEATURE_REFS
 
 
+# --- build workflow ---
+
+def test_build_yml_has_slim_and_bundle_jobs():
+    data = _yaml(".github/workflows/build.yml")
+    jobs = data["jobs"]
+    assert set(jobs) == {"build-slim", "build-bundles"}
+    assert jobs["build-bundles"]["needs"] == "build-slim"
+    slim_names = {m["name"] for m in jobs["build-slim"]["strategy"]["matrix"]["include"]}
+    assert slim_names == {"base-ubuntu-slim", "base-cuda-slim"}
+    bundle_names = {m["name"] for m in jobs["build-bundles"]["strategy"]["matrix"]["include"]}
+    assert bundle_names == {"base-ubuntu", "base-cuda"}
+
+
 # --- helpers ---
 
 def _feature_json(feature: str) -> dict:
