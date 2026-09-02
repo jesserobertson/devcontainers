@@ -8,6 +8,38 @@ independently.
 
 For changes to the `dvt` CLI itself, see [`dvt/CHANGELOG.md`](dvt/CHANGELOG.md) instead.
 
+## 2026-09-03
+
+### Added
+
+- `homebrew`, `shell-kit` and `pixi` features (all `1.0.0`) - the Homebrew
+  package-manager layer, the interactive fish + CLI bundle, and pixi with its
+  bash/fish project shell-hooks, each extracted from `base/Dockerfile`'s `full`
+  stage into a standalone published feature.
+- `base-cuda-slim` base image - the CUDA 12.8 counterpart of `base-ubuntu-slim`
+  (apt kit + chezmoi dotfiles, no Homebrew, no pixi, no CLI bundle).
+
+### Changed
+
+- `base/Dockerfile` is now `core` -> `slim` only; its `full` stage is dissolved
+  into the new `homebrew`, `shell-kit` and `pixi` features. The two `-slim`
+  images are the only direct `docker build` output; `base-ubuntu` and `base-cuda`
+  are now assembled from `<matching -slim> + homebrew + shell-kit + pixi` via
+  `devcontainer build` (`build.yml` split into `build-slim` + `build-bundles`).
+- Python toolchain templates (`cli`, `fastapi`, `marimo`, `huggingface`,
+  `ollama`, `py-devtools`) re-pointed to `base-ubuntu-slim`; GPU templates
+  (`jax`, `pytorch`, `rapids`, `transformers`, `mojo`) to `base-cuda-slim`.
+  `agent` and `podman` stay on the batteries-included `base-ubuntu`.
+- All 11 Python toolchain features gain `dependsOn: pixi` so they self-provision
+  pixi on a slim base (`cli`, `fastapi`, `huggingface`, `jax`, `marimo`, `mojo`,
+  `pytorch`, `rapids`, `transformers` -> `1.2.0`; `ollama` -> `1.1.0`;
+  `py-devtools` -> `1.3.0`).
+- `rust-devtools` and `cpp-devtools` gain `dependsOn: homebrew` (both -> `1.2.0`)
+  - **breaking** for anyone layering their own `brew install` directly on
+  `base-ubuntu-slim` without also listing the `homebrew` feature: `-slim` no
+  longer ships Homebrew, so `brew` is `command not found` until that feature
+  installs it.
+
 ## 2026-08-30
 
 ### Added

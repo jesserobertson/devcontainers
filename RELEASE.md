@@ -80,11 +80,29 @@ pulled from the Feature's own `description` field.
 
 Unversioned - just `:latest` (and a CUDA-version-suffixed tag for
 `base-cuda`). `build.yml` rebuilds and pushes on every push to `main` that
-touches `base/Dockerfile`. No tagging, no changelog entry; the top-level
+touches `base/Dockerfile`, `images/**`, or the `homebrew` / `shell-kit` /
+`pixi` features. No tagging, no changelog entry; the top-level
 `CHANGELOG.md` documents these with dated sections instead of version
 numbers, matching the fact that nothing here ships as a single versioned
 artifact (see its own header for why).
 
-`base/Dockerfile` is multi-stage: `base-ubuntu` and `base-cuda` build `--target full`,
-`base-ubuntu-slim` builds `--target slim` (a pixi-free `core` stage). All three are in the
-`build.yml` matrix and in `build-images.ps1`'s `$ImageDefs`.
+`base/Dockerfile` is `core` -> `slim` only, and the build runs in two phases:
+
+1. **`docker build --target slim`** publishes `base-ubuntu-slim` (from
+   `ubuntu:24.04`) and `base-cuda-slim` (from
+   `nvidia/cuda:12.8.0-devel-ubuntu24.04`). Covered by `build.yml`'s `build-slim`
+   job and the two `-slim` entries in `build-images.ps1`'s `$ImageDefs`.
+2. **`devcontainer build --push`** assembles `base-ubuntu` and `base-cuda` from
+   `<matching -slim> + the homebrew, shell-kit and pixi features`, per
+   `images/base-ubuntu/.devcontainer/devcontainer.json` and
+   `images/base-cuda/.devcontainer/devcontainer.json`. Covered by `build.yml`'s
+   `build-bundles` job (`needs: build-slim`) and the `Builder = 'devcontainer'`
+   entries in `$ImageDefs`.
+
+The bundle configs pin the three plumbing features at `:latest`, so a bundle
+build only picks up new `homebrew` / `shell-kit` / `pixi` content once
+`publish-features.yml` has actually published it. When a single push changes both
+a plumbing feature and something that triggers `build.yml`, the bundle built in
+that run still sees the *previous* feature content - the bumped feature lands in
+the *next* `build.yml` run (or a manual `workflow_dispatch`). Bump a plumbing
+feature, let its publish finish, then rely on a bundle rebuild.

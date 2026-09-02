@@ -1,6 +1,6 @@
 # devcontainers
 
-Base images and composable devcontainer features for Python development, published to `ghcr.io/jesserobertson`. The `base-ubuntu` and `base-cuda` images include fish shell, starship, neovim, and pixi — with the full dotfiles setup from [jesserobertson/dotfiles](https://github.com/jesserobertson/dotfiles) baked in; `base-ubuntu-slim` is a leaner variant with Homebrew and the dotfiles but no pixi or CLI bundle.
+Base images and composable devcontainer features for Python development, published to `ghcr.io/jesserobertson`. The `base-ubuntu` and `base-cuda` images include fish shell, starship, neovim, and pixi — with the full dotfiles setup from [jesserobertson/dotfiles](https://github.com/jesserobertson/dotfiles) baked in; they are assembled from the leaner `base-ubuntu-slim` / `base-cuda-slim` images (apt kit + dotfiles only) plus the `homebrew`, `shell-kit` and `pixi` features.
 
 ## dvt: the CLI
 
@@ -40,11 +40,14 @@ required — everything below also works by hand with DevPod or `@devcontainers/
 
 ## Base images
 
+Only the two `-slim` images are built straight from `base/Dockerfile` (`docker build --target slim`). `base-ubuntu` and `base-cuda` are then assembled from the matching `-slim` image plus the `homebrew`, `shell-kit` and `pixi` features via `devcontainer build`.
+
 | Image | From | Use for |
 |-------|------|---------|
-| `ghcr.io/jesserobertson/base-ubuntu:latest` | `ubuntu:24.04` | CPU-only projects — fish, Homebrew CLI kit, pixi |
-| `ghcr.io/jesserobertson/base-ubuntu-slim:latest` | `ubuntu:24.04` | Lean CPU base — Homebrew + dotfiles only, no pixi or CLI kit (used by `rust-devtools`, `cpp-devtools`) |
-| `ghcr.io/jesserobertson/base-cuda:latest` | `nvidia/cuda:12.8.0-devel-ubuntu24.04` | GPU projects (rapids, jax, mojo, pytorch) |
+| `ghcr.io/jesserobertson/base-ubuntu-slim:latest` | `ubuntu:24.04` | Lean CPU base — apt kit + dotfiles only. Compose features onto it. |
+| `ghcr.io/jesserobertson/base-cuda-slim:latest` | `nvidia/cuda:12.8.0-devel-ubuntu24.04` | Lean GPU base — same, on CUDA. |
+| `ghcr.io/jesserobertson/base-ubuntu:latest` | `base-ubuntu-slim` + `homebrew` + `shell-kit` + `pixi` | Batteries-included CPU — fish, Homebrew CLI kit, pixi |
+| `ghcr.io/jesserobertson/base-cuda:latest` | `base-cuda-slim` + `homebrew` + `shell-kit` + `pixi` | Batteries-included GPU |
 
 ## Features
 
@@ -60,13 +63,16 @@ Composable features that install on top of a base image at container creation ti
 | `…/fastapi:latest` | Web | base-ubuntu / base-cuda | REST APIs — FastAPI, Pydantic, Uvicorn, httpx |
 | `…/cli:latest` | CLI | base-ubuntu / base-cuda | Command-line tools — Typer, Rich, Pydantic, pydantic-settings |
 | `…/py-devtools:latest` | Dev | base-ubuntu / base-cuda | Python dev tooling — ruff, mypy, pytest, pytest-cov, mkdocs, mkdocs-material, mkdocstrings, Helix editor + pyright (Helix wired to ruff's LSP + pyright out of the box) |
-| `…/rust-devtools:latest` | Dev | base-ubuntu-slim | Rust dev tooling via Homebrew — cargo, rustc, rust-analyzer, Helix editor (Helix's default config already pairs Rust with rust-analyzer) |
-| `…/cpp-devtools:latest` | Dev | base-ubuntu-slim | C/C++ dev tooling via Homebrew — clang, clangd, lld, lldb, cmake, ninja, ccache, pkgconf, Helix editor (Helix's default config already pairs C/C++ with clangd) |
+| `…/rust-devtools:latest` | Dev | base-ubuntu-slim | Rust dev tooling via Homebrew — cargo, rustc, rust-analyzer, Helix editor (Helix's default config already pairs Rust with rust-analyzer). `dependsOn: homebrew`, so it self-provisions brew on a slim base |
+| `…/cpp-devtools:latest` | Dev | base-ubuntu-slim | C/C++ dev tooling via Homebrew — clang, clangd, lld, lldb, cmake, ninja, ccache, pkgconf, Helix editor (Helix's default config already pairs C/C++ with clangd). `dependsOn: homebrew`, so it self-provisions brew on a slim base |
 | `…/huggingface:latest` | ML | base-ubuntu / base-cuda | HuggingFace tooling — huggingface_hub, tokenizers; sets HF_HOME |
 | `…/transformers:latest` | ML | base-cuda | HuggingFace inference — transformers, datasets, accelerate |
 | `…/ollama:latest` | ML | base-ubuntu / base-cuda | Local LLM client — OpenAI-compatible client for an Ollama service |
 | `…/agent:latest` | Agent | base-ubuntu / base-cuda | Contained agents — `claude`/`pi`/`omp` CLIs, egress-allowlist firewall, `vibe` for opt-in unattended auto mode |
 | `…/podman:latest` | Dev | base-ubuntu / base-cuda | Rootless Podman for nested container/image testing — `docker`/`docker compose` CLI shims via podman-docker + podman-compose, vfs storage driver (no `--privileged` needed) |
+| `…/homebrew:latest` | Base | base-ubuntu-slim / base-cuda-slim | Homebrew (Linuxbrew) for the `dev` user at `/home/linuxbrew/.linuxbrew`, no formulae — the package-manager layer `shell-kit`, `rust-devtools` and `cpp-devtools` build on. Baked into `base-ubuntu` / `base-cuda` |
+| `…/shell-kit:latest` | Shell | base-ubuntu-slim / base-cuda-slim | Interactive CLI bundle via Homebrew — bat, eza, fd, fish, fzf, jq, just, neovim, ripgrep, starship, zoxide — and makes fish the `dev` login shell. `dependsOn: homebrew`. Baked into `base-ubuntu` / `base-cuda` |
+| `…/pixi:latest` | Base | base-ubuntu-slim / base-cuda-slim | pixi for the `dev` user with bash + fish project shell-hooks that activate a `/workspace` env on shell open. Every Python toolchain feature `dependsOn` it. Baked into `base-ubuntu` / `base-cuda` |
 
 All feature paths are prefixed with `ghcr.io/jesserobertson/devcontainers`.
 
@@ -104,8 +110,13 @@ my-project/
 Every other feature (GPU: `rapids`, `mojo`, `jax`, `pytorch`, `transformers` · CPU: `marimo`,
 `cli`, `py-devtools`, `huggingface`, `ollama` · `agent` for contained auto mode) has a
 complete, ready-to-copy `devcontainer.json` under [`templates/`](templates/) instead of a
-repeated block here. `marimo`'s template uses `base-ubuntu`; swap in `base-cuda` (and add
-`"runArgs": ["--gpus", "all"]`) if you want GPU-accelerated plotting backends.
+repeated block here. `marimo`'s template uses `base-ubuntu-slim`; swap in `base-cuda-slim`
+(and add `"runArgs": ["--gpus", "all"]`) if you want GPU-accelerated plotting backends.
+
+**Getting the full shell back on a slim template.** The Python-toolchain templates (`cli`,
+`fastapi`, `marimo`, `huggingface`, `ollama`, `py-devtools`) now sit on `base-ubuntu-slim`,
+which has no fish or interactive CLI bundle. Run `dvt feature add shell-kit` (it pulls in
+`homebrew`) or scaffold with `dvt init --image base-ubuntu` to get fish + the CLI bundle back.
 
 ### Using with a CLI, without dvt
 
@@ -252,7 +263,7 @@ regression introduced here.
 ## Repo structure
 
 ```
-base/Dockerfile              ← ARG BASE_IMAGE; multi-stage core/slim/full — brew + dotfiles (pixi & CLI kit in full only)
+base/Dockerfile              ← ARG BASE_IMAGE; core → slim only — apt kit + dotfiles (Homebrew, CLI kit & pixi now live in features)
 features/
   rapids/                    ← ML: cuDF, JAX, Polars GPU, Marimo
   mojo/                      ← ML: Modular MAX / Mojo
@@ -268,9 +279,12 @@ features/
   transformers/              ← ML: transformers, datasets, accelerate
   ollama/                    ← ML: OpenAI-compatible Ollama client
   agent/                     ← Agent: contained claude/pi/omp (firewall + vibe auto-mode wrapper)
+  homebrew/                  ← Base: Homebrew (Linuxbrew) for the dev user, no formulae
+  shell-kit/                 ← Shell: fish + CLI bundle via Homebrew (dependsOn homebrew)
+  pixi/                      ← Base: pixi + project shell-hooks (Python toolchains dependsOn this)
 dvt/                          ← CLI: fetches templates/, scaffolds+layers devcontainer.json, builds/runs/ssh via Docker or Podman
 host-services/ollama/        ← local LLM host service (real Ollama via Docker Compose)
 .github/workflows/
-  build.yml                  ← builds base-ubuntu, base-ubuntu-slim, base-cuda on Dockerfile changes
+  build.yml                  ← build-slim (docker --target slim) then build-bundles (devcontainer build) on Dockerfile/images/feature changes
   publish-features.yml       ← publishes features via devcontainers/action on features/** changes
 ```
