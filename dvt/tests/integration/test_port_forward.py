@@ -66,7 +66,7 @@ def test_dvt_forward_reaches_an_in_container_server(tmp_path, monkeypatch):
                 ws,
                 "sh",
                 "-c",
-                "(python3 -m http.server 2718 --bind :: >/dev/null 2>&1 &) ; sleep 1",
+                "(python3 -m http.server 2718 >/dev/null 2>&1 &) ; sleep 1",
             ],
         )
         assert started.exit_code == 0, started.output

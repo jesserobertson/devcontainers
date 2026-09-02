@@ -40,14 +40,15 @@ __all__ = [
 @dataclass(frozen=True)
 class ForwardSpec:
     """One `-L` mapping: listen on ``bind:local`` on the host, forward to
-    ``remote_host:remote`` as reached from inside the container.
+    ``remote_host:remote`` as reached from inside the container (``remote_host``
+    defaults to ``127.0.0.1`` for the 1- and 2-field forms).
 
     Accepts (mirroring ``ssh -L``, plus a bare-port shorthand):
 
         >>> ForwardSpec.parse("2718")
-        ForwardSpec(bind='127.0.0.1', local=2718, remote_host='localhost', remote=2718)
+        ForwardSpec(bind='127.0.0.1', local=2718, remote_host='127.0.0.1', remote=2718)
         >>> ForwardSpec.parse("8080:3000")
-        ForwardSpec(bind='127.0.0.1', local=8080, remote_host='localhost', remote=3000)
+        ForwardSpec(bind='127.0.0.1', local=8080, remote_host='127.0.0.1', remote=3000)
         >>> ForwardSpec.parse("9000:db:5432")
         ForwardSpec(bind='127.0.0.1', local=9000, remote_host='db', remote=5432)
         >>> str(ForwardSpec.parse("0.0.0.0:8080:db:5432"))
@@ -73,9 +74,13 @@ class ForwardSpec:
             raise ValueError(f"empty field in forward spec {raw!r}")
         if len(fields) == 1:
             p = port(fields[0])
-            return cls("127.0.0.1", p, "localhost", p)
+            # Numeric IPv4, not "localhost": busybox `nc localhost` resolves to
+            # ::1 only (no IPv4 fallback), so a listener on 0.0.0.0/127.0.0.1
+            # would be unreachable through that relay; a numeric IPv4 target
+            # works with every relay tool.
+            return cls("127.0.0.1", p, "127.0.0.1", p)
         if len(fields) == 2:
-            return cls("127.0.0.1", port(fields[0]), "localhost", port(fields[1]))
+            return cls("127.0.0.1", port(fields[0]), "127.0.0.1", port(fields[1]))
         if len(fields) == 3:
             return cls("127.0.0.1", port(fields[0]), fields[1], port(fields[2]))
         if len(fields) == 4:

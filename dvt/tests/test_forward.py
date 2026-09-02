@@ -21,8 +21,8 @@ from devtemplate.forward import (
 @pytest.mark.parametrize(
     "text, expected",
     [
-        ("2718", ForwardSpec("127.0.0.1", 2718, "localhost", 2718)),
-        ("8080:3000", ForwardSpec("127.0.0.1", 8080, "localhost", 3000)),
+        ("2718", ForwardSpec("127.0.0.1", 2718, "127.0.0.1", 2718)),
+        ("8080:3000", ForwardSpec("127.0.0.1", 8080, "127.0.0.1", 3000)),
         ("9000:db:5432", ForwardSpec("127.0.0.1", 9000, "db", 5432)),
         ("0.0.0.0:8080:db:5432", ForwardSpec("0.0.0.0", 8080, "db", 5432)),
     ],
