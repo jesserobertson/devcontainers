@@ -1,7 +1,7 @@
 {
   "name": "pytorch",
   "description": "PyTorch with CUDA 12.4 support, plus Marimo for interactive exploration.",
-  "image": "ghcr.io/jesserobertson/base-cuda:latest",
+  "image": "ghcr.io/jesserobertson/base-cuda-slim:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "features": {

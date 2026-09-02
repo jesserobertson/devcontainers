@@ -35,10 +35,13 @@ def test_pixi_feature_depends_on_pixi(feature):
     assert data["dependsOn"] == {"ghcr.io/jesserobertson/devcontainers/pixi": {}}
 
 GPU_TEMPLATE_FEATURES = ["rapids", "mojo", "jax", "pytorch", "transformers"]
-CPU_TEMPLATE_FEATURES = [
-    "marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama", "podman",
+# Python toolchains: moved onto the slim CPU base, pixi arrives via dependsOn.
+CPU_SLIM_TEMPLATE_FEATURES = [
+    "marimo", "fastapi", "cli", "py-devtools", "huggingface", "ollama",
 ]
-
+# Stay on the batteries-included base-ubuntu bundle.
+BUNDLE_TEMPLATE_FEATURES = ["podman"]
+# Native toolchains: already on slim, now with dependsOn homebrew.
 SLIM_TEMPLATE_FEATURES = ["rust-devtools", "cpp-devtools"]
 
 # Plumbing features extracted from base/Dockerfile - published, composed onto
@@ -227,8 +230,11 @@ def test_readme_documents_base_ubuntu_slim():
 # --- templates/ (standalone per-feature devcontainer.json) ---
 
 @pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
-def test_gpu_template_uses_base_cuda(feature):
-    assert _template_json(feature)["image"] == "ghcr.io/jesserobertson/base-cuda:latest"
+def test_gpu_template_uses_base_cuda_slim(feature):
+    assert (
+        _template_json(feature)["image"]
+        == "ghcr.io/jesserobertson/base-cuda-slim:latest"
+    )
 
 
 @pytest.mark.parametrize("feature", GPU_TEMPLATE_FEATURES)
@@ -252,23 +258,31 @@ def test_gpu_template_no_sshd_waitloop(feature):
     assert "pgrep sshd" not in json.dumps(_template_json(feature))
 
 
-@pytest.mark.parametrize("feature", CPU_TEMPLATE_FEATURES)
-def test_cpu_template_uses_base_ubuntu(feature):
+@pytest.mark.parametrize("feature", CPU_SLIM_TEMPLATE_FEATURES)
+def test_cpu_slim_template_uses_base_ubuntu_slim(feature):
+    assert (
+        _template_json(feature)["image"]
+        == "ghcr.io/jesserobertson/base-ubuntu-slim:latest"
+    )
+
+
+@pytest.mark.parametrize("feature", BUNDLE_TEMPLATE_FEATURES)
+def test_bundle_template_uses_base_ubuntu(feature):
     assert _template_json(feature)["image"] == "ghcr.io/jesserobertson/base-ubuntu:latest"
 
 
-@pytest.mark.parametrize("feature", CPU_TEMPLATE_FEATURES)
+@pytest.mark.parametrize("feature", CPU_SLIM_TEMPLATE_FEATURES + BUNDLE_TEMPLATE_FEATURES)
 def test_cpu_template_references_own_feature(feature):
     data = _template_json(feature)
     assert f"ghcr.io/jesserobertson/devcontainers/{feature}:latest" in data["features"]
 
 
-@pytest.mark.parametrize("feature", CPU_TEMPLATE_FEATURES)
+@pytest.mark.parametrize("feature", CPU_SLIM_TEMPLATE_FEATURES + BUNDLE_TEMPLATE_FEATURES)
 def test_cpu_template_remote_user_dev(feature):
     assert _template_json(feature)["remoteUser"] == "dev"
 
 
-@pytest.mark.parametrize("feature", CPU_TEMPLATE_FEATURES)
+@pytest.mark.parametrize("feature", CPU_SLIM_TEMPLATE_FEATURES + BUNDLE_TEMPLATE_FEATURES)
 def test_cpu_template_no_sshd_waitloop(feature):
     assert "pgrep sshd" not in json.dumps(_template_json(feature))
 

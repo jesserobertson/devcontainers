@@ -1,7 +1,7 @@
 {
   "name": "rapids",
   "description": "RAPIDS (cuDF, JAX CUDA 12, Polars GPU) with Marimo.",
-  "image": "ghcr.io/jesserobertson/base-cuda:latest",
+  "image": "ghcr.io/jesserobertson/base-cuda-slim:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "features": {
