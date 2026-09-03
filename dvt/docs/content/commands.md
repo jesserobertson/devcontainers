@@ -11,7 +11,8 @@ keep printing a bare JSON array on success (predates the `{"ok": ...}`
 convention) but report failures the same way as every other command. `feature
 show` and `image show` always printed their raw JSON pass-through on success
 and now accept `--json` too, purely so their *failure* path matches the
-shared convention as well. `ssh` has no `--json` mode: without `--stdio` it's
+shared convention as well. `feature deps --json` likewise prints a bare object
+(`{"<feature>": {"pulls_in": [...], "installs_after": [...]}}`) on success. `ssh` has no `--json` mode: without `--stdio` it's
 an interactive terminal session, and `--stdio` is a raw SSH byte stream, not
 structured output. `run` likewise has no `--json` mode — its stdout is the
 exec'd command's own output, passed straight through.
@@ -74,13 +75,26 @@ data directory by hand.
 
 ### `dvt feature list`
 
-Lists cached features with their description and base image. `--json` prints the same
-data (plus each feature's OCI Feature ref) as a JSON array instead of a table, for
-scripting.
+Lists cached features with their description and base image, plus a "Pulls in" column
+showing each feature's transitive `dependsOn`. `--json` prints the same data (plus each
+feature's OCI Feature ref) as a JSON array instead of a table, for scripting. The column
+reads dvt's local feature cache — run `dvt sync` once after upgrading for it to populate.
 
 ### `dvt feature show <name>`
 
-Prints a cached feature's devcontainer.json overlay.
+Prints a cached feature's devcontainer.json overlay followed by its dependency tree.
+`--json` adds a `resolved_depends_on` key (the transitive `dependsOn` closure) when the
+feature is in the cache.
+
+### `dvt feature deps [name]`
+
+Shows what a feature pulls in via `dependsOn` — one feature, or the whole fleet when
+`name` is omitted. `--format tree` (default) renders a Rich tree; `--format dot` /
+`--format mermaid` emit the graph for Graphviz or Mermaid; `--json` prints
+`{"<feature>": {"pulls_in": [...], "installs_after": [...]}}`. Unlike `list`/`add`, `deps`
+fails loudly on a dependency cycle. `dvt` never writes these implied features into
+`devcontainer.json`; its builder already resolves `dependsOn` at image-build time and this
+view only surfaces it.
 
 ### `dvt feature add <name>`
 

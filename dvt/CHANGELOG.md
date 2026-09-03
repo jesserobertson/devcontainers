@@ -25,6 +25,28 @@ Revisit switching breaking changes to a major bump once the project reaches `1.0
   creation, a changed set makes `dvt up` ask for `--rebuild` rather than
   recreating silently.
 
+## [0.5.0] - 2026-09-03
+
+### Added
+
+- `dvt sync` now also pre-pulls each known feature's OCI artifact into the local
+  cache, so the dependency views below keep working offline.
+- `dvt feature list` gains a "Pulls in" column showing each feature's transitive
+  `dependsOn`.
+- `dvt feature show` renders the dependency tree; `--json` output gains a
+  `resolved_depends_on` key (the transitive `dependsOn` closure) when the feature
+  is in the cache.
+- New `dvt feature deps [name]` — shows what a feature pulls in via `dependsOn`,
+  for one feature or the whole fleet, as `--format tree` (default), `dot`, or
+  `mermaid`, or as `--json`.
+- `dvt feature add` now reports what a feature pulls in via `dependsOn`
+  ("also pulling in: … (via dependsOn)").
+
+`dvt` does not inject implied features into `devcontainer.json` — its builder
+already resolves `dependsOn` at image-build time (`feature_graph`); these views
+only surface it. Run `dvt sync` once after upgrading to populate the "Pulls in"
+column.
+
 ## [0.4.1] - 2026-09-01
 
 ### Changed

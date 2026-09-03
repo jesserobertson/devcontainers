@@ -24,6 +24,22 @@ Synced 2 images: base-cuda, base-ubuntu
 dvt feature list
 ```
 
+The "Pulls in" column shows what each feature drags in transitively via
+`dependsOn`. It reads a local cache, so run `dvt sync` once after upgrading dvt
+for that column to populate. To inspect one feature's dependency graph on its
+own:
+
+```bash
+dvt feature deps fastapi
+```
+
+`--format dot` / `--format mermaid` emit the graph for Graphviz or Mermaid
+instead of the default tree, and `--json` gives
+`{"<feature>": {"pulls_in": [...], "installs_after": [...]}}`. Omit the name to
+cover the whole fleet. `dvt` doesn't inject these implied features into
+`devcontainer.json` — its builder resolves `dependsOn` at image-build time; this
+view only surfaces it.
+
 ## 3. Scaffold a project
 
 ```bash

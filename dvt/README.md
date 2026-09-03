@@ -14,7 +14,8 @@ repo root.
 ## Usage
 
     dvt sync
-    dvt feature list
+    dvt feature list                 # "Pulls in" column: each feature's transitive dependsOn
+    dvt feature deps fastapi         # that feature's dependsOn graph (tree | dot | mermaid | --json)
     dvt init ./my-project
     dvt feature add fastapi            # run from inside a project with .devcontainer/devcontainer.json
     dvt feature add agent
@@ -23,6 +24,11 @@ repo root.
     dvt run -n my-project pytest -q  # run one command inside the workspace, exit with its status
     dvt forward -n my-project 2718   # reach an in-container :2718 server at http://localhost:2718
     dvt info                        # from inside my-project - no name needed
+
+`dvt feature list`'s "Pulls in" column and `dvt feature deps [name]` both read a
+local cache of feature metadata — run `dvt sync` once after upgrading to populate
+it. `dvt` never writes the implied features into `devcontainer.json`; its builder
+already resolves `dependsOn` at image-build time, and these views just surface it.
 
 ## Reaching a server inside a workspace
 

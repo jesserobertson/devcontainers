@@ -105,7 +105,9 @@ class FeatureListOutput(RootModel[list[dict[str, Any]]]):
 class FeatureShowOutput(RootModel[dict[str, Any]]):
     """Raw pass-through of the cached feature's own devcontainer.json
     overlay - shape is whatever that feature's template contains, not a
-    fixed dvt-defined contract."""
+    fixed dvt-defined contract. When the feature is in the local cache,
+    `dvt feature show --json` also adds an optional `resolved_depends_on`
+    key: the transitive `dependsOn` closure as a list of feature ids."""
 
 
 class FeatureDepsOutput(RootModel[dict[str, Any]]):

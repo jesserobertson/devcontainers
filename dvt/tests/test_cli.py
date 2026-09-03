@@ -1307,3 +1307,30 @@ def test_ssh_with_dash_L_builds_and_closes_a_forwarder(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert closed["n"] == 1
+
+
+def test_bundle_plumbing_refs_unions_base_image_feature_keys(
+    settings, monkeypatch, tmp_path
+):
+    from devtemplate.cli import _bundle_plumbing_refs
+
+    (tmp_path / ".git").mkdir()
+    for base, features in (
+        ("base-ubuntu", ["ghcr.io/x/common:latest", "ghcr.io/x/pixi:latest"]),
+        ("base-cuda", ["ghcr.io/x/pixi:latest", "ghcr.io/x/cuda:latest"]),
+    ):
+        cfg_dir = tmp_path / "images" / base / ".devcontainer"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "devcontainer.json").write_text(
+            json.dumps({"features": {ref: {} for ref in features}})
+        )
+    monkeypatch.chdir(tmp_path)
+
+    refs = _bundle_plumbing_refs(settings)
+
+    # Deduped union of both files' "features" keys, order preserved.
+    assert refs == [
+        "ghcr.io/x/common:latest",
+        "ghcr.io/x/pixi:latest",
+        "ghcr.io/x/cuda:latest",
+    ]
