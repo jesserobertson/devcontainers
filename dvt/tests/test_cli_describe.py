@@ -153,6 +153,11 @@ def test_describe_after_a_group_scopes_to_that_group_subtree():
     assert set(scoped["commands"]) == {
         "feature list",
         "feature show",
+        "feature deps",
+        # "feature tree" is a hidden alias of "feature deps"; describe_app
+        # walks the Click command tree without a hidden filter, so it is
+        # still emitted here (the same command surface under a second name).
+        "feature tree",
         "feature add",
         "feature remove",
     }

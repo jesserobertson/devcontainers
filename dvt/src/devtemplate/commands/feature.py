@@ -23,6 +23,8 @@ from devtemplate.feature_graph import (
     describe_graph,
     load_cached_specs,
     ref_to_id,
+    to_dot,
+    to_mermaid,
 )
 from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 from devtemplate.merge import merge_layer, merge_layer_keys
@@ -176,6 +178,78 @@ def show_feature(
     print(json.dumps(template, indent=2))
     if name in specs:
         console.print(_dep_tree(name, specs))
+
+
+@app.command("deps")
+def deps(
+    name: str | None = typer.Argument(  # noqa: B008
+        None, help="Feature to inspect; omit for the whole fleet."
+    ),
+    fmt: str = typer.Option(  # noqa: B008
+        "tree", "--format", help="Output format: tree | dot | mermaid."
+    ),
+    json_output: bool = typer.Option(  # noqa: B008
+        False, "--json", help="Machine-readable JSON."
+    ),
+) -> None:
+    """Show what each feature pulls in via dependsOn.
+
+    Unlike 'list'/'add', 'deps' fails loudly on a dependency cycle - surfacing
+    a broken spec cache is the point of the command.
+    """
+    settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
+    specs = load_cached_specs(settings)
+    nodes = unwrap_or_exit(describe_graph(specs), console, json_output=json_output)
+
+    if not nodes:
+        if json_output:
+            print(json.dumps({}))
+        else:
+            stderr_console.print("No feature dependency data. Run 'dvt sync' first.")
+        raise typer.Exit(code=0)
+
+    if name is not None:
+        resolved = unwrap_or_exit(
+            resolve_or_confirm(
+                name,
+                sorted(specs),
+                label="feature",
+                assume_yes=json_output,
+                interactive=not json_output,
+            ),
+            console,
+            json_output=json_output,
+        )
+        targets = [resolved]
+    else:
+        targets = sorted(specs)
+
+    if json_output:
+        print(
+            json.dumps(
+                {
+                    t: {
+                        "pulls_in": list(nodes[t].pulls_in),
+                        "installs_after": list(nodes[t].installs_after),
+                    }
+                    for t in targets
+                }
+            )
+        )
+        return
+
+    selected = [nodes[t] for t in targets]
+    if fmt == "dot":
+        print(to_dot(selected))
+    elif fmt == "mermaid":
+        print(to_mermaid(selected))
+    else:
+        for t in targets:
+            if specs[t].depends_on:
+                console.print(_dep_tree(t, specs))
+
+
+app.command("tree", hidden=True)(deps)
 
 
 # "description" is feature-registry metadata (used by 'dvt feature list'/'show'), not a

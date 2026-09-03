@@ -20,6 +20,7 @@ __all__ = [
     "DeleteOutput",
     "ErrorOutput",
     "FeatureAddOutput",
+    "FeatureDepsOutput",
     "FeatureInfo",
     "FeatureListOutput",
     "FeatureRemoveOutput",
@@ -107,6 +108,12 @@ class FeatureShowOutput(RootModel[dict[str, Any]]):
     fixed dvt-defined contract."""
 
 
+class FeatureDepsOutput(RootModel[dict[str, Any]]):
+    """`{"<feature id>": {"pulls_in": [...], "installs_after": [...]}, ...}` -
+    one entry per selected feature. Kept permissive (like FeatureListOutput /
+    FeatureShowOutput) rather than a fixed per-entry model."""
+
+
 class SyncOutput(BaseModel):
     ok: Literal[True]
     features: list[str]
@@ -153,6 +160,7 @@ OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "sync": SyncOutput,
     "feature list": FeatureListOutput,
     "feature show": FeatureShowOutput,
+    "feature deps": FeatureDepsOutput,
     "feature add": FeatureAddOutput,
     "feature remove": FeatureRemoveOutput,
     "image list": ImageListOutput,
