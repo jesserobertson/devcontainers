@@ -386,6 +386,10 @@ def add(
             console,
             json_output=json_output,
         )
+        nodes = describe_graph(load_cached_specs(settings)).unwrap_or({})
+        pulled = list(nodes[resolved].pulls_in) if resolved in nodes else []
+        if pulled and not json_output:
+            console.print(f"also pulling in: {', '.join(pulled)} (via dependsOn)")
         resolved_names.append(resolved)
     emit_success(json_output, {"added": resolved_names}, lambda: None)
 

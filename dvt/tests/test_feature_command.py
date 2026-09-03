@@ -8,7 +8,13 @@ from typer.testing import CliRunner
 
 from devtemplate import __version__
 from devtemplate.cli import app as real_app
-from devtemplate.commands.feature import app, console, list_features, show_feature
+from devtemplate.commands.feature import (
+    add,
+    app,
+    console,
+    list_features,
+    show_feature,
+)
 from devtemplate.describe import describe_app
 
 runner = CliRunner()
@@ -1179,6 +1185,85 @@ def test_add_stops_on_first_failure_leaving_earlier_successes_applied(
 
     sidecar = json.loads((devcontainer_dir / "dvt-features.json").read_text())
     assert [entry["name"] for entry in sidecar["applied"]] == ["py-devtools"]
+
+
+@pytest.fixture
+def add_env_with_dep_cache(settings, tmp_path, monkeypatch):
+    """Template cache (rapids + pixi) alongside a feature-spec cache under
+    settings.features_dir where rapids dependsOn pixi, plus a project dir
+    (made cwd) holding a .devcontainer/devcontainer.json ready for
+    'dvt feature add rapids'. Yields the project dir."""
+    settings.templates_dir.mkdir(parents=True)
+    for name in ("rapids", "pixi"):
+        template_dir = settings.templates_dir / name
+        template_dir.mkdir()
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "description": f"{name}.",
+                    "image": "ghcr.io/x:latest",
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{name}:latest": {}
+                    },
+                }
+            )
+        )
+
+    settings.features_dir.mkdir(parents=True)
+    rapids_feature = settings.features_dir / "rapids"
+    rapids_feature.mkdir()
+    (rapids_feature / "devcontainer-feature.json").write_text(
+        json.dumps(
+            {
+                "id": "rapids",
+                "dependsOn": {"ghcr.io/jesserobertson/devcontainers/pixi": {}},
+            }
+        )
+    )
+    pixi_feature = settings.features_dir / "pixi"
+    pixi_feature.mkdir()
+    (pixi_feature / "devcontainer-feature.json").write_text(json.dumps({"id": "pixi"}))
+
+    project = tmp_path / "project"
+    devcontainer_dir = project / ".devcontainer"
+    devcontainer_dir.mkdir(parents=True)
+    (devcontainer_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {"name": "my-project", "image": "ghcr.io/jesserobertson/base-ubuntu:latest"}
+        )
+    )
+    monkeypatch.chdir(project)
+    return project
+
+
+def test_add_reports_pulled_in_deps(add_env_with_dep_cache, capsys):
+    add(names=["rapids"], assume_yes=True, json_output=False)
+    out = capsys.readouterr().out
+    assert "also pulling in: pixi (via dependsOn)" in out
+
+
+def test_add_does_not_write_pulls_in_to_sidecar(add_env_with_dep_cache):
+    add(names=["rapids"], assume_yes=True, json_output=False)
+    sidecar = json.loads(
+        (add_env_with_dep_cache / ".devcontainer" / "dvt-features.json").read_text()
+    )
+    entry = next(e for e in sidecar["applied"] if e["name"] == "rapids")
+    assert "pulls_in" not in entry
+
+
+def test_add_does_not_inject_pixi_into_devcontainer_json(add_env_with_dep_cache):
+    add(names=["rapids"], assume_yes=True, json_output=False)
+    cfg = json.loads(
+        (add_env_with_dep_cache / ".devcontainer" / "devcontainer.json").read_text()
+    )
+    assert not any("pixi" in key for key in cfg["features"])
+
+
+def test_add_json_output_omits_pull_in_message(add_env_with_dep_cache, capsys):
+    add(names=["rapids"], assume_yes=True, json_output=True)
+    out = capsys.readouterr().out
+    assert "also pulling in" not in out
 
 
 def test_remove_multiple_names_removes_all_in_order(tmp_path, settings, monkeypatch):
