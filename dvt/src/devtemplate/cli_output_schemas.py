@@ -111,6 +111,7 @@ class SyncOutput(BaseModel):
     ok: Literal[True]
     features: list[str]
     images: list[str]
+    feature_specs: list[str]
 
 
 class FeatureAddOutput(BaseModel):

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import jsonschema
@@ -36,9 +37,12 @@ def test_cli_help_exits_zero():
     assert result.exit_code == 0
 
 
-def test_sync_reports_synced_features_and_images(settings, monkeypatch):
+def test_sync_reports_synced_features_and_images(settings, monkeypatch, tmp_path):
     import devtemplate.cli as cli_module
 
+    # No cached templates and cwd outside any devcontainers checkout, so the
+    # feature pre-pull step has nothing to fetch (keeps this test offline).
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         cli_module,
         "sync_templates",
@@ -58,9 +62,10 @@ def test_sync_reports_synced_features_and_images(settings, monkeypatch):
     assert "base-cuda" in result.stdout
 
 
-def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
+def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch, tmp_path):
     import devtemplate.cli as cli_module
 
+    monkeypatch.chdir(tmp_path)
     stale = settings.features_dir / "deadbeef"
     stale.mkdir(parents=True)
     (stale / "install.sh").write_text("echo stale\n")
@@ -80,9 +85,10 @@ def test_sync_clears_the_pulled_feature_artifact_cache(settings, monkeypatch):
     assert not stale.exists()
 
 
-def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch):
+def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch, tmp_path):
     import devtemplate.cli as cli_module
 
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         cli_module,
         "sync_templates",
@@ -98,7 +104,12 @@ def test_sync_json_prints_ok_true_with_synced_names(settings, monkeypatch):
 
     assert result.exit_code == 0, result.output
     printed = json.loads(result.output)
-    assert printed == {"ok": True, "features": ["fastapi"], "images": ["base-cuda"]}
+    assert printed == {
+        "ok": True,
+        "features": ["fastapi"],
+        "images": ["base-cuda"],
+        "feature_specs": [],
+    }
     _assert_matches_declared_output_schema("sync", printed)
 
 
@@ -144,6 +155,95 @@ def test_sync_json_prints_ok_false_on_image_sync_failure(settings, monkeypatch):
     printed = json.loads(result.output)
     assert printed["ok"] is False
     assert "image sync broke" in printed["error"]
+
+
+def _write_cached_template(settings, name, feature_refs):
+    """Write a minimal cached template devcontainer.json whose `features`
+    map keys are `feature_refs`, mirroring what `dvt sync` leaves in the
+    templates cache."""
+    directory = settings.templates_dir / name
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "devcontainer.json").write_text(
+        json.dumps({"features": {ref: {} for ref in feature_refs}})
+    )
+
+
+def _fake_pull_feature(fail_ids=()):
+    """Stand-in for `features.pull_feature`: instead of hitting an OCI
+    registry it drops a `devcontainer-feature.json` (just an `id`) into the
+    cache dir so the real `resolve_feature_graph` / `load_cached_specs` can
+    read it back. Any ref whose short id is in `fail_ids` returns an Err."""
+    import devtemplate.cli as cli_module
+    from devtemplate.feature_graph import ref_to_id
+
+    def _pull(client, ref, cache_dir):
+        ident = ref_to_id(ref)
+        if ident in fail_ids:
+            return cli_module.Err(RuntimeError(f"cannot pull {ident}"))
+        extracted = Path(cache_dir) / ident
+        extracted.mkdir(parents=True, exist_ok=True)
+        (extracted / "devcontainer-feature.json").write_text(json.dumps({"id": ident}))
+        return cli_module.Ok(extracted)
+
+    return _pull
+
+
+def test_sync_json_lists_feature_specs_for_cached_templates(
+    settings, monkeypatch, tmp_path
+):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.chdir(tmp_path)
+    _write_cached_template(settings, "agent", ["ghcr.io/acme/node:1"])
+    _write_cached_template(settings, "fastapi", ["ghcr.io/acme/py-devtools:latest"])
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Ok(["agent", "fastapi"]),
+    )
+    monkeypatch.setattr(
+        cli_module, "sync_images", lambda settings_arg, client: cli_module.Ok([])
+    )
+    monkeypatch.setattr(cli_module, "pull_feature", _fake_pull_feature())
+
+    result = runner.invoke(cli_module.app, ["sync", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.stdout)
+    assert printed["ok"] is True
+    assert printed["feature_specs"] == ["node", "py-devtools"]
+    _assert_matches_declared_output_schema("sync", printed)
+
+
+def test_sync_isolates_a_single_feature_pull_failure(settings, monkeypatch, tmp_path):
+    import devtemplate.cli as cli_module
+
+    monkeypatch.chdir(tmp_path)
+    _write_cached_template(settings, "agent", ["ghcr.io/acme/node:1"])
+    _write_cached_template(settings, "fastapi", ["ghcr.io/acme/py-devtools:latest"])
+
+    monkeypatch.setattr(
+        cli_module,
+        "sync_templates",
+        lambda settings_arg, client: cli_module.Ok(["agent", "fastapi"]),
+    )
+    monkeypatch.setattr(
+        cli_module, "sync_images", lambda settings_arg, client: cli_module.Ok([])
+    )
+    monkeypatch.setattr(
+        cli_module, "pull_feature", _fake_pull_feature(fail_ids={"node"})
+    )
+
+    result = runner.invoke(cli_module.app, ["sync", "--json"])
+
+    assert result.exit_code == 0, result.output
+    printed = json.loads(result.stdout)
+    assert printed["ok"] is True
+    assert printed["feature_specs"] == ["py-devtools"]
+    assert "node" not in printed["feature_specs"]
+    assert "could not pull feature" in result.stderr
+    assert "ghcr.io/acme/node:1" in result.stderr
 
 
 def test_up_builds_and_runs_workspace(monkeypatch, tmp_path):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,11 +22,12 @@ from devtemplate import __version__, describe
 from devtemplate.cli_output_schemas import attach_output_schema
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.commands import feature_app, image_app, info_command, init_command
-from devtemplate.config import load_settings
+from devtemplate.config import Settings, load_settings
 from devtemplate.container import find_workspace_container
-from devtemplate.features import clear_pulled_features
+from devtemplate.feature_graph import load_cached_specs, resolve_feature_graph
+from devtemplate.features import clear_pulled_features, pull_feature
 from devtemplate.forward import block_forever, build_forwarder
-from devtemplate.images import sync_images
+from devtemplate.images import find_repo_root, sync_images
 from devtemplate.runtime import get_client
 from devtemplate.ssh import (
     exec_command,
@@ -33,7 +35,11 @@ from devtemplate.ssh import (
     remove_ssh_config_entry,
     stdio_proxy,
 )
-from devtemplate.store import sync_templates
+from devtemplate.store import (
+    list_cached_templates,
+    load_cached_template,
+    sync_templates,
+)
 from devtemplate.workspace import resolve_existing, resolve_for_up, up_workspace
 
 # Wires --describe (on every command and sub-group, via describe.Typer) to
@@ -52,8 +58,33 @@ app.add_typer(image_app, name="image")
 app.command("init")(init_command)
 app.command("info")(info_command)
 console = Console()
+stderr_console = Console(stderr=True)
 
 __all__ = ["app", "main"]
+
+
+def _bundle_plumbing_refs(settings: Settings) -> list[str]:
+    """Feature refs the base-image devcontainers pull in - the "plumbing" a
+    workspace inherits regardless of which template it started from.
+
+    Read from a real checkout of the devcontainers repo when the current
+    directory is inside one (`images/base-ubuntu` + `images/base-cuda`'s
+    `.devcontainer/devcontainer.json` `features` keys, unioned). Returns
+    `[]` on anything unexpected - no checkout, files missing, malformed
+    JSON - this is a best-effort supplement to the template-derived refs
+    and must never abort a sync.
+    """
+    del settings  # signature parity with the other sync helpers; unused
+    try:
+        root = find_repo_root(Path.cwd()).unwrap()
+        refs: list[str] = []
+        for base in ("base-ubuntu", "base-cuda"):
+            path = root / "images" / base / ".devcontainer" / "devcontainer.json"
+            data = json.loads(path.read_text())
+            refs.extend(data.get("features", {}).keys())
+        return list(dict.fromkeys(refs))
+    except Exception:
+        return []
 
 
 def version_callback(value: bool) -> None:
@@ -119,7 +150,35 @@ def sync(
         with httpx.Client() as client:
             features = sync_templates(settings, client).unwrap()
             images = sync_images(settings, client).unwrap()
-        return {"features": features, "images": images}
+
+            # Pre-pull the OCI artifact for every feature ref the cached
+            # templates reference (plus transitive dependsOn) into
+            # settings.features_dir - the same cache `dvt up` and the graph
+            # views read. Done one ref at a time so a single unreachable
+            # feature warns rather than aborting the rest.
+            refs: list[str] = []
+            for name in list_cached_templates(settings):
+                tmpl = load_cached_template(settings, name).unwrap_or({})
+                refs.extend(tmpl.get("features", {}).keys())
+            refs.extend(_bundle_plumbing_refs(settings))
+
+            def _pull(ref: str) -> Path:
+                return pull_feature(client, ref, settings.features_dir).unwrap()
+
+            for ref in dict.fromkeys(refs):
+                result = resolve_feature_graph({ref: {}}, _pull)
+                if result.is_err():
+                    stderr_console.print(
+                        f"[yellow]sync: could not pull feature {ref!r}: "
+                        f"{result.unwrap_err()}[/yellow]"
+                    )
+
+            feature_specs = sorted(load_cached_specs(settings))
+        return {
+            "features": features,
+            "images": images,
+            "feature_specs": feature_specs,
+        }
 
     result = with_status(
         json_output, console, "Syncing features and images from GitHub...", do_sync
@@ -134,7 +193,9 @@ def sync(
             f"Synced {len(synced['features'])} features: "
             f"{', '.join(synced['features'])}\n"
             f"Synced {len(synced['images'])} images: "
-            f"{', '.join(synced['images'])}"
+            f"{', '.join(synced['images'])}\n"
+            f"Synced {len(synced['feature_specs'])} feature specs: "
+            f"{', '.join(synced['feature_specs'])}"
         ),
     )
 
