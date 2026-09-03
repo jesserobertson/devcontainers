@@ -163,6 +163,11 @@ OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "feature list": FeatureListOutput,
     "feature show": FeatureShowOutput,
     "feature deps": FeatureDepsOutput,
+    # `feature tree` is the hidden alias of `feature deps` (same callback, same
+    # --json payload); describe_app walks it as a distinct command, so it needs
+    # its own declared output shape too or the manifest carries a --json command
+    # with none (violating the invariant in docs/content/commands.md).
+    "feature tree": FeatureDepsOutput,
     "feature add": FeatureAddOutput,
     "feature remove": FeatureRemoveOutput,
     "image list": ImageListOutput,

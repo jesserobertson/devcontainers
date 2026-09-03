@@ -1309,9 +1309,7 @@ def test_ssh_with_dash_L_builds_and_closes_a_forwarder(monkeypatch):
     assert closed["n"] == 1
 
 
-def test_bundle_plumbing_refs_unions_base_image_feature_keys(
-    settings, monkeypatch, tmp_path
-):
+def test_bundle_plumbing_refs_unions_base_image_feature_keys(monkeypatch, tmp_path):
     from devtemplate.cli import _bundle_plumbing_refs
 
     (tmp_path / ".git").mkdir()
@@ -1326,7 +1324,7 @@ def test_bundle_plumbing_refs_unions_base_image_feature_keys(
         )
     monkeypatch.chdir(tmp_path)
 
-    refs = _bundle_plumbing_refs(settings)
+    refs = _bundle_plumbing_refs()
 
     # Deduped union of both files' "features" keys, order preserved.
     assert refs == [

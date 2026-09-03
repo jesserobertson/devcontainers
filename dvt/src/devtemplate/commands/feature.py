@@ -20,6 +20,7 @@ from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
 from devtemplate.feature_graph import (
     FeatureSpec,
+    GraphNode,
     describe_graph,
     load_cached_specs,
     ref_to_id,
@@ -50,6 +51,22 @@ def feature_ref(template: dict[str, Any]) -> str:
     return next(iter(features), "")
 
 
+def _graph_or_warn(settings: Settings) -> dict[str, GraphNode]:
+    """The cached dependency graph, or ``{}`` when it can't be described.
+
+    A describe failure (e.g. a ``dependsOn`` cycle in the cached specs) is
+    surfaced on stderr as the *actual* error - never the "run 'dvt sync'"
+    remedy, since sync is exactly what cached the bad spec. A cold cache
+    degrades silently (callers fall back to ``—`` / no tree)."""
+    result = describe_graph(load_cached_specs(settings))
+    if result.is_ok():
+        return result.unwrap()
+    stderr_console.print(
+        f"[dim]dependency graph unavailable: {escape(str(result.unwrap_err()))}[/dim]"
+    )
+    return {}
+
+
 @app.command("list")
 def list_features(
     json_output: bool = typer.Option(  # noqa: B008
@@ -60,7 +77,13 @@ def list_features(
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
     specs = load_cached_specs(settings)
-    nodes = describe_graph(specs).unwrap_or({})
+    nodes: dict[str, GraphNode] = {}
+    graph_error: str | None = None
+    match describe_graph(specs):
+        case Ok(graph):
+            nodes = graph
+        case Err(error):
+            graph_error = str(error)
 
     names = list_cached_templates(settings)
     if not names and not json_output:
@@ -100,7 +123,11 @@ def list_features(
             row["image"],
         )
     console.print(table)
-    if not nodes:
+    if graph_error is not None:
+        stderr_console.print(
+            f"[dim]dependency graph unavailable: {escape(graph_error)}[/dim]"
+        )
+    elif not nodes:
         stderr_console.print("[dim]run 'dvt sync' for dependency info[/dim]")
 
 
@@ -161,7 +188,17 @@ def show_feature(
     )
 
     specs = load_cached_specs(settings)
-    nodes = describe_graph(specs).unwrap_or({})
+    nodes: dict[str, GraphNode] = {}
+    match describe_graph(specs):
+        case Ok(graph):
+            nodes = graph
+        case Err(error):
+            # A cyclic spec cache: surface the real error, not the misleading
+            # "run 'dvt sync'" remedy. The overlay still prints; the tree is
+            # just skipped.
+            stderr_console.print(
+                f"[dim]dependency graph unavailable: {escape(str(error))}[/dim]"
+            )
 
     if json_output:
         if name in nodes:
@@ -194,8 +231,9 @@ def deps(
 ) -> None:
     """Show what each feature pulls in via dependsOn.
 
-    Unlike 'list'/'add', 'deps' fails loudly on a dependency cycle - surfacing
-    a broken spec cache is the point of the command.
+    Unlike 'list'/'add', 'deps' fails loudly on a dependsOn cycle - surfacing
+    a broken spec cache is the point of the command. (A feature that merely
+    dependsOn *itself* is not a cycle and every view handles it fine.)
     """
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
     specs = load_cached_specs(settings)
@@ -247,6 +285,8 @@ def deps(
         for t in targets:
             if specs[t].depends_on:
                 console.print(_dep_tree(t, specs))
+            else:
+                console.print(f"{t} (no dependsOn)")
 
 
 app.command("tree", hidden=True)(deps)
@@ -366,6 +406,9 @@ def add(
 
     devcontainer_dir = Path(".devcontainer")
     target = devcontainer_dir / "devcontainer.json"
+    # The cached spec graph doesn't change across this invocation - describe it
+    # once, not once per name (each call re-reads every cached spec file).
+    nodes = _graph_or_warn(settings)
     resolved_names: list[str] = []
     for raw_name in names:
         resolved = unwrap_or_exit(
@@ -386,7 +429,6 @@ def add(
             console,
             json_output=json_output,
         )
-        nodes = describe_graph(load_cached_specs(settings)).unwrap_or({})
         pulled = list(nodes[resolved].pulls_in) if resolved in nodes else []
         if pulled and not json_output:
             console.print(f"also pulling in: {', '.join(pulled)} (via dependsOn)")

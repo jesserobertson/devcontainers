@@ -65,11 +65,14 @@ repository — default `jesserobertson/devcontainers`, branch `main`, override w
 `DVT_GITHUB_REPO` / `DVT_GITHUB_BRANCH` environment variables) and the cached image
 registry (`images/` in that same repository) from GitHub in one call. Prunes any
 previously-synced feature or image that's been removed upstream; never touches a
-feature directory or image file you've added by hand. Also clears the local cache of
+feature directory or image file you've added by hand. Also refreshes the local cache of
 pulled devcontainer spec Feature artifacts (the OCI ref each template's `features` map
-points at, e.g. `.../py-devtools:latest`) — `dvt up` caches those forever once pulled,
-so this is the only way to pick up a moved `:latest` upstream without deleting dvt's
-data directory by hand.
+points at, e.g. `.../py-devtools:latest`): it clears that cache — `dvt up` keeps those
+forever once pulled, so this is the only way to pick up a moved `:latest` upstream
+without deleting dvt's data directory by hand — then re-pulls every known feature's
+artifact plus its transitive `dependsOn` (~15 sequential pulls) so the dependency views
+(`dvt feature list` / `deps` / `show`) work offline. A feature that can't be pulled
+produces a warning and is skipped; the rest of the sync still succeeds.
 
 ## `dvt feature`
 
@@ -92,7 +95,7 @@ Shows what a feature pulls in via `dependsOn` — one feature, or the whole flee
 `name` is omitted. `--format tree` (default) renders a Rich tree; `--format dot` /
 `--format mermaid` emit the graph for Graphviz or Mermaid; `--json` prints
 `{"<feature>": {"pulls_in": [...], "installs_after": [...]}}`. Unlike `list`/`add`, `deps`
-fails loudly on a dependency cycle. `dvt` never writes these implied features into
+fails loudly on a **dependsOn** cycle. `dvt` never writes these implied features into
 `devcontainer.json`; its builder already resolves `dependsOn` at image-build time and this
 view only surfaces it.
 

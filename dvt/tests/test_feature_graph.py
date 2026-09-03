@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 
@@ -350,14 +351,27 @@ def test_describe_graph_direct_and_transitive_closure():
 def test_describe_graph_ref_outside_set_kept_bare():
     specs = {"x": _spec("x", deps=["common-utils"])}  # common-utils not in specs
     node = describe_graph(specs).unwrap()["x"]
-    assert node.pulls_in == ("common-utils",) or node.pulls_in == (
-        f"{PFX}/common-utils:latest",
-    )
+    # A dependsOn target that isn't itself a described feature is kept as its
+    # bare normalised ref, not shortened to an id that resolves to nothing.
+    assert node.pulls_in == (f"{PFX}/common-utils:latest",)
 
 
 def test_describe_graph_cycle_is_err():
     specs = {"a": _spec("a", deps=["b"]), "b": _spec("b", deps=["a"])}
     assert describe_graph(specs).is_err()
+
+
+def test_describe_graph_self_dependson_is_not_a_cycle():
+    # A feature that dependsOn itself is a no-op for ordering, not a cycle -
+    # describe_graph must stay Ok (an Err here blanks every dependency view)
+    # and must not list the feature among its own pull-ins.
+    specs = {"a": _spec("a", deps=["a"]), "b": _spec("b", deps=["a"])}
+    result = describe_graph(specs)
+    assert result.is_ok()
+    nodes = result.unwrap()
+    assert "a" not in nodes["a"].pulls_in
+    assert nodes["a"].pulls_in == ()
+    assert nodes["b"].pulls_in == ("a",)
 
 
 def test_to_dot_and_mermaid_are_deterministic():
@@ -368,8 +382,29 @@ def test_to_dot_and_mermaid_are_deterministic():
     assert '"rapids" -> "pixi";' in dot
     mmd = to_mermaid(nodes)
     assert mmd.startswith("graph TD")
-    assert "rapids --> pixi" in mmd
+    assert 'rapids["rapids"] --> pixi["pixi"]' in mmd
     assert to_dot(nodes) == to_dot(list(reversed(nodes)))  # order-independent
+
+
+def test_to_mermaid_bare_ref_endpoint_stays_valid():
+    # A pull-in that's a bare OCI ref (an as-yet-uncached dependsOn target,
+    # e.g. after a partial sync) must not emit an unquoted `/`- or `:`-laden
+    # `-->` endpoint, which Mermaid rejects as a parse error.
+    node = GraphNode(
+        id="x",
+        pulls_in=(f"{PFX}/common-utils:latest",),
+        installs_after=(),
+    )
+    mmd = to_mermaid([node])
+    edge_re = re.compile(r"^\s*(\S.*?)\s*-->\s*(\S.*?)\s*$")
+    endpoint_re = re.compile(r'^\w+(\["[^"]*"\])?$')
+    edge_lines = [ln for ln in mmd.splitlines() if "-->" in ln]
+    assert edge_lines
+    for line in edge_lines:
+        m = edge_re.match(line)
+        assert m, line
+        for endpoint in m.groups():
+            assert endpoint_re.match(endpoint), endpoint
 
 
 def test_describe_graph_node_is_frozen():

@@ -30,6 +30,7 @@ implementation:
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -327,14 +328,22 @@ def describe_graph(
     `Err(ValueError("feature dependency cycle: a -> b -> a"))`.
     """
     ids = set(specs)
-    # id -> its dependsOn targets as labels (short id where known, bare ref else)
+    # id -> its dependsOn targets as labels (short id where known, bare ref else).
+    # A feature that dependsOn *itself* is dropped here (mirrors
+    # resolve_feature_graph's `other != ref` guard): a self-edge is a no-op for
+    # install ordering, not a cycle, so it must not blank the dependency views.
     edges: dict[str, list[str]] = {
-        fid: [_label(dep, ids) for dep in spec.depends_on]
+        fid: [_label(dep, ids) for dep in spec.depends_on if ref_to_id(dep) != fid]
         for fid, spec in specs.items()
     }
-    # dependsOn edges restricted to described nodes - the only ones that can cycle
+    # dependsOn edges restricted to described nodes, self-edge excluded - the
+    # only edges that can form a genuine cycle (between *distinct* features).
     after: dict[str, set[str]] = {
-        fid: {ident for dep in spec.depends_on if (ident := ref_to_id(dep)) in ids}
+        fid: {
+            ident
+            for dep in spec.depends_on
+            if (ident := ref_to_id(dep)) in ids and ident != fid
+        }
         for fid, spec in specs.items()
     }
 
@@ -390,8 +399,23 @@ def to_dot(nodes: Iterable[GraphNode]) -> str:
     return "\n".join(lines)
 
 
+def _mermaid_node(label: str) -> str:
+    """A Mermaid `id["label"]` term. The id is `label` with every run of
+    non-word characters collapsed to `_`, so a bare OCI ref (with `/` and `:`,
+    which happens for an as-yet-uncached `dependsOn` target) can't produce an
+    unquoted `-->` endpoint that Mermaid rejects as a parse error."""
+    slug = re.sub(r"\W+", "_", label).strip("_") or "n"
+    return f'{slug}["{label}"]'
+
+
 def to_mermaid(nodes: Iterable[GraphNode]) -> str:
-    """Mermaid flowchart for the pull-in graph. `A --> B` means "A pulls in B"."""
+    """Mermaid flowchart for the pull-in graph. `A --> B` means "A pulls in B".
+
+    Each endpoint is emitted in `id["label"]` form so refs that aren't plain
+    identifiers stay valid Mermaid.
+    """
     lines = ["graph TD"]
-    lines += [f"  {src} --> {dst}" for src, dst in _edges(nodes)]
+    lines += [
+        f"  {_mermaid_node(src)} --> {_mermaid_node(dst)}" for src, dst in _edges(nodes)
+    ]
     return "\n".join(lines)

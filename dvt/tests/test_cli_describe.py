@@ -139,6 +139,15 @@ def test_describe_documents_bare_array_output_for_feature_list():
     assert feature_list["output"]["success"]["type"] == "array"
 
 
+def test_describe_gives_feature_tree_alias_the_same_output_shape_as_deps():
+    # `feature tree` is a hidden `--json`-capable alias of `feature deps`;
+    # the manifest must declare its output shape too (same as deps), never
+    # carry a --json command with none.
+    commands = _describe()["commands"]
+    assert "output" in commands["feature tree"]
+    assert commands["feature tree"]["output"] == commands["feature deps"]["output"]
+
+
 def test_describe_after_a_leaf_command_scopes_to_just_that_command():
     # `dvt up --describe` mirrors `dvt up --help`: the flag rides the
     # subcommand and the manifest covers only that command, so an agent

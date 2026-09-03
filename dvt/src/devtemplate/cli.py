@@ -22,7 +22,7 @@ from devtemplate import __version__, describe
 from devtemplate.cli_output_schemas import attach_output_schema
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.commands import feature_app, image_app, info_command, init_command
-from devtemplate.config import Settings, load_settings
+from devtemplate.config import load_settings
 from devtemplate.container import find_workspace_container
 from devtemplate.feature_graph import load_cached_specs, resolve_feature_graph
 from devtemplate.features import clear_pulled_features, pull_feature
@@ -63,7 +63,7 @@ stderr_console = Console(stderr=True)
 __all__ = ["app", "main"]
 
 
-def _bundle_plumbing_refs(settings: Settings) -> list[str]:
+def _bundle_plumbing_refs() -> list[str]:
     """Feature refs the base-image devcontainers pull in - the "plumbing" a
     workspace inherits regardless of which template it started from.
 
@@ -74,7 +74,6 @@ def _bundle_plumbing_refs(settings: Settings) -> list[str]:
     JSON - this is a best-effort supplement to the template-derived refs
     and must never abort a sync.
     """
-    del settings  # signature parity with the other sync helpers; unused
     try:
         root = find_repo_root(Path.cwd()).unwrap()
         refs: list[str] = []
@@ -133,13 +132,16 @@ def sync(
 ) -> None:
     """Refresh the cached feature and image registries from GitHub.
 
-    Also clears the local cache of pulled devcontainer spec Feature artifacts
-    (the OCI ref each template's "features" map points at, e.g.
-    "ghcr.io/.../py-devtools:latest") - `dvt up` caches those forever once
-    pulled once (see devtemplate.features.pull_feature), which is correct for
-    an immutable version tag but means a moved `:latest` upstream would
-    otherwise never be noticed on a machine that already pulled it. `sync` is
-    the existing "go get whatever's current" entry point, so it clears both.
+    Also refreshes the local cache of pulled devcontainer spec Feature
+    artifacts (the OCI ref each template's "features" map points at, e.g.
+    "ghcr.io/.../py-devtools:latest"). It first clears that cache - `dvt up`
+    keeps pulled artifacts forever (see devtemplate.features.pull_feature),
+    which is correct for an immutable version tag but means a moved `:latest`
+    upstream would otherwise never be noticed - then re-pulls every known
+    feature's artifact plus its transitive `dependsOn` (~15 sequential pulls)
+    so the dependency views (`dvt feature list` / `deps` / `show`) work
+    offline. A feature that can't be pulled produces a warning and is
+    skipped; the rest of the sync still succeeds.
     """
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
@@ -160,7 +162,7 @@ def sync(
             for name in list_cached_templates(settings):
                 tmpl = load_cached_template(settings, name).unwrap_or({})
                 refs.extend(tmpl.get("features", {}).keys())
-            refs.extend(_bundle_plumbing_refs(settings))
+            refs.extend(_bundle_plumbing_refs())
 
             def _pull(ref: str) -> Path:
                 return pull_feature(client, ref, settings.features_dir).unwrap()

@@ -236,6 +236,54 @@ def test_list_cold_cache_degrades(list_env_no_dep_cache, capsys):
     assert "run 'dvt sync' for dependency info" in captured.err
 
 
+@pytest.fixture
+def list_env_cyclic_dep_cache(settings):
+    """A populated template cache alongside a feature-spec cache that holds a
+    genuine dependsOn cycle (a -> b -> a). 'dvt feature list' must degrade to
+    '—' and surface the actual error - NOT the misleading 'run dvt sync'
+    remedy, since sync is exactly what cached the broken spec."""
+    settings.templates_dir.mkdir(parents=True)
+    for name in ("a", "b"):
+        template_dir = settings.templates_dir / name
+        template_dir.mkdir()
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "description": f"{name}.",
+                    "image": "ghcr.io/x:latest",
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{name}:latest": {}
+                    },
+                }
+            )
+        )
+    settings.features_dir.mkdir(parents=True)
+    for this, other in (("a", "b"), ("b", "a")):
+        feature_dir = settings.features_dir / this
+        feature_dir.mkdir()
+        (feature_dir / "devcontainer-feature.json").write_text(
+            json.dumps(
+                {
+                    "id": this,
+                    "dependsOn": {f"ghcr.io/jesserobertson/devcontainers/{other}": {}},
+                }
+            )
+        )
+    return settings
+
+
+def test_list_cyclic_cache_surfaces_error_not_sync_hint(
+    list_env_cyclic_dep_cache, capsys
+):
+    list_features(json_output=False)
+    captured = capsys.readouterr()
+    assert "—" in captured.out
+    assert "dependency graph unavailable" in captured.err
+    assert "cycle" in captured.err
+    assert "run 'dvt sync' for dependency info" not in captured.err
+
+
 def test_show_prints_cached_feature(settings):
     settings.templates_dir.mkdir(parents=True)
     (settings.templates_dir / "fastapi").mkdir()
