@@ -1389,8 +1389,9 @@ def test_remove_fuzzy_resolves_a_close_typo(tmp_path, settings, monkeypatch):
 @pytest.fixture
 def show_env_with_dep_cache(settings):
     """Template cache (rapids + pixi) alongside a populated feature-spec cache
-    under settings.features_dir where rapids dependsOn pixi - so
-    'dvt feature show rapids' can render the dependency tree and add
+    under settings.features_dir where rapids dependsOn pixi, and pixi
+    installsAfter homebrew - so 'dvt feature show rapids' can render the
+    dependency tree (with an '(after: homebrew)' annotation) and add
     resolved_depends_on to its --json output."""
     settings.templates_dir.mkdir(parents=True)
     for name in ("rapids", "pixi"):
@@ -1422,7 +1423,14 @@ def show_env_with_dep_cache(settings):
     )
     pixi_feature = settings.features_dir / "pixi"
     pixi_feature.mkdir()
-    (pixi_feature / "devcontainer-feature.json").write_text(json.dumps({"id": "pixi"}))
+    (pixi_feature / "devcontainer-feature.json").write_text(
+        json.dumps(
+            {
+                "id": "pixi",
+                "installsAfter": ["ghcr.io/jesserobertson/devcontainers/homebrew"],
+            }
+        )
+    )
     return settings
 
 
@@ -1451,6 +1459,9 @@ def test_show_prints_dependency_tree(show_env_with_dep_cache, capsys):
     show_feature(name="rapids", json_output=False)
     out = capsys.readouterr().out
     assert "rapids" in out and "pixi" in out
+    # actual tree structure, not just the two names appearing anywhere: pixi is
+    # a child node and its installsAfter is annotated inline.
+    assert "(after: homebrew)" in out
 
 
 def test_show_json_has_resolved_depends_on(show_env_with_dep_cache, capsys):
@@ -1462,3 +1473,37 @@ def test_show_json_has_resolved_depends_on(show_env_with_dep_cache, capsys):
 def test_show_uncached_name_still_prints_overlay(show_env_no_dep_cache, capsys):
     show_feature(name="cli", json_output=False)
     assert '"features"' in capsys.readouterr().out  # overlay still printed, no crash
+
+
+def test_show_uncached_name_json_prints_raw_overlay_unchanged(
+    show_env_no_dep_cache, capsys
+):
+    # --json for a feature with no cached spec must be the raw overlay, no
+    # resolved_depends_on key added (mirrors the json_output=False uncached case).
+    show_feature(name="cli", json_output=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert "features" in payload
+    assert "resolved_depends_on" not in payload
+
+
+def test_dep_tree_survives_cyclic_and_self_referential_specs():
+    # Regression: the on-disk spec cache can hold a cycle (dvt sync writes each
+    # spec during its BFS, before resolve_feature_graph's cycle check) or a
+    # self-dependsOn (never flagged as a cycle at all). _dep_tree must not
+    # RecursionError - it marks the closing edge '(cycle)' and stops.
+    from devtemplate.commands.feature import _dep_tree
+    from devtemplate.feature_graph import FeatureSpec
+
+    def spec(fid, *deps):
+        return FeatureSpec(
+            id=fid,
+            depends_on=tuple(
+                f"ghcr.io/jesserobertson/devcontainers/{d}:latest" for d in deps
+            ),
+            installs_after=(),
+        )
+
+    for specs in ({"a": spec("a", "b"), "b": spec("b", "a")}, {"a": spec("a", "a")}):
+        with console.capture() as cap:
+            console.print(_dep_tree("a", specs))
+        assert "(cycle)" in cap.get()

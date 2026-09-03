@@ -106,21 +106,32 @@ def _dep_tree(fid: str, specs: Mapping[str, FeatureSpec]) -> Tree:
     """A Rich Tree rooted at `fid` whose children are its `dependsOn` subtree,
     recursively over `specs` (so it shows structure, not the flat closure). A
     node that declares `installsAfter` is annotated ` (after: x, y)` with the
-    referenced ids."""
+    referenced ids. A `dependsOn` edge that closes a cycle - including a
+    self-`dependsOn` - is shown once with a ` (cycle)` marker and not recursed
+    into, so a cyclic or self-referential spec cache can never blow the stack
+    (the on-disk cache can hold one: `dvt sync` writes each spec during its BFS,
+    before `resolve_feature_graph`'s cycle check, and a self-edge is never
+    flagged as a cycle at all)."""
 
-    def add(node_id: str, parent: Tree) -> None:
+    def add(node_id: str, parent: Tree, path: set[str]) -> None:
+        if node_id in path:
+            parent.add(f"{node_id} [dim](cycle)[/dim]")
+            return
         spec = specs.get(node_id)
         suffix = ""
         if spec and spec.installs_after:
             labels = ", ".join(ref_to_id(r) for r in spec.installs_after)
             suffix = f" [dim](after: {labels})[/dim]"
         branch = parent.add(f"{node_id}{suffix}")
+        path.add(node_id)
         for ref in spec.depends_on if spec else ():
-            add(ref_to_id(ref), branch)
+            add(ref_to_id(ref), branch, path)
+        path.discard(node_id)
 
     root = Tree(fid)
+    path = {fid}
     for ref in specs[fid].depends_on:
-        add(ref_to_id(ref), root)
+        add(ref_to_id(ref), root, path)
     return root
 
 
