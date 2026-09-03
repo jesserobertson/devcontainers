@@ -9,8 +9,18 @@ Revisit switching breaking changes to a major bump once the project reaches `1.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-03
+
 ### Added
 
+- `dvt`'s image builder now resolves a feature's own `dependsOn` (pulled
+  transitively), orders the install by `installsAfter`, and emits each feature's
+  `containerEnv` as Docker `ENV` — so a project on a lean base whose toolchain
+  feature `dependsOn`s another (e.g. a Python toolchain that `dependsOn`s `pixi`)
+  builds correctly under `dvt up` without listing the dependency itself. A
+  pragmatic subset of the devcontainer install-order spec: no
+  `overrideFeatureInstallOrder`, no round-based scoring, no `${containerEnv:VAR}`
+  interpolation.
 - Host↔container port forwarding. `dvt forward -n <ws> <spec>...` tunnels host
   ports to servers running inside a workspace over the existing `dvt ssh`
   transport — no container rebuild, no host-networking assumption, works on
@@ -24,11 +34,6 @@ Revisit switching breaking changes to a major bump once the project reaches `1.0
   to the host (bound to loopback). Since published ports are fixed at container
   creation, a changed set makes `dvt up` ask for `--rebuild` rather than
   recreating silently.
-
-## [0.5.0] - 2026-09-03
-
-### Added
-
 - `dvt sync` now also pre-pulls each known feature's OCI artifact into the local
   cache, so the dependency views below keep working offline.
 - `dvt feature list` gains a "Pulls in" column showing each feature's transitive
