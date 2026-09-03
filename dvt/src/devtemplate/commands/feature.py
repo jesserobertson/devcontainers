@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +13,17 @@ from logerr.utilities import wrap_result
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
+from rich.tree import Tree
 
 from devtemplate import describe
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
-from devtemplate.feature_graph import describe_graph, load_cached_specs
+from devtemplate.feature_graph import (
+    FeatureSpec,
+    describe_graph,
+    load_cached_specs,
+    ref_to_id,
+)
 from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
@@ -95,6 +102,28 @@ def list_features(
         stderr_console.print("[dim]run 'dvt sync' for dependency info[/dim]")
 
 
+def _dep_tree(fid: str, specs: Mapping[str, FeatureSpec]) -> Tree:
+    """A Rich Tree rooted at `fid` whose children are its `dependsOn` subtree,
+    recursively over `specs` (so it shows structure, not the flat closure). A
+    node that declares `installsAfter` is annotated ` (after: x, y)` with the
+    referenced ids."""
+
+    def add(node_id: str, parent: Tree) -> None:
+        spec = specs.get(node_id)
+        suffix = ""
+        if spec and spec.installs_after:
+            labels = ", ".join(ref_to_id(r) for r in spec.installs_after)
+            suffix = f" [dim](after: {labels})[/dim]"
+        branch = parent.add(f"{node_id}{suffix}")
+        for ref in spec.depends_on if spec else ():
+            add(ref_to_id(ref), branch)
+
+    root = Tree(fid)
+    for ref in specs[fid].depends_on:
+        add(ref_to_id(ref), root)
+    return root
+
+
 @app.command("show")
 @fuzzy_argument(
     "name", candidates_fn=list_cached_templates, label="feature", console=console
@@ -105,17 +134,37 @@ def show_feature(
         False,
         "--json",
         help='On failure, print {"ok": false, "error": ...} instead of '
-        "human-readable text. Success output is unaffected - it's always the "
-        "cached feature's raw devcontainer.json overlay.",
+        "human-readable text. On success --json adds a resolved_depends_on key "
+        "(the transitive dependsOn closure) to the cached feature's raw "
+        "devcontainer.json overlay; without --json the overlay is printed "
+        "as-is followed by a dependency tree.",
     ),
 ) -> None:
-    """Print a cached feature's devcontainer.json overlay."""
+    """Print a cached feature's devcontainer.json overlay and dependency tree."""
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
     template = unwrap_or_exit(
         load_cached_template(settings, name), console, json_output=json_output
     )
+
+    specs = load_cached_specs(settings)
+    nodes = describe_graph(specs).unwrap_or({})
+
+    if json_output:
+        if name in nodes:
+            print(
+                json.dumps(
+                    {**template, "resolved_depends_on": list(nodes[name].pulls_in)},
+                    indent=2,
+                )
+            )
+        else:
+            print(json.dumps(template, indent=2))
+        return
+
     print(json.dumps(template, indent=2))
+    if name in specs:
+        console.print(_dep_tree(name, specs))
 
 
 # "description" is feature-registry metadata (used by 'dvt feature list'/'show'), not a

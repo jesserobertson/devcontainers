@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from devtemplate import __version__
 from devtemplate.cli import app as real_app
-from devtemplate.commands.feature import app, console, list_features
+from devtemplate.commands.feature import app, console, list_features, show_feature
 from devtemplate.describe import describe_app
 
 runner = CliRunner()
@@ -1384,3 +1384,81 @@ def test_remove_fuzzy_resolves_a_close_typo(tmp_path, settings, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "Removed feature 'agent'" in result.output
+
+
+@pytest.fixture
+def show_env_with_dep_cache(settings):
+    """Template cache (rapids + pixi) alongside a populated feature-spec cache
+    under settings.features_dir where rapids dependsOn pixi - so
+    'dvt feature show rapids' can render the dependency tree and add
+    resolved_depends_on to its --json output."""
+    settings.templates_dir.mkdir(parents=True)
+    for name in ("rapids", "pixi"):
+        template_dir = settings.templates_dir / name
+        template_dir.mkdir()
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "description": f"{name}.",
+                    "image": "ghcr.io/x:latest",
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{name}:latest": {}
+                    },
+                }
+            )
+        )
+
+    settings.features_dir.mkdir(parents=True)
+    rapids_feature = settings.features_dir / "rapids"
+    rapids_feature.mkdir()
+    (rapids_feature / "devcontainer-feature.json").write_text(
+        json.dumps(
+            {
+                "id": "rapids",
+                "dependsOn": {"ghcr.io/jesserobertson/devcontainers/pixi": {}},
+            }
+        )
+    )
+    pixi_feature = settings.features_dir / "pixi"
+    pixi_feature.mkdir()
+    (pixi_feature / "devcontainer-feature.json").write_text(json.dumps({"id": "pixi"}))
+    return settings
+
+
+@pytest.fixture
+def show_env_no_dep_cache(settings):
+    """A cached 'cli' template but no feature-spec cache at all - 'dvt feature
+    show' must still print the raw overlay unchanged, with no tree and no
+    crash."""
+    settings.templates_dir.mkdir(parents=True)
+    template_dir = settings.templates_dir / "cli"
+    template_dir.mkdir()
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "cli",
+                "description": "cli.",
+                "image": "ghcr.io/x:latest",
+                "features": {"ghcr.io/jesserobertson/devcontainers/cli:latest": {}},
+            }
+        )
+    )
+    return settings
+
+
+def test_show_prints_dependency_tree(show_env_with_dep_cache, capsys):
+    show_feature(name="rapids", json_output=False)
+    out = capsys.readouterr().out
+    assert "rapids" in out and "pixi" in out
+
+
+def test_show_json_has_resolved_depends_on(show_env_with_dep_cache, capsys):
+    show_feature(name="rapids", json_output=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["resolved_depends_on"] == ["pixi"]
+
+
+def test_show_uncached_name_still_prints_overlay(show_env_no_dep_cache, capsys):
+    show_feature(name="cli", json_output=False)
+    assert '"features"' in capsys.readouterr().out  # overlay still printed, no crash
