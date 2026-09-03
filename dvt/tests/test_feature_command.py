@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from devtemplate import __version__
 from devtemplate.cli import app as real_app
-from devtemplate.commands.feature import app, console
+from devtemplate.commands.feature import app, console, list_features
 from devtemplate.describe import describe_app
 
 runner = CliRunner()
@@ -105,6 +105,7 @@ def test_list_json_output_includes_all_fields(settings):
             "description": "FastAPI web APIs.",
             "image": "ghcr.io/jesserobertson/base-ubuntu:latest",
             "feature_ref": "ghcr.io/jesserobertson/devcontainers/fastapi:latest",
+            "pulls_in": [],
         }
     ]
     _assert_matches_declared_output_schema("feature list", rows)
@@ -146,6 +147,87 @@ def test_list_json_output_skips_broken_entry_without_polluting_stdout(settings):
     rows = json.loads(result.stdout)
     assert len(rows) == 1
     assert rows[0]["name"] == "fastapi"
+
+
+@pytest.fixture
+def list_env_with_dep_cache(settings):
+    """A populated template cache (rapids + pixi) alongside a populated
+    feature-spec cache under settings.features_dir where rapids dependsOn
+    pixi - so 'dvt feature list' can report rapids "Pulls in" pixi."""
+    settings.templates_dir.mkdir(parents=True)
+    for name in ("rapids", "pixi"):
+        template_dir = settings.templates_dir / name
+        template_dir.mkdir()
+        (template_dir / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "description": f"{name}.",
+                    "image": "ghcr.io/x:latest",
+                    "features": {
+                        f"ghcr.io/jesserobertson/devcontainers/{name}:latest": {}
+                    },
+                }
+            )
+        )
+
+    settings.features_dir.mkdir(parents=True)
+    rapids_feature = settings.features_dir / "rapids"
+    rapids_feature.mkdir()
+    (rapids_feature / "devcontainer-feature.json").write_text(
+        json.dumps(
+            {
+                "id": "rapids",
+                "dependsOn": {"ghcr.io/jesserobertson/devcontainers/pixi": {}},
+            }
+        )
+    )
+    pixi_feature = settings.features_dir / "pixi"
+    pixi_feature.mkdir()
+    (pixi_feature / "devcontainer-feature.json").write_text(json.dumps({"id": "pixi"}))
+    return settings
+
+
+@pytest.fixture
+def list_env_no_dep_cache(settings):
+    """A populated template cache but no feature-spec cache at all - the
+    'dvt sync' pre-pull never ran, so 'dvt feature list' has no dependency
+    info and must degrade to '-' plus a stderr hint."""
+    settings.templates_dir.mkdir(parents=True)
+    template_dir = settings.templates_dir / "rapids"
+    template_dir.mkdir()
+    (template_dir / "devcontainer.json").write_text(
+        json.dumps(
+            {
+                "name": "rapids",
+                "description": "rapids.",
+                "image": "ghcr.io/x:latest",
+                "features": {"ghcr.io/jesserobertson/devcontainers/rapids:latest": {}},
+            }
+        )
+    )
+    return settings
+
+
+def test_list_shows_pulls_in_column(list_env_with_dep_cache, capsys):
+    list_features(json_output=False)
+    out = capsys.readouterr().out
+    assert "Pulls in" in out
+    rapids_line = next(line for line in out.splitlines() if "rapids" in line)
+    assert "pixi" in rapids_line
+
+
+def test_list_json_has_pulls_in(list_env_with_dep_cache, capsys):
+    list_features(json_output=True)
+    rows = json.loads(capsys.readouterr().out)
+    assert next(r for r in rows if r["name"] == "rapids")["pulls_in"] == ["pixi"]
+
+
+def test_list_cold_cache_degrades(list_env_no_dep_cache, capsys):
+    list_features(json_output=False)
+    captured = capsys.readouterr()
+    assert "Pulls in" in captured.out and "—" in captured.out
+    assert "run 'dvt sync' for dependency info" in captured.err
 
 
 def test_show_prints_cached_feature(settings):

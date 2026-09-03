@@ -16,6 +16,7 @@ from rich.table import Table
 from devtemplate import describe
 from devtemplate.cli_support import emit_success, unwrap_or_exit, with_status
 from devtemplate.config import Settings, load_settings
+from devtemplate.feature_graph import describe_graph, load_cached_specs
 from devtemplate.fuzzy import fuzzy_argument, resolve_or_confirm
 from devtemplate.merge import merge_layer, merge_layer_keys
 from devtemplate.schema import validate_devcontainer_config
@@ -49,12 +50,15 @@ def list_features(
     """List every feature dvt knows about, with its description."""
     settings = unwrap_or_exit(load_settings(), console, json_output=json_output)
 
+    specs = load_cached_specs(settings)
+    nodes = describe_graph(specs).unwrap_or({})
+
     names = list_cached_templates(settings)
     if not names and not json_output:
         console.print("No cached features. Run 'dvt sync' first.")
         raise typer.Exit(code=0)
 
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for name in names:
         match load_cached_template(settings, name):
             case Ok(template):
@@ -64,6 +68,9 @@ def list_features(
                         "description": template.get("description", ""),
                         "image": template.get("image", ""),
                         "feature_ref": feature_ref(template),
+                        "pulls_in": (
+                            list(nodes[name].pulls_in) if name in nodes else []
+                        ),
                     }
                 )
             case Err(error):
@@ -75,10 +82,17 @@ def list_features(
         print(json.dumps(rows))
         return
 
-    table = Table("Name", "Description", "Base Image")
+    table = Table("Name", "Description", "Pulls in", "Base Image")
     for row in rows:
-        table.add_row(row["name"], row["description"], row["image"])
+        table.add_row(
+            row["name"],
+            row["description"],
+            ", ".join(row["pulls_in"]) or "—",
+            row["image"],
+        )
     console.print(table)
+    if not nodes:
+        stderr_console.print("[dim]run 'dvt sync' for dependency info[/dim]")
 
 
 @app.command("show")
