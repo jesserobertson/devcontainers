@@ -30,7 +30,7 @@ implementation:
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,11 +42,15 @@ from devtemplate.config import Settings
 __all__ = [
     "FeatureSpec",
     "ResolvedFeature",
+    "GraphNode",
     "read_feature_spec",
     "normalise_ref",
     "ref_to_id",
     "load_cached_specs",
     "resolve_feature_graph",
+    "describe_graph",
+    "to_dot",
+    "to_mermaid",
 ]
 
 
@@ -76,6 +80,24 @@ class ResolvedFeature:
     extracted_dir: Path
     options: dict[str, str]
     container_env: dict[str, str]
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    """One feature's place in the dependency graph, in short-id terms.
+
+    `pulls_in` is the transitive closure of this feature's `dependsOn` edges among
+    the described spec set - each entry a short id (`ref_to_id`) when that id is
+    itself in the set, otherwise the bare normalised ref. It is sorted and
+    deduped, and excludes the feature itself. `installs_after` is this feature's
+    own `installsAfter` list mapped the same way (id where known, bare ref
+    otherwise) with its original order preserved; it is NOT transitive and never
+    contributes to `pulls_in`.
+    """
+
+    id: str
+    pulls_in: tuple[str, ...]
+    installs_after: tuple[str, ...]
 
 
 def normalise_ref(ref: str) -> str:
@@ -284,3 +306,92 @@ def resolve_feature_graph(
             for ref in ordered
         ]
     )
+
+
+def _label(ref: str, ids: set[str]) -> str:
+    """The short id for `ref` when that id is one of `ids`, else the bare ref."""
+    ident = ref_to_id(ref)
+    return ident if ident in ids else ref
+
+
+@wrap_result
+def describe_graph(
+    specs: Mapping[str, FeatureSpec],
+) -> Result[dict[str, GraphNode], Exception]:
+    """One `GraphNode` per spec, keyed exactly as `specs` is.
+
+    `pulls_in` is the transitive `dependsOn` closure among `specs` (labels via
+    `_label`); `installs_after` is the feature's own `installsAfter` mapped the
+    same way, order preserved, and never folded into `pulls_in`. A `dependsOn`
+    cycle among the described features returns
+    `Err(ValueError("feature dependency cycle: a -> b -> a"))`.
+    """
+    ids = set(specs)
+    # id -> its dependsOn targets as labels (short id where known, bare ref else)
+    edges: dict[str, list[str]] = {
+        fid: [_label(dep, ids) for dep in spec.depends_on]
+        for fid, spec in specs.items()
+    }
+    # dependsOn edges restricted to described nodes - the only ones that can cycle
+    after: dict[str, set[str]] = {
+        fid: {ident for dep in spec.depends_on if (ident := ref_to_id(dep)) in ids}
+        for fid, spec in specs.items()
+    }
+
+    consumed: set[str] = set()
+    while True:
+        ready = [fid for fid in ids if fid not in consumed and after[fid] <= consumed]
+        if not ready:
+            break
+        consumed.update(ready)
+    remaining = sorted(ids - consumed)
+    if remaining:
+        trace = _find_cycle(remaining, after, dict(specs))
+        raise ValueError(f"feature dependency cycle: {trace}")
+
+    def closure(fid: str) -> set[str]:
+        seen: set[str] = set()
+        stack = list(edges[fid])
+        while stack:
+            dep = stack.pop()
+            if dep in seen:
+                continue
+            seen.add(dep)
+            if dep in ids:
+                stack.extend(edges[dep])
+        return seen
+
+    return Ok(
+        {
+            fid: GraphNode(
+                id=fid,
+                pulls_in=tuple(sorted(closure(fid))),
+                installs_after=tuple(_label(r, ids) for r in spec.installs_after),
+            )
+            for fid, spec in specs.items()
+        }
+    )
+
+
+def _edges(nodes: Iterable[GraphNode]) -> list[tuple[str, str]]:
+    """Sorted, deduped `(src, dst)` pairs - one per `src pulls in dst`."""
+    seen: set[tuple[str, str]] = set()
+    for node in nodes:
+        for dep in node.pulls_in:
+            seen.add((node.id, dep))
+    return sorted(seen)
+
+
+def to_dot(nodes: Iterable[GraphNode]) -> str:
+    """Graphviz DOT for the pull-in graph. `"A" -> "B"` means "A pulls in B"."""
+    lines = ["digraph deps {"]
+    lines += [f'  "{src}" -> "{dst}";' for src, dst in _edges(nodes)]
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def to_mermaid(nodes: Iterable[GraphNode]) -> str:
+    """Mermaid flowchart for the pull-in graph. `A --> B` means "A pulls in B"."""
+    lines = ["graph TD"]
+    lines += [f"  {src} --> {dst}" for src, dst in _edges(nodes)]
+    return "\n".join(lines)

@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 
 import pytest
 
 from devtemplate.feature_graph import (
+    FeatureSpec,
+    GraphNode,
+    describe_graph,
     load_cached_specs,
     normalise_ref,
     read_feature_spec,
     ref_to_id,
     resolve_feature_graph,
+    to_dot,
+    to_mermaid,
 )
 
 
@@ -314,3 +319,61 @@ def test_load_cached_specs_skips_malformed_dir(tmp_path, monkeypatch):
     (feats / "hash-bad" / "devcontainer-feature.json").write_text("{ not json")
     monkeypatch.setattr(Settings, "data_dir", property(lambda self: tmp_path))
     assert set(load_cached_specs(Settings())) == {"ok"}
+
+
+PFX = "ghcr.io/jesserobertson/devcontainers"
+
+
+def _spec(id_, deps=(), after=()):
+    return FeatureSpec(
+        id=id_,
+        depends_on=tuple(f"{PFX}/{d}:latest" for d in deps),
+        installs_after=tuple(f"{PFX}/{a}:latest" for a in after),
+        container_env={},
+    )
+
+
+def test_describe_graph_direct_and_transitive_closure():
+    specs = {
+        "homebrew": _spec("homebrew"),
+        "shell-kit": _spec("shell-kit", deps=["homebrew"]),
+        "pixi": _spec("pixi", after=["homebrew", "shell-kit"]),
+        "big": _spec("big", deps=["shell-kit", "pixi"]),
+    }
+    nodes = describe_graph(specs).unwrap()
+    assert nodes["big"].pulls_in == ("homebrew", "pixi", "shell-kit")
+    assert nodes["pixi"].pulls_in == ()  # installsAfter is not a pull-in
+    assert nodes["pixi"].installs_after == ("homebrew", "shell-kit")
+    assert nodes["shell-kit"].pulls_in == ("homebrew",)
+
+
+def test_describe_graph_ref_outside_set_kept_bare():
+    specs = {"x": _spec("x", deps=["common-utils"])}  # common-utils not in specs
+    node = describe_graph(specs).unwrap()["x"]
+    assert node.pulls_in == ("common-utils",) or node.pulls_in == (
+        f"{PFX}/common-utils:latest",
+    )
+
+
+def test_describe_graph_cycle_is_err():
+    specs = {"a": _spec("a", deps=["b"]), "b": _spec("b", deps=["a"])}
+    assert describe_graph(specs).is_err()
+
+
+def test_to_dot_and_mermaid_are_deterministic():
+    specs = {"rapids": _spec("rapids", deps=["pixi"]), "pixi": _spec("pixi")}
+    nodes = list(describe_graph(specs).unwrap().values())
+    dot = to_dot(nodes)
+    assert dot.startswith("digraph")
+    assert '"rapids" -> "pixi";' in dot
+    mmd = to_mermaid(nodes)
+    assert mmd.startswith("graph TD")
+    assert "rapids --> pixi" in mmd
+    assert to_dot(nodes) == to_dot(list(reversed(nodes)))  # order-independent
+
+
+def test_describe_graph_node_is_frozen():
+    node = describe_graph({"solo": _spec("solo")}).unwrap()["solo"]
+    assert isinstance(node, GraphNode)
+    with pytest.raises(FrozenInstanceError):
+        node.id = "mutated"  # type: ignore[misc]
