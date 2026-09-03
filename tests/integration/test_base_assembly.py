@@ -143,11 +143,17 @@ def test_base_ubuntu_assembly_has_fish_brew_pixi(cleanup_images):
         'channels = ["conda-forge"]\\n'
         'platforms = ["linux-64"]\\n'
     )
+    # `/workspace` in the image is a bare root-owned dir (WORKDIR then
+    # USER dev, no chown); in real devcontainer use it's a bind mount. Mount a
+    # world-writable tmpfs over it so `dev` can drop the manifest, the same way
+    # an actual workspace mount would.
+    #
     # Outer shell only writes the manifest and exec's; the inner `bash -ic`
     # is what must be interactive to source the appended hook line. This probe
     # triggers a live conda solve, so it needs the build-length timeout.
     hook = _run([
         "docker", "run", "--rm", "--user", "dev", "-w", "/workspace",
+        "--tmpfs", "/workspace:rw,mode=1777",
         "base-ubuntu-itest", "bash", "-c",
         f"printf '{manifest}' > /workspace/pyproject.toml && "
         "exec bash -ic 'test -n \"$CONDA_PREFIX\" && "
