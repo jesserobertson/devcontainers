@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 
 from devtemplate.feature_graph import (
+    load_cached_specs,
     normalise_ref,
     read_feature_spec,
+    ref_to_id,
     resolve_feature_graph,
 )
 
@@ -268,3 +270,47 @@ def test_explicit_listing_order_is_the_primary_tie_break(reg: FakeRegistry):
     ).unwrap()
 
     assert [r.id for r in resolved] == ["zeta", "alpha"]
+
+
+def test_ref_to_id_strips_tag_digest_and_path():
+    assert ref_to_id("ghcr.io/jesserobertson/devcontainers/pixi:latest") == "pixi"
+    assert ref_to_id("ghcr.io/x/pixi@sha256:abc123") == "pixi"
+    assert ref_to_id("ghcr.io/x/pixi") == "pixi"
+
+
+def test_load_cached_specs_reads_every_subdir_keyed_by_id(tmp_path, monkeypatch):
+    from devtemplate.config import Settings
+
+    feats = tmp_path / "features"
+    for name, dep in (("homebrew", None), ("pixi", None), ("py-devtools", "homebrew")):
+        d = feats / f"hash-{name}"
+        d.mkdir(parents=True)
+        spec = {"id": name, "version": "1.0.0"}
+        if dep:
+            spec["dependsOn"] = {f"ghcr.io/jesserobertson/devcontainers/{dep}": {}}
+        (d / "devcontainer-feature.json").write_text(json.dumps(spec))
+    monkeypatch.setattr(Settings, "data_dir", property(lambda self: tmp_path))
+    specs = load_cached_specs(Settings())
+    assert set(specs) == {"homebrew", "pixi", "py-devtools"}
+    assert specs["py-devtools"].depends_on == (
+        "ghcr.io/jesserobertson/devcontainers/homebrew:latest",
+    )
+
+
+def test_load_cached_specs_empty_when_dir_absent(tmp_path, monkeypatch):
+    from devtemplate.config import Settings
+
+    monkeypatch.setattr(Settings, "data_dir", property(lambda self: tmp_path))
+    assert load_cached_specs(Settings()) == {}
+
+
+def test_load_cached_specs_skips_malformed_dir(tmp_path, monkeypatch):
+    from devtemplate.config import Settings
+
+    feats = tmp_path / "features"
+    (feats / "hash-ok").mkdir(parents=True)
+    (feats / "hash-ok" / "devcontainer-feature.json").write_text('{"id": "ok"}')
+    (feats / "hash-bad").mkdir(parents=True)
+    (feats / "hash-bad" / "devcontainer-feature.json").write_text("{ not json")
+    monkeypatch.setattr(Settings, "data_dir", property(lambda self: tmp_path))
+    assert set(load_cached_specs(Settings())) == {"ok"}

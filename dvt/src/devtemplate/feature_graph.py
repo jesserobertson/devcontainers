@@ -37,11 +37,15 @@ from pathlib import Path
 from logerr import Ok, Result
 from logerr.utilities import wrap_result
 
+from devtemplate.config import Settings
+
 __all__ = [
     "FeatureSpec",
     "ResolvedFeature",
     "read_feature_spec",
     "normalise_ref",
+    "ref_to_id",
+    "load_cached_specs",
     "resolve_feature_graph",
 ]
 
@@ -90,6 +94,15 @@ def normalise_ref(ref: str) -> str:
     return f"{ref}:latest"
 
 
+def ref_to_id(ref: str) -> str:
+    """Short id from an OCI ref's trailing path segment:
+    'ghcr.io/x/pixi:latest' -> 'pixi'. Strips an '@sha256:…' digest first, then
+    a ':tag', then takes the last path segment."""
+    body = ref.split("@", 1)[0]
+    body = body.rsplit(":", 1)[0] if ":" in body.rsplit("/", 1)[-1] else body
+    return body.rsplit("/", 1)[-1]
+
+
 def _normalise_all(refs: Iterable[str]) -> tuple[str, ...]:
     return tuple(normalise_ref(str(ref)) for ref in refs)
 
@@ -133,6 +146,23 @@ def read_feature_spec(extracted_dir: Path) -> FeatureSpec:
         installs_after=installs_after,
         container_env=container_env,
     )
+
+
+def load_cached_specs(settings: Settings) -> dict[str, FeatureSpec]:
+    """Every readable devcontainer-feature.json under settings.features_dir/*/,
+    keyed by FeatureSpec.id. {} when the directory is absent. A subdir whose
+    read_feature_spec raises is skipped."""
+    directory = settings.features_dir
+    if not directory.exists():
+        return {}
+    specs: dict[str, FeatureSpec] = {}
+    for child in sorted(p for p in directory.iterdir() if p.is_dir()):
+        try:
+            spec = read_feature_spec(child)
+        except (OSError, ValueError, KeyError):
+            continue
+        specs[spec.id] = spec
+    return specs
 
 
 def _find_cycle(
